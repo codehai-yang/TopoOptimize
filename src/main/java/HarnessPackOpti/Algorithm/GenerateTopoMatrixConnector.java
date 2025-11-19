@@ -11,8 +11,10 @@ import java.util.stream.Collectors;
 // 0代表分支起点是allPoint列表中的第0个元素，
 // 130代表终点是allPoint列表中的第130个元素，37代表终点是allPoint列表中的第37个元素，
 
-
-public class GenerateTopoMatrix {
+/**
+ * 分支全部打通情况下的邻接矩阵
+ */
+public class GenerateTopoMatrixConnector {
     private int V; // 节点的数量
     private List<List<Integer>> adj; // 邻接列表：[第一行，第二行，第三行....]
     private int[][] matrix; // 邻接矩阵 int[rows][columns]
@@ -42,7 +44,7 @@ public class GenerateTopoMatrix {
     private List<Integer> endPointColumnNumber;//每个分支终点的列数
 
     //获取邻接矩阵基本信息
-    public GenerateTopoMatrix(List<String> startPointName, List<String> endPointName, List<List<String>>branchBreakList) {
+    public GenerateTopoMatrixConnector(List<String> startPointName, List<String> endPointName) {
         List<String> startPoint = new ArrayList<>();
         List<String> endPoint = new ArrayList<>();
 
@@ -51,29 +53,7 @@ public class GenerateTopoMatrix {
         startPoint.addAll(endPointName); //起点列表加入：分支起点+分支终点
         endPoint.addAll(endPointName);
         endPoint.addAll(startPointName);//终点列表加入：分支终点+分支起点
-       Set<Integer> localAddress=new HashSet<>();
 
-       //拿到断点分支的起点和终点在起点列表和终点列表的索引
-        for (List<String> list : branchBreakList) {
-            List<Integer> startPositions = findPositions(startPoint, list.get(0));
-            for (Integer position : startPositions) {
-                String s = endPoint.get(position);
-                if (s.equals(list.get(1))){
-                    localAddress.add(position);
-                }
-            }
-            List<Integer> endPositions = findPositions(startPoint, list.get(1));
-            for (Integer position : endPositions) {
-                String s = endPoint.get(position);
-                if (s.equals(list.get(0))){
-                    localAddress.add(position);
-                }
-            }
-
-        }
-        //删除断点分支的起点和终点
-        removeElementsAtPositions(startPoint,localAddress.stream().collect(Collectors.toList()));
-        removeElementsAtPositions(endPoint,localAddress.stream().collect(Collectors.toList()));
         this.startPoint = startPoint;
         this.endPoint = endPoint;
 //        System.out.println("startPoint:"+startPoint);
