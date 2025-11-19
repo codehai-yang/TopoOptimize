@@ -42,7 +42,6 @@ public class ProjectCircuitInfoOutput {
         Map<String, Object> caseInfo = (Map<String, Object>) projectInfo.get("方案信息");
         Boolean whetherToChange = caseInfo.get("直连接口是否发生变化") == null || caseInfo.get("直连接口是否发生变化").toString().equals("false") ? false : true;
 
-
         List<String> strPointName = new ArrayList<>();
         List<String> endPointName = new ArrayList<>();
         for (Map<String, String> k : edges) {
@@ -64,6 +63,12 @@ public class ProjectCircuitInfoOutput {
         adjacencyMatrixGraph.adjacencyMatrix();//构建邻接矩阵列表及数组
         adjacencyMatrixGraph.addEdge();//为邻接矩阵添加”边“元素
         adjacencyMatrixGraph.getAdj();
+
+        //分支全部打通情况下的邻接矩阵和邻接列表
+        GenerateTopoMatrixConnector adjacencyMatrixGraphConnector = new GenerateTopoMatrixConnector(strPointName, endPointName);
+        adjacencyMatrixGraphConnector.adjacencyMatrix();
+        adjacencyMatrixGraphConnector.addEdge();
+        adjacencyMatrixGraphConnector.getAdj();
 
         //      读取线径excel文件
         ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
@@ -538,11 +543,12 @@ public class ProjectCircuitInfoOutput {
         IntergateCircuitInfo circuitInfoIntergation = new IntergateCircuitInfo();
         for (String name : systemMapset) {
             List<String> list = systemMap.get(name);
-            Map<String, Object> objectMap = circuitInfoIntergation.intergateCircuitInfo(list, loopdetails,circuitInfo);
+            Map<String, Object> objectMap = circuitInfoIntergation.intergateCircuitInfo(list, loopdetails);
             Map<String, Object> cloneMap = (Map<String, Object>) objectMap.get("circuitInfoIntergation");
             cloneMap.remove("总理论直径");
             cloneMap.remove("分支直径RGB坐标");
             objectMap.put("circuitInfoIntergation", cloneMap);
+            //系统回路信息整合
             systemCircuitInfo.put(name, objectMap);
         }
 
@@ -551,7 +557,7 @@ public class ProjectCircuitInfoOutput {
 
         for (String name : elecMap.keySet()) {
             List<String> listSet = elecMap.get(name);
-            Map<String, Object> objectMap1 = circuitInfoIntergation.intergateCircuitInfo(listSet.stream().collect(Collectors.toList()), loopdetails,circuitInfo);
+            Map<String, Object> objectMap1 = circuitInfoIntergation.intergateCircuitInfo(listSet.stream().collect(Collectors.toList()), loopdetails);
             elecRelatedCircuitInfo.put(name, objectMap1);
         }
 
@@ -564,7 +570,7 @@ public class ProjectCircuitInfoOutput {
                 Map<String, Object> objectMap2 = new HashMap<>();
                 for (String key : interfaceDetailList.keySet()) {
                     Set<String> list1 = (Set<String>) interfaceDetailList.get(key);
-                    Map<String, Object> interfaceCost = circuitInfoIntergation.intergateCircuitInfo(list1.stream().collect(Collectors.toList()), loopdetails,circuitInfo);
+                    Map<String, Object> interfaceCost = circuitInfoIntergation.intergateCircuitInfo(list1.stream().collect(Collectors.toList()), loopdetails);
                     objectMap2.put(key, interfaceCost);
                 }
                 elecInterfaceRelatedCircuitInfo.put(name, objectMap2);
@@ -842,6 +848,7 @@ public class ProjectCircuitInfoOutput {
         totalCost.put("回路总长度", 0.0);
         totalCost.put("回路分支名称", edgeName);
         double lenght = 0.0;
+        int count = 0;
         DecimalFormat df = new DecimalFormat("0.00");
 //        遍历查找分支所经过的回路
         Set<String> stringSet = pointList.keySet();
@@ -860,7 +867,27 @@ public class ProjectCircuitInfoOutput {
                 mapList.add(objectMap.get("回路id").toString());
             }
         }
-
+        totalCost.put("回路数量(打断前)", mapList.size());
+        //回路打断后统计
+        for (String id : mapList) {
+            Map<String, Object> objectMap = (Map<String, Object>) pointList.get(id);
+            int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
+            i += 1;
+            count += i;
+        }
+        totalCost.put("回路数量(打断后)", count);
+        //回路长度均值
+        double avgLength = 0.00;
+        if(mapList.size() > 0){
+            avgLength = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / mapList.size()));
+        }
+        totalCost.put("回路长度均值(打断前)",avgLength);
+        //回路均值打断后
+        double avgLength2 = 0.00;
+        if(count > 0){
+            avgLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
+        }
+        totalCost.put("回路长度均值(打断后)",avgLength2);
         totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * 1.3)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
         map.put("circuitInfoIntergation", totalCost);
@@ -885,6 +912,7 @@ public class ProjectCircuitInfoOutput {
         totalCost.put("回路总重量", 0.0);
         totalCost.put("回路总长度", 0.0);
         double lenght = 0.0;
+        int count = 0;
         DecimalFormat df = new DecimalFormat("0.00");
         Set multiLoopInfosSet = pointList.keySet();
         for (Object o : multiLoopInfosSet) {
@@ -897,8 +925,23 @@ public class ProjectCircuitInfoOutput {
             totalCost.put("回路总重量", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) + Double.parseDouble(objectMap.get("回路重量").toString()))));
             totalCost.put("回路总长度", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) + Double.parseDouble(objectMap.get("回路长度").toString()))));
             lenght += Double.parseDouble(objectMap.get("回路理论直径").toString()) * Double.parseDouble(objectMap.get("回路理论直径").toString());
+            int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
+            i += 1;
+            count += i;
         }
-
+        totalCost.put("回路数量(打断前)", multiLoopInfosSet.size());
+        totalCost.put("回路数量(打断后)", count);
+        //打断前回路均值
+        double avgLength = 0.00;
+        if(multiLoopInfosSet.size() > 0){
+            avgLength = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / multiLoopInfosSet.size()));
+        }
+        totalCost.put("回路长度均值(打断前)", avgLength);
+        double vagLength2 = 0.00;
+        if(count > 0){
+            vagLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
+        }
+        totalCost.put("回路长度均值(打断后)", vagLength2);
         totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * 1.3)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
 

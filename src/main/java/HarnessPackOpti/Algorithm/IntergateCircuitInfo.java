@@ -14,7 +14,7 @@ public class IntergateCircuitInfo {
      * @input pointList 整车回路整合后信息
      * @Return 整合后的回路信息
      */
-    public Map<String, Object> intergateCircuitInfo(List<String> pathId, Map<String, Object> pointList,List<Map<String, Object>> circuitInfo) {
+    public Map<String, Object> intergateCircuitInfo(List<String> pathId, Map<String, Object> pointList) {
         Map<String, Object> resultMap = new HashMap<>();
 //        总成本
         Map<String, Object> totalCost = new HashMap<>();
@@ -27,6 +27,7 @@ public class IntergateCircuitInfo {
         totalCost.put("回路总长度", 0.0);
         double lenght = 0.0;
         DecimalFormat df = new DecimalFormat("0.00");
+        int count = 0;
         for (String s : pathId) {
             Map<String, Object> objectMap = (Map<String, Object>) pointList.get(s);
             totalCost.put("总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("总成本").toString()) + Double.parseDouble(objectMap.get("回路总成本").toString()))));
@@ -38,9 +39,26 @@ public class IntergateCircuitInfo {
             totalCost.put("回路总长度",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) + Double.parseDouble(objectMap.get("回路长度").toString()))));
             lenght += Double.parseDouble( objectMap.get("回路理论直径").toString()) * Double.parseDouble( objectMap.get("回路理论直径").toString());
 
-            //打断前回路数量
-
+            //回路打断后计算
+            int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
+            i += 1;
+            count += i;
         }
+        //回路打断前与打断后统计
+        totalCost.put("回路数量(打断前)", pathId.size());
+        totalCost.put("回路数量(打断后)", count);
+        //回路均值打断前
+        double avgLength = 0.00;
+        if(pathId.size() > 0){
+             avgLength = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / pathId.size()));
+        }
+        totalCost.put("回路长度均值(打断前)",avgLength);
+        //回路均值打断后
+        double avgLength2 = 0.00;
+        if(count > 0){
+            avgLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
+        }
+        totalCost.put("回路长度均值(打断后)",avgLength2);
         totalCost.put("总理论直径",Double.parseDouble( df.format(Math.sqrt(lenght)*1.3)));
         totalCost.put("分支直径RGB坐标",getlengthColor((Double) totalCost.get("总理论直径")));
         resultMap.put("circuitInfoIntergation", totalCost);
