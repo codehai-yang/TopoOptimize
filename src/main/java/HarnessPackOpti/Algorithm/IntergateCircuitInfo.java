@@ -25,7 +25,17 @@ public class IntergateCircuitInfo {
         totalCost.put("回路导线总成本", 0.0);
         totalCost.put("回路总重量", 0.0);
         totalCost.put("回路总长度", 0.0);
+        totalCost.put("端子总成本", 0.0);
+        totalCost.put("连接器塑壳总成本", 0.0);
+        totalCost.put("防水塞总成本", 0.0);
+        totalCost.put("回路绕线长度总值", 0.0);
+        totalCost.put("回路绕线长度均值", 0.0);
+        totalCost.put("回路打断总次数", 0);
+        totalCost.put("回路打断数量占比", "0.00%");
+        totalCost.put("回路打断成本代价均值", 0.0);
         double lenght = 0.0;
+        int coiling = 0;
+        int circuitBreakNum = 0;
         DecimalFormat df = new DecimalFormat("0.00");
         int count = 0;
         for (String s : pathId) {
@@ -37,14 +47,38 @@ public class IntergateCircuitInfo {
             totalCost.put("回路导线总成本",Double.parseDouble( df.format(Double.parseDouble( totalCost.get("回路导线总成本").toString()) + Double.parseDouble(objectMap.get("回路导线成本").toString()))));
             totalCost.put("回路总重量",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) + Double.parseDouble(objectMap.get("回路重量").toString()))));
             totalCost.put("回路总长度",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) + Double.parseDouble(objectMap.get("回路长度").toString()))));
+            totalCost.put("端子总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("端子总成本").toString()) + Double.parseDouble(objectMap.get("端子成本").toString()))));
+            totalCost.put("连接器塑壳总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("连接器塑壳总成本").toString()) + Double.parseDouble(objectMap.get("连接器塑壳成本").toString()))));
+            totalCost.put("防水塞总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("防水塞总成本").toString()) + Double.parseDouble(objectMap.get("防水塞成本").toString()))));
+            totalCost.put("回路绕线长度总值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路绕线长度总值").toString()) + Double.parseDouble(objectMap.get("回路绕线长度").toString()))));
             lenght += Double.parseDouble( objectMap.get("回路理论直径").toString()) * Double.parseDouble( objectMap.get("回路理论直径").toString());
-
+            if( Double.parseDouble(objectMap.get("回路绕线长度").toString()) > 0 ){
+                coiling++;
+            }
+            if(Double.parseDouble(objectMap.get("回路打断次数").toString()) > 0){
+                circuitBreakNum++;
+            }
             //回路打断后计算
             int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
             i += 1;
             count += i;
         }
+        totalCost.put("回路打断总次数", circuitBreakNum);
+        if(coiling > 0){
+            totalCost.put("回路绕线长度均值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路绕线长度总值").toString()) / coiling)));
+        }
         //回路打断前与打断后统计
+        totalCost.put("回路绕线数量",coiling);
+        if(pathId.size() > 0){
+            double coilingPercent = (double)coiling / pathId.size() * 100;
+            double breakNumb = Double.parseDouble(totalCost.get("回路打断总次数").toString()) / pathId.size() * 100;
+            totalCost.put("回路打断成本代价均值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路打断总成本").toString()) / pathId.size())));
+            totalCost.put("回路绕线数量占比",df.format(coilingPercent) + "%");
+            totalCost.put("回路打断数量占比",df.format(breakNumb) + "%");
+        }else {
+            totalCost.put("回路绕线数量占比","0.00%");
+            totalCost.put("回路打断数量占比","0.00%");
+        }
         totalCost.put("回路数量(打断前)", pathId.size());
         totalCost.put("回路数量(打断后)", count);
         //回路均值打断前

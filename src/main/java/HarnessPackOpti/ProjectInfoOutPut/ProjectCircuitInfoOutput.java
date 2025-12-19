@@ -3,13 +3,16 @@ package HarnessPackOpti.ProjectInfoOutPut;
 import HarnessPackOpti.Algorithm.*;
 import HarnessPackOpti.CircuitInfoCalculate.CalculateCircuitInfo;
 import HarnessPackOpti.CircuitInfoCalculate.CalculateInlineWet;
+import HarnessPackOpti.CircuitInfoCalculate.CalculatePathBreakNumber;
 import HarnessPackOpti.CircuitInfoCalculate.CalculatePathLength;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.JsonToMap;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.commons.codec.binary.StringUtils;
 import org.apache.commons.collections4.map.LinkedMap;
+import org.apache.poi.util.StringUtil;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -535,7 +538,8 @@ public class ProjectCircuitInfoOutput {
             Map<String, Object> objectMap = (Map<String, Object>) loopdetails.get(loopInfo.get("回路id").toString());
             circuitInfo.add(objectMap);
         }
-
+        //回路绕线长度计算
+         circuitCoilingLength(loopdetails,edges,adjacencyMatrixGraphConnector,projectInfo);
         //所有回路信息的总和
         Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails);
         //            对分支进行计算
@@ -626,6 +630,61 @@ public class ProjectCircuitInfoOutput {
         String json = objectMapper.writeValueAsString(resultMap);// 将Map转换为JSON字符串
 //        System.out.println("信息汇总:\n" +json);
         return json;
+    }
+
+    public void circuitCoilingLength(Map<String, Object> loopdetails,List<Map<String, String>> edges,GenerateTopoMatrixConnector adjacencyMatrixGraphConnector,Map<String, Object> projectInfo) {
+
+        //对所有回路添加回路绕线字段
+        FindShortestPath shortestPathSearch = new FindShortestPath();
+        FindAllPath findAllPath = new FindAllPath();
+        FindBranchByNode findBranchByNode = new FindBranchByNode();
+        CalculatePathLength calculatePathLength = new CalculatePathLength();
+        Set<String> idSet = loopdetails.keySet();
+        DecimalFormat df = new DecimalFormat("0.00");
+        for (String id : idSet) {
+            Map<String,Object> tempInfo = (Map<String,Object>)loopdetails.get(id);
+            //获取起点和终点的位置名称
+//            System.out.println("回路信息：" + tempInfo.toString());
+            Object startName = tempInfo.get("起点位置名称");
+            Object endName = tempInfo.get("终点位置名称");
+            //如果起点位置或终点位置有一个为焊点并且位置相同，位置赋值
+            if(startName == null || endName == null){
+                //如果回路长度为默认的0.2，则判定起点和终点都在同一位置点
+                if("0.2".equals(tempInfo.get("回路长度").toString())){
+                    tempInfo.put("回路绕线长度", "0.2");
+                    continue;
+                }
+                Object solderName = tempInfo.get("焊点位置名称");
+                //终点用电器为焊点
+                if(startName != null && solderName != null){
+                    endName = solderName;
+                }else if(endName != null && solderName != null){ //起点用电器为焊点
+                    startName = solderName;
+                }
+            }
+
+
+            Double distance = Double.parseDouble(tempInfo.get("回路长度").toString());
+            //根据现有邻接列表查找两点的最短路径
+            List<Integer> shortestPath = shortestPathSearch.findShortestPathBetweenTwoPoint(adjacencyMatrixGraphConnector.getAdj(), adjacencyMatrixGraphConnector.getAllPoint().indexOf(startName.toString()), adjacencyMatrixGraphConnector.getAllPoint().indexOf(endName.toString()));
+            //找两点之间的所有路径
+            List<Double> lengthList = new ArrayList<>();
+            if(shortestPath != null){
+                List<List<Integer>> allPathBetweenPoint = findAllPath.findAllPathBetweenTwoPoint(adjacencyMatrixGraphConnector.getAdj(), adjacencyMatrixGraphConnector.getAllPoint().indexOf(startName.toString()), adjacencyMatrixGraphConnector.getAllPoint().indexOf(endName.toString()));
+                for (List<Integer> ids : allPathBetweenPoint) {
+                    List<String> listName = convertPathToNumbers(ids, adjacencyMatrixGraphConnector.getAllPoint());
+                    Map<String, Object> branchInfo = findBranchByNode.findBranchByNode(listName,edges);
+                    List<String> edgeIdList= (List<String>) branchInfo.get("idList");
+                    Map<String, Object> pathLength = calculatePathLength.calculatePathLength(edgeIdList, projectInfo);
+                    Double length = (Double) pathLength.get("长度") + 200;
+                    //两点距离
+                    length = Double.parseDouble(df.format(length / 1000));
+                    lengthList.add(length);
+                }
+            }
+            Double minLength = Collections.min(lengthList);
+            tempInfo.put("回路绕线长度",Double.parseDouble(df.format(distance - minLength)));
+        }
     }
 
     /**
@@ -847,8 +906,17 @@ public class ProjectCircuitInfoOutput {
         totalCost.put("回路总重量", 0.0);
         totalCost.put("回路总长度", 0.0);
         totalCost.put("回路分支名称", edgeName);
+        totalCost.put("端子总成本", 0.0);
+        totalCost.put("连接器塑壳总成本", 0.0);
+        totalCost.put("防水塞总成本", 0.0);
+        totalCost.put("回路绕线长度总值", 0.0);
+        totalCost.put("回路绕线长度均值", 0.0);
+        totalCost.put("回路打断总次数", 0);
+        totalCost.put("回路打断数量占比", "0.00%");
+        totalCost.put("回路打断成本代价均值", 0.0);
         double lenght = 0.0;
         int count = 0;
+        int circuitBreakNum = 0;
         DecimalFormat df = new DecimalFormat("0.00");
 //        遍历查找分支所经过的回路
         Set<String> stringSet = pointList.keySet();
@@ -863,18 +931,44 @@ public class ProjectCircuitInfoOutput {
                 totalCost.put("回路两端端子总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路两端端子总成本").toString()) + Double.parseDouble(objectMap.get("回路两端端子成本").toString()))));
                 totalCost.put("回路总重量", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) + Double.parseDouble(objectMap.get("回路重量").toString()))));
                 totalCost.put("回路总长度", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) + Double.parseDouble(objectMap.get("回路长度").toString()))));
+                totalCost.put("端子总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("端子总成本").toString()) + Double.parseDouble(objectMap.get("端子成本").toString()))));
+                totalCost.put("连接器塑壳总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("连接器塑壳总成本").toString()) + Double.parseDouble(objectMap.get("连接器塑壳成本").toString()))));
+                totalCost.put("防水塞总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("防水塞总成本").toString()) + Double.parseDouble(objectMap.get("防水塞成本").toString()))));
+                totalCost.put("回路绕线长度总值", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路绕线长度总值").toString()) + Double.parseDouble(objectMap.get("回路绕线长度").toString()))));
                 lenght += Double.parseDouble(objectMap.get("回路理论直径").toString()) * Double.parseDouble(objectMap.get("回路理论直径").toString());
+                if(Double.parseDouble(objectMap.get("回路打断次数").toString()) > 0){
+                    circuitBreakNum++;
+                }
                 mapList.add(objectMap.get("回路id").toString());
             }
         }
+        totalCost.put("回路打断总次数", circuitBreakNum);
         totalCost.put("回路数量(打断前)", mapList.size());
+        int coiling = 0;
         //回路打断后统计
         for (String id : mapList) {
             Map<String, Object> objectMap = (Map<String, Object>) pointList.get(id);
             int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
+            double coilingNum = Double.parseDouble(objectMap.get("回路绕线长度").toString());
+            if(coilingNum > 0){
+                coiling ++;
+            }
             i += 1;
             count += i;
         }
+        if(coiling > 0){
+            totalCost.put("回路绕线长度均值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路绕线长度总值").toString()) / coiling)));
+        }
+        if(mapList.size() > 0){
+            double coilingPercent = (double)coiling / mapList.size() * 100;
+            double breakNumb = Double.parseDouble(totalCost.get("回路打断总次数").toString()) / mapList.size() * 100;
+            totalCost.put("回路打断成本代价均值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路打断总成本").toString()) / mapList.size())));
+            totalCost.put("回路绕线数量占比",df.format(coilingPercent) + "%");
+            totalCost.put("回路打断数量占比",df.format(breakNumb) + "%");
+        }else {
+            totalCost.put("回路绕线数量占比","0.00%");
+        }
+        totalCost.put("回路绕线数量",coiling);
         totalCost.put("回路数量(打断后)", count);
         //回路长度均值
         double avgLength = 0.00;
@@ -911,8 +1005,20 @@ public class ProjectCircuitInfoOutput {
         totalCost.put("回路导线总成本", 0.0);
         totalCost.put("回路总重量", 0.0);
         totalCost.put("回路总长度", 0.0);
+        totalCost.put("端子总成本", 0.0);
+        totalCost.put("连接器塑壳总成本", 0.0);
+        totalCost.put("防水塞总成本", 0.0);
+        totalCost.put("回路绕线总长度",0.0);
+        totalCost.put("回路绕线数量", 0);
+        totalCost.put("回路绕线数量占比","0.00%");
+        totalCost.put("回路绕线长度均值", 0.0);
+        totalCost.put("回路打断总次数",0);
+        totalCost.put("回路打断数量占比","0.00%");
+        totalCost.put("回路打断成本代价均值", 0.0);
         double lenght = 0.0;
         int count = 0;
+        int coiling = 0;
+        int circuitBreakNum = 0;
         DecimalFormat df = new DecimalFormat("0.00");
         Set multiLoopInfosSet = pointList.keySet();
         for (Object o : multiLoopInfosSet) {
@@ -924,10 +1030,31 @@ public class ProjectCircuitInfoOutput {
             totalCost.put("回路两端端子总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路两端端子总成本").toString()) + Double.parseDouble(objectMap.get("回路两端端子成本").toString()))));
             totalCost.put("回路总重量", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) + Double.parseDouble(objectMap.get("回路重量").toString()))));
             totalCost.put("回路总长度", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) + Double.parseDouble(objectMap.get("回路长度").toString()))));
+            totalCost.put("端子总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("端子总成本").toString()) + Double.parseDouble(objectMap.get("端子成本").toString()))));
+            totalCost.put("连接器塑壳总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("连接器塑壳总成本").toString()) + Double.parseDouble(objectMap.get("连接器塑壳成本").toString()))));
+            totalCost.put("防水塞总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("防水塞总成本").toString()) + Double.parseDouble(objectMap.get("防水塞成本").toString()))));
+            totalCost.put("回路绕线总长度", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路绕线总长度").toString()) + Double.parseDouble(objectMap.get("回路绕线长度").toString()))));
             lenght += Double.parseDouble(objectMap.get("回路理论直径").toString()) * Double.parseDouble(objectMap.get("回路理论直径").toString());
+            if(Double.parseDouble(objectMap.get("回路打断次数").toString()) > 0){
+                circuitBreakNum++;
+            }
+            if(Double.parseDouble(objectMap.get("回路绕线长度").toString()) > 0){
+                coiling++;
+            }
             int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
             i += 1;
             count += i;
+        }
+        totalCost.put("回路打断总次数",circuitBreakNum);
+        totalCost.put("回路绕线数量",coiling);
+        if(coiling > 0){
+            totalCost.put("回路绕线长度均值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路绕线总长度").toString()) / coiling)));
+        }
+        if(pointList.size() > 0){
+            double coilingPercent = (double)coiling / pointList.size() * 100;
+            totalCost.put("回路绕线数量占比",df.format(coilingPercent) + "%");
+        }else {
+            totalCost.put("回路绕线数量占比","0.00%");
         }
         totalCost.put("回路数量(打断前)", multiLoopInfosSet.size());
         totalCost.put("回路数量(打断后)", count);
@@ -935,6 +1062,9 @@ public class ProjectCircuitInfoOutput {
         double avgLength = 0.00;
         if(multiLoopInfosSet.size() > 0){
             avgLength = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / multiLoopInfosSet.size()));
+            double breakNumb = Double.parseDouble(totalCost.get("回路打断总次数").toString()) / multiLoopInfosSet.size() * 100;
+            totalCost.put("回路打断数量占比",df.format(breakNumb) + "%");
+            totalCost.put("回路打断成本代价均值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路打断总成本").toString()) / multiLoopInfosSet.size())));
         }
         totalCost.put("回路长度均值(打断前)", avgLength);
         double vagLength2 = 0.00;
@@ -1113,6 +1243,7 @@ public class ProjectCircuitInfoOutput {
         }
 
         //边，用电器位置点名称（起点和终点），返回最短路径索引
+        //回路绕线也可以直接调用这个方法，传入的值为所有分支打通情况下的值
         List<Integer> shortestPath = shortestPathSearch.findShortestPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(startName), adjacencyMatrixGraph.getAllPoint().indexOf(endName));
 //            获取回路的所有路径
 //       成本计算
@@ -1165,6 +1296,7 @@ public class ProjectCircuitInfoOutput {
                 sinaglePath.put("焊点位置名称", null);
                 sinaglePath.put("焊点位置id", null);
                 sinaglePath.put("回路途径分支点", listname);
+                //看用电器是否存在在商务清单中，如果存在，则相加
                 if (keyExistsIgnoreCase(elecBusinessPrice, start) || keyExistsIgnoreCase(elecBusinessPrice, end)) {
                     if (keyExistsIgnoreCase(elecBusinessPrice, start)) {
                         twoPointMsg.put("回路导线成本", (Double) twoPointMsg.get("回路导线成本") + getValueIgnoreCase(elecBusinessPrice, start));
@@ -1200,6 +1332,24 @@ public class ProjectCircuitInfoOutput {
 
         //        对当前的路径取最优的一种情况
         Map<String, Object> bestMap = pathSelectBetweenPoint(pathList);
+        //计算最优路径的端子成本、连接器塑壳成本、防水塞成本
+        //回路打断分支id
+        List<String> breakIdList = (List<String>) bestMap.get("回路打断分支id");
+        //获取单次打断的端子成本,一端的成本
+        Double oneTerminalPrice = Double.parseDouble(materialsMsg.get("端子成本（元/端）"));
+        //打断后新增端子成本加上回路原本就有的两个端子(回路所有端子成本)
+        Double wireTerminalPrice = oneTerminalPrice * 2 * (breakIdList.size() + 1);
+        //连接器塑壳成本
+        Double oneShellPrice = Double.parseDouble(materialsMsg.get("导线两端的连接器塑壳商务价（元/端）"));
+        //回路所有塑壳成本
+        Double shellPrice = oneShellPrice * 2 * (breakIdList.size() + 1);
+        //湿区防水塞成本
+        Double waterPrice = Double.parseDouble(bestMap.get("inline湿区防水塞成本补偿").toString()) + Double.parseDouble(bestMap.get("湿区两端防水塞成本补偿").toString());
+        //湿区连接器塑壳成本
+        Double connectPrice = Double.parseDouble(bestMap.get("inline湿区连接器成本补偿").toString()) + Double.parseDouble(bestMap.get("湿区两端连接器成本补偿").toString());
+        bestMap.put("端子成本",wireTerminalPrice);
+        bestMap.put("连接器塑壳成本",shellPrice + connectPrice);
+        bestMap.put("防水塞成本",waterPrice);
         return bestMap;
     }
 
@@ -1421,6 +1571,23 @@ public class ProjectCircuitInfoOutput {
 //                 所有路径中最优的路径,根据成本，重量，长度计算综合得分，选择得分最优的路径
                     Map<String, Object> bestPath = pathSelectBetweenPoint(sonPathList);
                     detailMap.put("最优路径", bestPath);
+                    //回路打断分支id
+                    List<String> pathBreakList = (List<String>) bestPath.get("回路打断分支id");
+                    //获取单次打断端子成本
+                    Double oneTerminalPrice = Double.parseDouble(materialsMsg.get("端子成本（元/端）"));
+                    //回路所有端子成本
+                    Double wireTerminalPrice = oneTerminalPrice * 2 *pathBreakList.size() + oneTerminalPrice;
+                    //连接器塑壳成本
+                    Double oneSheLlPrice = Double.parseDouble(materialsMsg.get("导线两端的连接器塑壳商务价（元/端）"));
+                    //回路所有塑壳成本(干区)
+                    Double shellPrice = oneSheLlPrice * 2 *pathBreakList.size() + oneSheLlPrice;
+                    //湿区防水塞成本
+                    Double waterPrice = Double.parseDouble(bestPath.get("inline湿区防水塞成本补偿").toString()) + Double.parseDouble(bestPath.get("湿区两端防水塞成本补偿").toString());
+                    //湿区连接器塑壳成本
+                    Double connectPrice = Double.parseDouble(bestPath.get("inline湿区连接器成本补偿").toString()) + Double.parseDouble(bestPath.get("湿区两端连接器成本补偿").toString());
+                    bestPath.put("端子成本",wireTerminalPrice);
+                    bestPath.put("连接器塑壳成本",shellPrice + connectPrice);
+                    bestPath.put("防水塞成本",waterPrice);
                     sonMap.put("到" + pathNumber + "用电器的信息", detailMap);
                     pathNumber++;
                 }
@@ -1532,6 +1699,23 @@ public class ProjectCircuitInfoOutput {
                 sinaglePath.put("回路理论直径", Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("外径").toString()))));
                 sonPathList.add(sinaglePath);
                 Map<String, Object> objectMap1 = pathSelectBetweenPoint(sonPathList);
+                //回路打断分支id
+                List<String> pathBreakList = (List<String>) objectMap1.get("回路打断分支id");
+                //单次打断端子成本
+                Double oneTerminalPrice = Double.parseDouble(materialsMsg.get("端子成本（元/端）"));
+                //回路所有端子成本
+                Double wireTerminalPrice = oneTerminalPrice * 2 * pathBreakList.size() + oneTerminalPrice;
+                //连接器塑壳成本
+                Double oneSheLLPrice = Double.parseDouble(materialsMsg.get("导线两端的连接器塑壳商务价（元/端）"));
+                //回路所有塑壳成本(干区)
+                Double oneSheLLPriceDry = oneSheLLPrice * 2 * pathBreakList.size() + oneSheLLPrice;
+                //湿区防水塞成本
+                Double waterPrice = Double.parseDouble(objectMap1.get("inline湿区防水塞成本补偿").toString()) + Double.parseDouble(objectMap1.get("湿区两端防水塞成本补偿").toString());
+                //湿区连接器塑壳成本
+                Double connectPrice = Double.parseDouble(objectMap1.get("inline湿区连接器成本补偿").toString()) + Double.parseDouble(objectMap1.get("湿区两端连接器成本补偿").toString());
+                objectMap1.put("端子成本",wireTerminalPrice);
+                objectMap1.put("连接器塑壳成本",oneSheLLPriceDry + connectPrice);
+                objectMap1.put("防水塞成本",waterPrice);
                 detailMap.put("最优路径", objectMap1);
                 groupMap.put("到" + pathNumber + "用电器的信息", detailMap);
                 pathNumber++;

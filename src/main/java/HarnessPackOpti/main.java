@@ -11,12 +11,12 @@ import java.nio.file.Files;
 public class main {
     public static void main(String[] args) throws Exception {
 
-//        File file = new File("data/DataCoopWithEB/topoTxt/20250106.txt");
-//        String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
-//        HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
-//        harnessBranchTopoOptimize.topoOptimize(jsonContent);
-//        HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
-//        harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
+        File file = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\线束拓扑优化TXT.txt");
+        String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
+        HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
+        harnessBranchTopoOptimize.topoOptimize(jsonContent);
+        HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
+        harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
 
 //        File file = new File("data/DataCoopWithEB/topoTxt/拓扑优化.txt");
 //        String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串；
@@ -78,10 +78,11 @@ public class main {
 //        configOutput.getTopoConfig();
 //
 //
-        File file1 = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\circuitInfo.txt");
-        String jsonContent1 = new String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
-        CircuitErrorOutput circuitErrorOutput=new CircuitErrorOutput();
-        circuitErrorOutput.circuitErrorOutput(jsonContent1);
+        //整车信息计算
+//        File file1 = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\circuitInfo.txt");
+//        String jsonContent1 = new String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
+//        CircuitErrorOutput circuitErrorOutput=new CircuitErrorOutput();
+//        circuitErrorOutput.circuitErrorOutput(jsonContent1);
 
 
 //        File file2 = new File("data/DataCoopWithEB/123.txt");
