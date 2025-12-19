@@ -30,16 +30,17 @@ public class FindTopoBreak {
 
         List<Integer> parentCollect = new ArrayList<>();
         this.parentCollect = parentCollect;
-
+        //当前正在构建的族群
         List<Integer> eachFamily = new ArrayList<>();
         this.eachFamily = eachFamily;
-
+        //所有族群
         List<List<Integer>> familys = new ArrayList<>();
         this.familys = familys;
-
+        //所有节点编号 还未分配到族群的节点
         List<Integer> allPointNumbers = new ArrayList<>();
         this.allPointNumbers = allPointNumbers;
 
+        //当前层需要遍历的节点(BFS队列)
         List<Integer> parentElement = new ArrayList<>();
         this.parentElement = parentElement;
 
@@ -52,7 +53,7 @@ public class FindTopoBreak {
         }
 
         Integer init = this.allPointNumbers.get(0);
-        //存放历史出现过的父元素编号,存入初值化值
+        //存放历史出现过的父元素编号,存入初值化值 已访问过的节点(避免重复)
         this.parentCollect.add(init);
 
         //父元素parentElement列表中，新增初始化值
@@ -117,6 +118,7 @@ public class FindTopoBreak {
         return familyPointName;//格式[[族群A内端点1名称、族群A内端点2名称、族群A内端点3名称、...][族群B内端点1名称、族群B内端点2名称、族群B内端点3名称、...]]
     }
 
+    //广度优先搜索
     private void searchElement() {
 
 //        System.out.println("parentElement:" + parentElement);

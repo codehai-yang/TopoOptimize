@@ -52,6 +52,7 @@ public class ReadWireInfoLibrary {
                 map.put("电流匹配的保险丝表面积（平方毫米）",getNUmer(row.getCell(14)));
                 map.put("电流匹配的继电器类型",getNUmer(row.getCell(15)));
                 map.put("电流匹配的继电器表面积（平方毫米）",getNUmer(row.getCell(16)));
+                map.put("导线两端的连接器塑壳商务价（元/端）",getNUmer(row.getCell(11)));
                 dataMap.put(row.getCell(0).getStringCellValue(),map);
             }
             return dataMap;
