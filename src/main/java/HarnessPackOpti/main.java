@@ -1,22 +1,40 @@
 package HarnessPackOpti;
 
 import HarnessPackOpti.ErrorOutput.CircuitErrorOutput;
+import HarnessPackOpti.ErrorOutput.ElecLocationErrorOutput;
+import HarnessPackOpti.ErrorOutput.ElecPositionVariantOutput;
 import HarnessPackOpti.ErrorOutput.HarnessBranchTopoOptiErrorOutPut;
+import HarnessPackOpti.Optimize.OptimizeStopInput;
+import HarnessPackOpti.Optimize.elec.ElecPositionVariantCalculation;
+import HarnessPackOpti.Optimize.elec.ElecPositionVariantCalculationTest;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoTest;
+import HarnessPackOpti.ProjectInfoOutPut.ElecFixedLocationOutput;
+import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
 import java.nio.file.Files;
 
 public class main {
     public static void main(String[] args) throws Exception {
 
+        //线束拓扑优化
         File file = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\线束拓扑优化TXT.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
         HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
         harnessBranchTopoOptimize.topoOptimize(jsonContent);
         HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
         harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
+
+//        用电器优化
+//        long startTime = System.currentTimeMillis();
+//        File file = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\用电器位置布局优化TXT.txt");
+//        String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
+//        ElecPositionVariantCalculation elecPositionVariantCalculation=new ElecPositionVariantCalculation();
+//        elecPositionVariantCalculation.elecPositionVariantCalculation(jsonContent);
+//        System.out.println("算法执行时间：" + (System.currentTimeMillis() - startTime));
 
 //        File file = new File("data/DataCoopWithEB/topoTxt/拓扑优化.txt");
 //        String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串；
@@ -95,7 +113,7 @@ public class main {
 //
 //        ElecFixedLocationOutput elecFixedLocationOutput = new ElecFixedLocationOutput();
 //        elecFixedLocationOutput.elecFixedLocationOutput(jsonContent2);
-
+//
 //        File file1 = new File("data/DataCoopWithEB/基础信息整合(纯净版).txt");
 //        String jsonContent1 = new String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
 //        ProjectCircuitInfoOutput p = new ProjectCircuitInfoOutput();
@@ -111,6 +129,7 @@ public class main {
 //        // 关闭流
 //        bufferedWriter.close();
 //        HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
+
 //        File file = new File("data/DataCoopWithEB/elec/1206.txt");
 //        String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
 //        ElecPositionVariantCalculationTest elecPositionVariantCalculation = new ElecPositionVariantCalculationTest();
@@ -127,16 +146,12 @@ public class main {
 //            }
 //        });
 //        logicThread2.start();
-
+//
 //        try {
 //            Thread.sleep(300000); // 等待5秒
 //            optimizeStopInput.stopTopoOptimize("f8867789-63e1-4342-b791-bf3fedc1cac7");
 //        } catch (InterruptedException e) {
 //            Thread.currentThread().interrupt();
 //        }
-
-
-
-
     }
 }

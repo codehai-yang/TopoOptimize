@@ -61,7 +61,7 @@ public class HarnessBranchTopoTest {
         optimizeStopStatusStore.setKey(optimizeRecordId);
 
 
-        String initializeCaseResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
+        String initializeCaseResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent,true);
         Map<String, Object> initializeCaseResultMap = jsonToMap.TransJsonToMap(initializeCaseResult);
         initializeCaseResultMap.put("topoId", topoInfoMap.get("id").toString());
         initializeCaseResultMap.put("caseId", caseInfo.get("id").toString());
@@ -338,7 +338,7 @@ public class HarnessBranchTopoTest {
 //        获取一定范围的分支
         jsonMap.put("edges", coppyedges);
         Map<String, Double> breakCostMap = new HashMap<>();
-        String detail = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+        String detail = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap),true);
         Map<String, Object> objectMap = jsonToMap.TransJsonToMap(detail);
         Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) objectMap.get("bundeleRelatedCircuitInfo");
         List<Map<String, Object>> circuitInfoList = (List<Map<String, Object>>) objectMap.get("circuitInfo");
@@ -631,7 +631,7 @@ public class HarnessBranchTopoTest {
 //            首先进行一个分支打断代价计算，将当中S的打断代价为0并且在符合分支拓扑约束的条件下 将S改为B
             List<Map<String, Object>> firstEdgesDetail = createNewEdges(statueList, edges, normList);
             jsonMap.put("edges", firstEdgesDetail);
-            String firstoptimizeInterface = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+            String firstoptimizeInterface = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap),true);
             Map<String, Object> firstObjectMap = jsonToMap.TransJsonToMap(firstoptimizeInterface);
 //           计算每一个分支的打断代价
             Map<String, Object> firstbundeleRelatedCircuitInfo = (Map<String, Object>) firstObjectMap.get("bundeleRelatedCircuitInfo");
@@ -700,7 +700,7 @@ public class HarnessBranchTopoTest {
                                 continue;
                             }
                             jsonMap.put("edges", calculateEdgesDetail);
-                            String optimizeInterfacesresult = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+                            String optimizeInterfacesresult = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap),true);
                             Map<String, Object> objectMap = jsonToMap.TransJsonToMap(optimizeInterfacesresult);
                             Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
                             Double currentalCost = (Double) projectCircuitInfo.get("总成本");
@@ -736,7 +736,7 @@ public class HarnessBranchTopoTest {
                 continue;
             }
             jsonMap.put("edges", EdgesDetail);
-            String optimizeInterface = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+            String optimizeInterface = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap),true);
             Map<String, Object> objectMap = jsonToMap.TransJsonToMap(optimizeInterface);
 //           计算每一个分支的打断代价
             Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) objectMap.get("bundeleRelatedCircuitInfo");
@@ -771,7 +771,7 @@ public class HarnessBranchTopoTest {
 //           将分支打断代价小于三块的改为B 计算总成本，如果新的总成本不超过之前的三块  则就用这个方案
             List<Map<String, Object>> betweenEdgeresult = createNewEdges(statueList, edges, normList);
             jsonMap.put("edges", betweenEdgeresult);
-            String betweenoptimizeInterfacesresult = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+            String betweenoptimizeInterfacesresult = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap),true);
             Map<String, Object> betweenobjectMapresult = jsonToMap.TransJsonToMap(betweenoptimizeInterfacesresult);
             Map<String, Object> betweenprojectCircuitInfo = (Map<String, Object>) betweenobjectMapresult.get("projectCircuitInfo");
             Double betweencurrentalCost = (Double) betweenprojectCircuitInfo.get("总成本");
@@ -789,7 +789,7 @@ public class HarnessBranchTopoTest {
                 Boolean flag = checkFirstOption(edgesDetail, appPositions, eleclection);
                 if (flag) {
                     jsonMap.put("edges", edgesDetail);
-                    String betweenoptimizeInterfacesresultSon = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+                    String betweenoptimizeInterfacesresultSon = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap),true);
                     Map<String, Object> betweenobjectMapresultSon = jsonToMap.TransJsonToMap(betweenoptimizeInterfacesresultSon);
                     Map<String, Object> betweenprojectCircuitInfoSon = (Map<String, Object>) betweenobjectMapresultSon.get("projectCircuitInfo");
                     Double betweencurrentalCostSon = (Double) betweenprojectCircuitInfoSon.get("总成本");
@@ -807,7 +807,7 @@ public class HarnessBranchTopoTest {
 //            对最终的方案进行一个计算  并且按照格式进行一个返回
             List<Map<String, Object>> finalEdgeresult = createNewEdges(statueList, edges, normList);
             jsonMap.put("edges", finalEdgeresult);
-            String optimizeInterfacesresult = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+            String optimizeInterfacesresult = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap),true);
             Map<String, Object> objectMapresult = jsonToMap.TransJsonToMap(optimizeInterfacesresult);
             Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMapresult.get("projectCircuitInfo");
             Map<String, Double> finalCostDetail = new HashMap<>();
@@ -845,7 +845,7 @@ public class HarnessBranchTopoTest {
 
                 List<Map<String, Object>> mapList = (List<Map<String, Object>>) objectMap.get("serviceableEdges");
                 jsonMap.put("edges", mapList);
-                String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+                String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap),true);
                 List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
                 for (Map<String, Object> map : mapList) {
                     Map<String, String> result = new HashMap<>();
@@ -1270,7 +1270,7 @@ public class HarnessBranchTopoTest {
 
 
             Map<String, Double> breakCostMap = new HashMap<>();
-            String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap));
+            String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap),true);
             Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
             Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
 

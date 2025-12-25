@@ -19,7 +19,7 @@ public class MultiProjectCircuitInfoOutput {
             Map<String, Object> topoInfoMap = (Map<String, Object>) objectMap.get("topoInfo");
             Map<String, Object> caseInfoMap = (Map<String, Object>) objectMap.get("caseInfo");
             String json = objectMapper.writeValueAsString(objectMap);
-            String s = projectCircuitInfoOutput.projectCircuitInfoOutput(json);
+            String s = projectCircuitInfoOutput.projectCircuitInfoOutput(json,true);
             Map<String, Object> projectInfoMap = jsonToMap.TransJsonToMap(s);
              projectInfoMap.put("topoId", topoInfoMap.get("id").toString());
              projectInfoMap.put("caseId", caseInfoMap.get("id").toString());

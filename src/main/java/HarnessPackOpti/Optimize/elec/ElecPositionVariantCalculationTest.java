@@ -442,7 +442,7 @@ public class ElecPositionVariantCalculationTest {
 
         mapFile.put("loopInfos", correlationLoopInfos);
 
-        String baseJson = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile));
+        String baseJson = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile),true);
         Map<String, Object> baseCalculateMap = jsonToMap.TransJsonToMap(baseJson);
         Map<String, Object> baseProjectCircuitInfo = (Map<String, Object>) baseCalculateMap.get("projectCircuitInfo");
         baseCalculateMap.put("topoId", TopoId);
@@ -733,7 +733,7 @@ public class ElecPositionVariantCalculationTest {
         List<Map<String, Object>> recordsList = new ArrayList<>();
 //        首先计算出当前方案的成本重量长度
         mapFile.put("loopInfos", correlationLoopInfos);
-        String baseJson = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile));
+        String baseJson = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile),true);
         Map<String, Object> baseCalculateMap = jsonToMap.TransJsonToMap(baseJson);
         Map<String, Object> baseProjectCircuitInfo = (Map<String, Object>) baseCalculateMap.get("projectCircuitInfo");
         baseCalculateMap.put("topoId", TopoId);
@@ -761,7 +761,7 @@ public class ElecPositionVariantCalculationTest {
                     appPosition.put("unregularPointName", s);
                 }
             }
-            String json = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile));
+            String json = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile),true);
             Map<String, Object> calculatemap = jsonToMap.TransJsonToMap(json);
             Map<String, Double> cost = new HashMap<>();
             Map<String, Object> projectCircuitInfo = (Map<String, Object>) calculatemap.get("projectCircuitInfo");
@@ -916,7 +916,7 @@ public class ElecPositionVariantCalculationTest {
                 }
             }
             mapFile.put("appPositions", copyAppPositions);
-            String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile));
+            String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile),true);
             Map<String, Object> result = jsonToMap.TransJsonToMap(s);
             result.put("elecOptimizeResult",elecOptimizeResult);
             resultList.add(result);

@@ -100,11 +100,14 @@ public class ElecPositionVariantCalculation {
         PointNumber = allPoint.size();
 //        生成一个字典
 
-//        首先找出当中位置不固定的用电器以及不固定用电器可变的位置点
+//        首先找出当中位置不固定的用电器以及不固定用电器可变的位置点    用电器名称-可变位置点
+        long findChangeStartTime = System.currentTimeMillis();
         Map<String, List<String>> elecChangeablePosition = new HashMap<>();
         for (Map<String, Object> appPosition : appPositions) {
+            //1：在部分点改变
             if (appPosition.get("changeType") != null && appPosition.get("changeType").toString().equals("1")) {
                 String appName = appPosition.get("appName").toString();
+                //位置点名称
                 List<String> list = new ArrayList<>();
                 if (appPosition.get("specifyPoints") != null && !appPosition.get("specifyPoints").toString().isEmpty()) {
                     String specifyPoints = appPosition.get("specifyPoints").toString();
@@ -118,6 +121,7 @@ public class ElecPositionVariantCalculation {
                     }
                 }
                 list.retainAll(allPoint);
+                //取交集
                 elecChangeablePosition.put(appName, list);
             } else if (appPosition.get("changeType") != null && appPosition.get("changeType").toString().equals("2")) {
                 String appName = appPosition.get("appName").toString();
@@ -126,14 +130,17 @@ public class ElecPositionVariantCalculation {
         }
         Set<String> elecChangeablePositionSet = new HashSet<>(elecChangeablePosition.keySet());
         List<String> elecChangeableList = new ArrayList<>(elecChangeablePositionSet);
+        System.out.println("查找用电器可变位置点耗时" + (System.currentTimeMillis() - findChangeStartTime));
         System.out.println("计算用电器再每个点的成本");
-
+        long calculateStartTime = System.currentTimeMillis();
 //        计算每个用电器在所有点的成本计算
         List<Map<String, Object>> elecInAllAddress = new ArrayList<>();
         for (int i = 0; i < elecChangeableList.size(); i++) {
             String s = elecChangeableList.get(i);
             Map<String, Object> elecInAllAddressDetail = new HashMap<>();
+            //深拷贝
             Map<String, Object> mapFile = deepCopy(initmapFile);
+            //计算该可变用电器在所有位置点上的一个成本差值
             List<Map<String, Object>> best = findOneGroup(mapFile, s, allPoint, "0");
             elecInAllAddressDetail.put("group", s);
             elecInAllAddressDetail.put("detail", best);
@@ -143,17 +150,19 @@ public class ElecPositionVariantCalculation {
                 return objectMapper.writeValueAsString(elecInAllAddress);
             }
         }
-
+        System.out.println("计算用电器再每个点的成本耗时" + (System.currentTimeMillis() - calculateStartTime));
         System.out.println("计算用电器再每个点的成本完成");
         if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
             String s1 = objectMapper.writeValueAsString(elecInAllAddress);
             return objectMapper.writeValueAsString(elecInAllAddress);
         }
 
-
+        long generateStartTime = System.currentTimeMillis();
         System.out.println("生成字典");
+        //统计两点之间的所有路径
         Map<String, Object> filtration = filtration(adjacencyMatrixGraph, projectInfo);
         System.out.println("字典生成完成");
+        System.out.println("生成字典耗时" + (System.currentTimeMillis() - generateStartTime));
 //        筛选出可变的回路
         List<Map<String, Object>> unfixedLoopInfoList = new ArrayList<>();
         for (Map<String, Object> loopInfo : loopInfos) {
@@ -166,12 +175,14 @@ public class ElecPositionVariantCalculation {
         List<String> elecChangeablePositionList = elecChangeablePositionSet.stream().collect(Collectors.toList());
         List<List<String>> correlationElec = new ArrayList<>();
 
+        long findCorrelationStartTime = System.currentTimeMillis();
 //      可变用电器一一比对   将符合要求的放到一个组里面
         for (int i = 0; i < elecChangeablePositionList.size() - 1; i++) {
             for (int j = i + 1; j < elecChangeablePositionList.size(); j++) {
                 String elec1 = elecChangeablePositionList.get(i);
                 String elec2 = elecChangeablePositionList.get(j);
                 List<Map<String, Object>> group = new ArrayList<>();
+                //对可变回路进行分组
                 for (Map<String, Object> map : unfixedLoopInfoList) {
                     if ((map.get("startApp").equals(elec1) && map.get("endApp").equals(elec2))
                             || (map.get("startApp").equals(elec2) && map.get("endApp").equals(elec1))) {
@@ -196,8 +207,10 @@ public class ElecPositionVariantCalculation {
 //        对当前的用电器进行一个分组
         List<List<String>> lists = elecGroup(elecChangeablePositionSet.stream().collect(Collectors.toList()), correlationElec);
 
+        System.out.println("可变用电器分组耗时" + (System.currentTimeMillis() - findCorrelationStartTime));
         List<Map<String, Object>> bestList = new ArrayList<>();
 //        针对不同的阈值进行一个计算
+        long calcualteTime = System.currentTimeMillis();
         for (List<String> list : lists) {
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 break;
@@ -213,7 +226,7 @@ public class ElecPositionVariantCalculation {
             String result = sb.toString();
             Map<String, Object> mapFile = new HashMap<>(initmapFile);
             Map<String, Object> groupResult = new HashMap<>();
-//            对分组的进行一个计算   当这个组里面只有一个点的时候 直接计算     当数量达到一个量级进行一个迭代计算
+//            对分组的进行一个计算   当这个组里面只有一个点的时候 直接计算 直接筛选出该用电器在可变位置上的最优方案，不需要进行复杂迭代优化     当数量达到一个量级进行一个迭代计算
             if (list.size() == 1) {
 //                elecInAllAddress 里面已经存在了每个用电器在每个点上的成本  只需要找出当前用电器可变点的成本
                 List<Map<String, Object>> best = new ArrayList<>();
@@ -226,9 +239,11 @@ public class ElecPositionVariantCalculation {
                             if (elecOptimizeResult.get("number").toString().equals("base")) {
                                 continue;
                             }
+                            //获取该方案位置信息
                             Map<String, String> address = (Map<String, String>) elecOptimizeResult.get("address");
                             List<String> addressList = address.keySet().stream().collect(Collectors.toList());
                             String addressName = address.get(addressList.get(0));
+                            //检查这个位置是否在该用电器的可变范围内
                             if (elecChangeablePosition.get(result).contains(addressName)) {
                                 best.add(map);
                             }
@@ -251,6 +266,7 @@ public class ElecPositionVariantCalculation {
                     groupResult.put("detail", moreGroup);
                     bestList.add(groupResult);
                 } else {
+                    //如果大于100000
                     List<Map<String, Object>> optimizeList = optimizeIteration(mapFile, elecChangeablePosition, list, elecFixedLocationLibrary, elecBusinessPrice, filtration);
                     groupResult.put("group", result);
                     groupResult.put("detail", optimizeList);
@@ -261,8 +277,10 @@ public class ElecPositionVariantCalculation {
             BestCost = new HashMap<>();
             BestRepetitionNumber = 0;
         }
-
+        System.out.println("分组计算耗时" + (System.currentTimeMillis() - calcualteTime));
 //
+        //处理未被分组优化的用电器，将他们的最优方案添加到最终结果中
+        long restoreTime = System.currentTimeMillis();
         Set<String> groupSet = new HashSet<>();
         for (Map<String, Object> map : bestList) {
             String group = map.get("group").toString();
@@ -271,22 +289,27 @@ public class ElecPositionVariantCalculation {
         for (Map<String, Object> inAllAddress : elecInAllAddress) {
             String group = inAllAddress.get("group").toString();
             if (!groupSet.contains(group)) {
+                //处理未分组用电器  获取用电器可变位置
                 List<String> list = elecChangeablePosition.get(group);
                 Map<String, Object> groupResult = new HashMap<>();
                 String name = inAllAddress.get("group").toString();
                 List<Map<String, Object>> best = new ArrayList<>();
                 List<Map<String, Object>> detail = (List<Map<String, Object>>) inAllAddress.get("detail");
+                //添加基准方案
                 best.add(detail.get(0));
+                //筛选该用电器在可变位置上的方案
                 for (Map<String, Object> map : detail) {
                     Map<String, Object> elecOptimizeResult = (Map<String, Object>) map.get("elecOptimizeResult");
                     if (elecOptimizeResult.get("number").toString().equals("base")) {
                         continue;
                     }
+                    //获取方案位置信息
                     Map<String, String> address = (Map<String, String>) elecOptimizeResult.get("address");
                     List<String> addressList = address.keySet().stream().collect(Collectors.toList());
-                    String addressName = address.get(addressList.get(0));
+                    String addressName = address.get(addressList.get(0));       //用电器对应的位置点名称
+                    //检查这个位置是否在该用电器的可变范围内
                     if (list.contains(addressName)) {
-                        best.add(map);
+                        best.add(map);      //添加符合条件的方案
                     }
                 }
                 groupResult.put("group", name);
@@ -295,8 +318,9 @@ public class ElecPositionVariantCalculation {
 
             }
         }
+        System.out.println("处理未分组优化耗时" + (System.currentTimeMillis() - restoreTime));
         String json = objectMapper.writeValueAsString(bestList);
-        System.out.println(json);
+//        System.out.println(json);
         return json;
     }
 
@@ -312,10 +336,12 @@ public class ElecPositionVariantCalculation {
         List<String> allPoint = adjacencyMatrixGraph.getAllPoint();
         FindAllPath findAllPath = new FindAllPath();
         List<Map<String, String>> edges = (List<Map<String, String>>) map.get("所有分支信息");
+        //统计所有点之间的所有路径，并统计回路长度，湿区个数等
         for (int i = 0; i < allPoint.size(); i++) {
             String startName = allPoint.get(i);
             for (int j = 0; j < allPoint.size(); j++) {
                 String endName = allPoint.get(j);
+                //查找两点间的所有路径
                 List<List<Integer>> allPathBetweenTwoPoint = findAllPath.findAllPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(startName), adjacencyMatrixGraph.getAllPoint().indexOf(endName));
                 List<Object> currentPath = new ArrayList<>();
                 for (List<Integer> list : allPathBetweenTwoPoint) {
@@ -324,9 +350,11 @@ public class ElecPositionVariantCalculation {
 //                        开始及逆行一个计算
                     Map<String, Object> information = new HashMap<>();
                     FindBranchByNode findBranchByNode = new FindBranchByNode();
+                    //找到途径所有分支
                     Map<String, Object> MapbranchByNode = findBranchByNode.findBranchByNode(listname, edges);
                     List<String> edgeIdList = (List<String>) MapbranchByNode.get("idList");
                     CalculatePathLength calculatePathLength = new CalculatePathLength();
+                    //计算回路长度
                     Map<String, Object> pathLength = calculatePathLength.calculatePathLength(edgeIdList, map);
                     CalculatePathBreakNumber calculatePathBreakNumber = new CalculatePathBreakNumber();
                     Map<String, Object> objectMap = calculatePathBreakNumber.calculatePathBreakNumber(edgeIdList, map);
@@ -335,6 +363,7 @@ public class ElecPositionVariantCalculation {
 
                     Integer breakNumber = topologyStatusCodeNameList.size();
                     CalculateInlineWet calculateInlineWet = new CalculateInlineWet();
+                    //计算回路中分支干湿状态
                     Map<String, String> inlineWet = calculateInlineWet.calculateInlineWet(topologyStatusCodeNameList, map);
                     int count = 0;
                     for (Object mapValue : inlineWet.values()) {
@@ -342,6 +371,7 @@ public class ElecPositionVariantCalculation {
                             count++;
                         }
                     }
+                    //回路两端断点干湿
                     if ("w".toUpperCase().equals(getWaterParam(listname.get(0), (List<Map<String, String>>) map.get("所有端点信息")))) {
                         count++;
                     }
@@ -478,7 +508,7 @@ public class ElecPositionVariantCalculation {
 
         mapFile.put("loopInfos", correlationLoopInfos);
 
-        String baseJson = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile));
+        String baseJson = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile),true);
         Map<String, Object> baseCalculateMap = jsonToMap.TransJsonToMap(baseJson);
         Map<String, Object> baseProjectCircuitInfo = (Map<String, Object>) baseCalculateMap.get("projectCircuitInfo");
         baseCalculateMap.put("topoId", TopoId);
@@ -731,7 +761,9 @@ public class ElecPositionVariantCalculation {
     public List<Map<String, Object>> findOneGroup(Map<String, Object> mapFile, String name, List<String> list, String number) throws Exception {
 
         FindBest findBest = new FindBest();
+        //回路信息
         List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) mapFile.get("loopInfos");
+        //用电器位置点信息
         List<Map<String, Object>> appPositions = (List<Map<String, Object>>) mapFile.get("appPositions");
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         ObjectMapper objectMapper = new ObjectMapper();
@@ -740,11 +772,13 @@ public class ElecPositionVariantCalculation {
 
 //        找到他相关的回路
         List<Map<String, Object>> correlationLoopInfos = new ArrayList<>();
+        //回路id列表
         List<String> correlationId = new ArrayList<>();
         DecimalFormat df = new DecimalFormat("0.00");
         for (Map<String, Object> loopInfo : loopInfos) {
             String startApp = loopInfo.get("startApp").toString();
             String endApp = loopInfo.get("endApp").toString();
+            //回路不包括焊点并且回路中包含指定用电器
             if (!(startApp.startsWith("[") && endApp.startsWith("[")) && (startApp.equals(name) || endApp.equals(name))) {
                 correlationLoopInfos.add(loopInfo);
                 correlationId.add(loopInfo.get("id").toString());
@@ -753,7 +787,8 @@ public class ElecPositionVariantCalculation {
         List<Map<String, Object>> recordsList = new ArrayList<>();
 //        首先计算出当前方案的成本重量长度
         mapFile.put("loopInfos", correlationLoopInfos);
-        String baseJson = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile));
+        //计算整车方案信息
+        String baseJson = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile),true);
         Map<String, Object> baseCalculateMap = jsonToMap.TransJsonToMap(baseJson);
         Map<String, Object> baseProjectCircuitInfo = (Map<String, Object>) baseCalculateMap.get("projectCircuitInfo");
         baseCalculateMap.put("topoId", TopoId);
@@ -766,6 +801,7 @@ public class ElecPositionVariantCalculation {
         baseCostMap.put("总重量", "base");
         baseCostMap.put("总长度", "base");
         Map<String, String> baaseAddress = new HashMap<>();
+        //用电器-用电器位置点信息
         baaseAddress.put(name, findNode(name, appPositions));
         Map<String, Object> baseMap = new HashMap<>();
         baseMap.put("成本", baseCostMap);
@@ -780,10 +816,11 @@ public class ElecPositionVariantCalculation {
             Map<String, Object> map = new HashMap<>();
             for (Map<String, Object> appPosition : appPositions) {
                 if (appPosition.get("appName").toString().equals(name)) {
+                    //appposition放入位置点名称
                     appPosition.put("unregularPointName", s);
                 }
             }
-            String json = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile));
+            String json = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile),true);
             Map<String, Object> calculatemap = jsonToMap.TransJsonToMap(json);
             Map<String, String> cost = new HashMap<>();
             Map<String, Object> projectCircuitInfo = (Map<String, Object>) calculatemap.get("projectCircuitInfo");
@@ -834,7 +871,7 @@ public class ElecPositionVariantCalculation {
         List<List<String>> allArrangements = new ArrayList<>();
         // 用于存储当前排列
         List<String> currentArrangement = new ArrayList<>();
-        // 递归生成所有排列
+        // 递归生成所有排列 找到所有可能的排列组合
         arrange(electricalList, elecChangeablePosition, 0, currentArrangement, allArrangements);
 //        计算每个方案的结果
         List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) initmapFile.get("loopInfos");
@@ -854,6 +891,7 @@ public class ElecPositionVariantCalculation {
         Map<String, Object> mapFile = deepCopy(initmapFile);
         mapFile.put("loopInfos", correlationLoopInfos);
 
+        //只计算包含可变用电器的回路的成本，重量，长度信息
         String baseJson = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile), filtration, elecFixedLocationLibrary, elecBusinessPrice);
         Map<String, Object> baseCalculateMap = jsonToMap.TransJsonToMap(baseJson);
         Map<String, Object> baseProjectCircuitInfo = (Map<String, Object>) baseCalculateMap.get("projectCircuitInfo");
@@ -891,6 +929,7 @@ public class ElecPositionVariantCalculation {
 
             System.out.println(i++);
             Map<String, Object> map = new HashMap<>();
+            //为当前方案设置用电器位置
             List<Map<String, Object>> copyAppPositions = (List<Map<String, Object>>) mapFile.get("appPositions");
             for (String s : electricalList) {
                 for (Map<String, Object> copyAppPosition : copyAppPositions) {
@@ -901,12 +940,15 @@ public class ElecPositionVariantCalculation {
                 }
             }
             mapFile.put("appPositions", copyAppPositions);
+            //计算当前方案成本
             String json = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile), filtration, elecFixedLocationLibrary, elecBusinessPrice);
+            //处理计算结果
             Map<String, Object> calculatemap = jsonToMap.TransJsonToMap(json);
             Map<String, String> cost = new HashMap<>();
             Map<String, Object> projectCircuitInfo = (Map<String, Object>) calculatemap.get("projectCircuitInfo");
             calculatemap.put("topoId", TopoId);
             calculatemap.put("caseId", CaseId);
+            //计算成本差异
             cost.put("总成本", df.format((Double) projectCircuitInfo.get("总成本") - baseCost));
             cost.put("总重量", df.format((Double) projectCircuitInfo.get("回路总重量") - baseWeight));
             cost.put("总长度", df.format((Double) projectCircuitInfo.get("回路总长度") - baseLength));
@@ -921,8 +963,13 @@ public class ElecPositionVariantCalculation {
             calculatemap.put("成本", cost);
             allArrangementList.add(calculatemap);
         }
+        //找出最优top20方案
+        long findBestTime = System.currentTimeMillis();
         List<Map<String, Object>> cost = findBest.findBest(allArrangementList, "成本", TopNumber);
+        System.out.println("找top最优方案:" + (System.currentTimeMillis() - findBestTime));
+        long restoreeTime = System.currentTimeMillis();
         List<Map<String, Object>> restore = restore(cost, initmapFile);
+        System.out.println("还原耗时:" + (System.currentTimeMillis() - restoreeTime));
         result.addAll(restore);
         allArrangementList = null;
         System.gc();
@@ -954,7 +1001,10 @@ public class ElecPositionVariantCalculation {
                 }
             }
             mapFile.put("appPositions", copyAppPositions);
-            String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile));
+
+            long projectCircuitInfoOutputTime = System.currentTimeMillis();
+            String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile),true);
+            System.out.println("计算整车信息方案耗时:" + (System.currentTimeMillis() - projectCircuitInfoOutputTime));
             Map<String, Object> result = jsonToMap.TransJsonToMap(s);
             result.put("topoId", TopoId);
             result.put("caseId", CaseId);
