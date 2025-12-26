@@ -8,6 +8,7 @@ import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
+import HarnessPackOpti.utils.ThreadPool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.*;
@@ -42,6 +43,8 @@ public class HarnessBranchTopoOptimize {
     public static List<List<String>> WareHouseTop = new ArrayList<>();
     //每次迭代得到的top10
     public static List<Map<String, Object>> TopCostDetail = new ArrayList<>();
+    //线程池初始化
+    private static ThreadPool threadPool = new ThreadPool(4,4);
 
 
     //    当前方案的id
@@ -359,7 +362,7 @@ public class HarnessBranchTopoOptimize {
         jsonMap.put("edges", coppyedges);
         //分支id-分支打断代价 获取每条分支的打断代价
         Map<String, Double> breakCostMap = new HashMap<>();
-        //TODO 优化整车信息计算，剔除不必要的字段  false代表不需要计算回路及分支信息以外的字段，以节省时间 剔除了系统信息，用电器接口信息，方案所有回路信息，用电器信息
+        // 优化整车信息计算，剔除不必要的字段  false代表不需要计算回路及分支信息以外的字段，以节省时间 剔除了系统信息，用电器接口信息，方案所有回路信息，用电器信息
         long circuitStart = System.currentTimeMillis();
         String detail = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap),false);
         System.out.println("整车方案计算耗时:" + (System.currentTimeMillis() - circuitStart));
@@ -686,7 +689,7 @@ public class HarnessBranchTopoOptimize {
                 Map<String, Object> edgeDetail = (Map<String, Object>) edgeMap.get("circuitInfoIntergation");
                 firstbreakCostMap.put(s, Double.parseDouble(edgeDetail.get("分支打断代价") != null ? edgeDetail.get("分支打断代价").toString() : "0"));
             }
-//            找出分支为S的id
+//            找出分支为S的id 打断代价s为0的改为b
             for (int i = 0; i < statueList.size(); i++) {
                 if (statueList.get(i).equals("S")) {
                     String id = normList.get(i);
@@ -896,17 +899,22 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, Object>> resultList = new ArrayList<>();
         List<Map<String, Double>> costDeail = new ArrayList<>();
         if (TopCostDetail != null) {
+            long findBestTime = System.currentTimeMillis();
+            //按成本找到最优的方案列表，按成本排序，打分，返回最优方案
             List<Map<String, Object>> sortcost = findBest(TopCostDetail, "成本");
+            System.out.println("找最后的top最优方案:" + (System.currentTimeMillis() - findBestTime));
             for (Map<String, Object> sortcostMap : sortcost) {
                 if (resultList.size() == TopNumber) {
                     break;
                 }
                 List<Map<String, Object>> mapArrayList = new ArrayList<>();
                 mapArrayList.add(sortcostMap);
+                //对每个方案进一步变异,生成1个优化后的方案，因为这里只输入了一个方案进行变异，但是算法实际支持很多个方案
                 List<Map<String, Object>> handleList = bestOptionVariation(mapArrayList, singleBCList, singleSCList, singleBSList, singleBSCList, normList, jsonMap, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
                 if (handleList.size() == 0) {
                     continue;
                 }
+                //上面的方案变异后这里只取一个方案
                 Map<String, Object> objectMap = handleList.get(0);
                 Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
                 if (costDeail.contains(cost)) {
@@ -915,7 +923,9 @@ public class HarnessBranchTopoOptimize {
                 costDeail.add(cost);
                 List<Map<String, Object>> mapList = (List<Map<String, Object>>) objectMap.get("serviceableEdges");
                 jsonMap.put("edges", mapList);
+                long projectCircuitInfoTime = System.currentTimeMillis();
                 String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap),true);
+                System.out.println("最后Top20每个方案计算整车信息耗时" + (System.currentTimeMillis() - projectCircuitInfoTime));
                 List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
                 for (Map<String, Object> map : mapList) {
                     Map<String, String> result = new HashMap<>();
@@ -1368,6 +1378,7 @@ public class HarnessBranchTopoOptimize {
 
 
             Map<String, Double> breakCostMap = new HashMap<>();
+            //节省时间，剔除不必要字段
             String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap),true);
             Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
             Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
