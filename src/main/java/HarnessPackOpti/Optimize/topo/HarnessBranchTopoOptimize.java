@@ -362,7 +362,7 @@ public class HarnessBranchTopoOptimize {
         jsonMap.put("edges", coppyedges);
         //分支id-分支打断代价 获取每条分支的打断代价
         Map<String, Double> breakCostMap = new HashMap<>();
-        // 优化整车信息计算，剔除不必要的字段  false代表不需要计算回路及分支信息以外的字段，以节省时间 剔除了系统信息，用电器接口信息，方案所有回路信息，用电器信息
+        // TODO 优化整车信息计算，剔除不必要的字段  false代表不需要计算回路及分支信息以外的字段，以节省时间 剔除了系统信息，用电器接口信息，方案所有回路信息，用电器信息
         long circuitStart = System.currentTimeMillis();
         String detail = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap),false);
         System.out.println("整车方案计算耗时:" + (System.currentTimeMillis() - circuitStart));
@@ -389,6 +389,9 @@ public class HarnessBranchTopoOptimize {
 //        从第一个B开始循环    selectNumberB 选取的B的数量
         int selectNumberB = 1;
 //        每个B对应的的平均闭环数量
+        System.out.println("组团一起变分支数量：" + togetherBCList.size());
+        System.out.println("互斥分支数量" + mutexMap.size());
+        System.out.println("多选一的分支数量:" + chooseOneList.size());
         System.out.println("结束分类以及初始方案检查，所用时间：" + (System.currentTimeMillis() - l));
         l = System.currentTimeMillis();
         System.out.println("开始计算不同B闭环的平均值");
@@ -525,6 +528,7 @@ public class HarnessBranchTopoOptimize {
             System.out.println(objectMapper.writeValueAsString(mapList));
             return objectMapper.writeValueAsString(mapList);
         }
+        System.out.println("生成初代样本数量：" + simpleList.size());
         System.out.println("生成初代样本结束，所用时间" + (System.currentTimeMillis() - l));
         //        将生成的方案存放到仓库当中去
         WareHouse.addAll(simpleList);
@@ -555,7 +559,7 @@ public class HarnessBranchTopoOptimize {
         findBest.add(addtoMap);
         long functionStartTime = System.currentTimeMillis();
         //遗传算法
-        //TODO 遗传算法里的各项循环参数降低，节省时间
+        //TODO 遗传算法里的各项循环参数降低，节省时间  上一代如果是14，这一带是18看是否重复计算了
         while (true) {
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 initializeCaseResultMap.put("finishStatue", "abnormal");
@@ -614,9 +618,11 @@ public class HarnessBranchTopoOptimize {
             }
             hybridizationNumber++;
         }
+
         long functionendTime = System.currentTimeMillis();
         System.out.println("遗传算法总迭代耗时：" + (functionendTime - functionStartTime));
         TopDetail = findBest;
+        System.out.println("有效方案数量：" + WareHouse.size());
         List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "normal", singleBCList, singleSCList, singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
         initializeCaseResultMap.put("finishStatue", "normal");
         mapList.add(initializeCaseResultMap);
@@ -1225,11 +1231,14 @@ public class HarnessBranchTopoOptimize {
             }
         }
         long constraintEndTime = System.currentTimeMillis();
-        System.out.println("约束变异时间：" + (constraintEndTime - constraintStartTime));
+        System.out.println("每一代裂变时间：" + (constraintEndTime - constraintStartTime));
 
         //仓库中的方案检查看是否存在在仓库中时间
         long warehouseStartTime = System.currentTimeMillis();
 //        变异的样本进行一个检查   如果不存在仓库或者容器当中  添加到容器当中
+        int sum =  changebTOc.size() + changecTOb.size();
+        System.out.println("每一代裂变后产生的总方案数量:" + sum);
+        int repeat = 0;
         for (List<String> list : changebTOc) {
             if (!containsList(list, WareHouse) && !containsList(list, simple)) {
 
@@ -1244,6 +1253,9 @@ public class HarnessBranchTopoOptimize {
                 if (sonSate) {
                     simple.add(list);
                 }
+            }else {
+                //方案重复数量
+                repeat++;
             }
         }
         for (List<String> list : changecTOb) {
@@ -1260,8 +1272,12 @@ public class HarnessBranchTopoOptimize {
                 if (sonSate) {
                     simple.add(list);
                 }
+            }else{
+                repeat++;
             }
         }
+        System.out.println("每一代裂变后数量检查，重复数量(仓库中没有的)" +  repeat);
+        System.out.println("经过约束，连通性检查，排除掉方案数量：" + (sum - simple.size()));
         long warehouseEndTime = System.currentTimeMillis();
         System.out.println("仓库检查时间：" + (warehouseEndTime - warehouseStartTime));
 
@@ -1281,7 +1297,7 @@ public class HarnessBranchTopoOptimize {
             //TODO 对方案进行检查看是否逻辑正确，是否会有生成的方案有效的，但是约束判断错了，或者生成的方案无效，没有剔除掉
             List<List<String>> simpleList = initialOptimize(minLoopNumber, maxLoopNumber, initialScheme, togetherBCList,
                     conformList, normList, onlyNameS, edges, appPositions, eleclection, mutexMap, mutexGroupList, chooseOneList, sortedMapExcel, sortedMap, circuitInfoList);
-            System.out.println("实际增加的方案数量：" + simpleList.size());
+            System.out.println("30次里每次实际补充的有效方案数量：" + simpleList.size());
             if (simpleList != null && simpleList.size() > 0) {
                 for (List<String> list : simpleList) {
                     if (!containsList(list, WareHouse) && !containsList(list, simple)) {
@@ -1697,7 +1713,7 @@ public class HarnessBranchTopoOptimize {
                 break;
             }
         }
-        System.out.println("初始化方案数量：" + totalNumber);
+        System.out.println("初始化(补充)方案(有效和无效)数量：" + totalNumber);
         return resultList;
     }
 
