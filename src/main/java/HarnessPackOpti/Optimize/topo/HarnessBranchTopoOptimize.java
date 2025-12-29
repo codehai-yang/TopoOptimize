@@ -46,7 +46,7 @@ public class HarnessBranchTopoOptimize {
     //每次迭代得到的top10
     public static List<Map<String, Object>> TopCostDetail = new ArrayList<>();
     //线程池初始化
-    private static ThreadPool threadPool = new ThreadPool(8, 8);
+    private static ThreadPool threadPool = new ThreadPool(10, 10);
 
 
     //    当前方案的id
@@ -1396,7 +1396,7 @@ public class HarnessBranchTopoOptimize {
 
                 Map<String, Double> breakCostMap = new HashMap<>();
                 //节省时间，剔除不必要字段
-                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap), false);
+                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap), true);
                 Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
                 Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
 
@@ -1443,6 +1443,8 @@ public class HarnessBranchTopoOptimize {
                             scrapOrNot = true;
                             break;
                         }
+                        System.out.println(costResultData.get("总成本"));
+                        System.out.println(breakCostMap.get(minCostKey));
                         costResultData.put("总成本", (Double) costResultData.get("总成本") + breakCostMap.get(minCostKey));
                         serviceableStatue.set(normList.indexOf(minCostKey), "S");
                     } else {
