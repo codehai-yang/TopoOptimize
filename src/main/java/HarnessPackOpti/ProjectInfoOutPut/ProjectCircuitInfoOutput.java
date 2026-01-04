@@ -158,7 +158,9 @@ public class ProjectCircuitInfoOutput {
         for (Map<String, String> list : fixTwoPoints) {
             //单个固定回路，所有回路信息，矩阵对象，导线价格信息，用电器可变位置点，导线无聊单价商务成本
             Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, adjacencyMatrixGraph, elecFixedLocationLibrary, true, null, electricalSet, elecBusinessPrice);
-            loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
+            if(twoPointInfo != null) {
+                loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
+            }
         }
 //        对焊点的进行计算
         Set<String> set = fixMultiLoopInfos.keySet();
@@ -362,7 +364,9 @@ public class ProjectCircuitInfoOutput {
         //使用之前确定的最佳用电器位置配置来计算这些简单回路
         for (Map<String, String> list : nonfixedNotGroupLoopsTwo) {
             Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, adjacencyMatrixGraph, elecFixedLocationLibrary, false, bestInterFaceInfo, electricalSet, elecBusinessPrice);
-            loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
+            if(twoPointInfo != null) {
+                loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
+            }
         }
 //            对焊点的进行一个计算 并将最优的结果添加到loopdetails里面
 //            对焊点的进行计算
@@ -387,147 +391,147 @@ public class ProjectCircuitInfoOutput {
 //         用电器 接口   用电器接口分类
         Map<String, Map<String, Object>> appMap = new HashMap<>();
 
-        if (whetherCalculate) {
-            for (Map<String, Object> loopInfo : loopInfos) {
-                if (elecMap.containsKey(loopInfo.get("回路起点用电器").toString())) {
-                    elecMap.get(loopInfo.get("回路起点用电器").toString()).add(loopInfo.get("回路id").toString());
-                } else {
-                    List<String> list = new ArrayList<>();
-                    list.add(loopInfo.get("回路id").toString());
-                    elecMap.put(loopInfo.get("回路起点用电器").toString(), list);
-                }
+
+        for (Map<String, Object> loopInfo : loopInfos) {
+            if (elecMap.containsKey(loopInfo.get("回路起点用电器").toString())) {
+                elecMap.get(loopInfo.get("回路起点用电器").toString()).add(loopInfo.get("回路id").toString());
+            } else {
+                List<String> list = new ArrayList<>();
+                list.add(loopInfo.get("回路id").toString());
+                elecMap.put(loopInfo.get("回路起点用电器").toString(), list);
+            }
 
 
-                if (elecMap.containsKey(loopInfo.get("回路终点用电器").toString())) {
-                    elecMap.get(loopInfo.get("回路终点用电器").toString()).add(loopInfo.get("回路id").toString());
-                } else {
-                    List<String> list = new ArrayList<>();
-                    list.add(loopInfo.get("回路id").toString());
-                    elecMap.put(loopInfo.get("回路终点用电器").toString(), list);
-                }
+            if (elecMap.containsKey(loopInfo.get("回路终点用电器").toString())) {
+                elecMap.get(loopInfo.get("回路终点用电器").toString()).add(loopInfo.get("回路id").toString());
+            } else {
+                List<String> list = new ArrayList<>();
+                list.add(loopInfo.get("回路id").toString());
+                elecMap.put(loopInfo.get("回路终点用电器").toString(), list);
+            }
 
 //按照系统分类，建立系统名到回路id列表的映射
-                if (loopInfo.get("所属系统") != null && loopInfo.get("所属系统").toString().length() > 0) {
-                    if (systemMap.containsKey(loopInfo.get("所属系统"))) {
-                        systemMap.get(loopInfo.get("所属系统")).add(loopInfo.get("回路id").toString());
-                    } else {
-                        List<String> list = new ArrayList<>();
-                        list.add(loopInfo.get("回路id").toString());
-                        systemMap.put(loopInfo.get("所属系统").toString(), list);
-                    }
+            if (loopInfo.get("所属系统") != null && loopInfo.get("所属系统").toString().length() > 0) {
+                if (systemMap.containsKey(loopInfo.get("所属系统"))) {
+                    systemMap.get(loopInfo.get("所属系统")).add(loopInfo.get("回路id").toString());
+                } else {
+                    List<String> list = new ArrayList<>();
+                    list.add(loopInfo.get("回路id").toString());
+                    systemMap.put(loopInfo.get("所属系统").toString(), list);
                 }
+            }
 
 //            分别查看起点用电器和终点用电器
 //            首先判断这个用电器是否是一个焊点
 //            不是的情况下查看集合中是否存在这样的用电器 有的情况下直接回路id添加进去  没有创建list 将id添加进去
 //            接着查看用电器接口是否为空  不为空的情况下  判断是否存在这个接口名称 存在直接将id添加进去 不存在新建添加进去
-                String startApp = "";
-                String endApp = "";
-                if (!loopInfo.get("回路起点用电器").toString().startsWith("[")) {
-                    startApp = loopInfo.get("回路起点用电器").toString();
-                }
-                if (!loopInfo.get("回路终点用电器").toString().startsWith("[")) {
-                    endApp = loopInfo.get("回路终点用电器").toString();
-                }
+            String startApp = "";
+            String endApp = "";
+            if (!loopInfo.get("回路起点用电器").toString().startsWith("[")) {
+                startApp = loopInfo.get("回路起点用电器").toString();
+            }
+            if (!loopInfo.get("回路终点用电器").toString().startsWith("[")) {
+                endApp = loopInfo.get("回路终点用电器").toString();
+            }
 
-                if (!startApp.isEmpty()) {
+            if (!startApp.isEmpty()) {
 //                集合中还不存在该用电器的情况
-                    if (!appMap.containsKey(startApp)) {
-                        Map<String, Object> electricalMap = new HashMap<>();
+                if (!appMap.containsKey(startApp)) {
+                    Map<String, Object> electricalMap = new HashMap<>();
 //                   用电器接口id
-                        Set<String> electricalId = new HashSet<>();
+                    Set<String> electricalId = new HashSet<>();
 //                    用电器接口集合
-                        Map<String, Set<String>> interfaceMap = new HashMap<>();
-                        electricalId.add(loopInfo.get("回路id").toString());
+                    Map<String, Set<String>> interfaceMap = new HashMap<>();
+                    electricalId.add(loopInfo.get("回路id").toString());
 //                    用电器接口
-                        String startAppPort = "";
-                        if (loopInfo.get("回路起点用电器接口编号") != null) {
-                            startAppPort = loopInfo.get("回路起点用电器接口编号").toString();
-                        }
+                    String startAppPort = "";
+                    if (loopInfo.get("回路起点用电器接口编号") != null) {
+                        startAppPort = loopInfo.get("回路起点用电器接口编号").toString();
+                    }
 
-                        if (!startAppPort.isEmpty()) {
+                    if (!startAppPort.isEmpty()) {
+                        Map<String, Set<String>> idList = new HashMap<>();
+                        Set<String> list1 = new HashSet<>();
+                        list1.add(loopInfo.get("回路id").toString());
+                        interfaceMap.put(startAppPort, list1);
+                    }
+                    electricalMap.put("electricalList", electricalId);
+                    electricalMap.put("interfaceMap", interfaceMap);
+                    appMap.put(startApp, electricalMap);
+                } else {
+//                    找出该用电器集合
+                    Set<String> stringSet = (Set<String>) appMap.get(startApp).get("electricalList");
+                    stringSet.add(loopInfo.get("回路id").toString());
+//                    String startAppPort = loopInfo.get("回路起点用电器接口编号").toString();
+                    String startAppPort = "";
+                    if (loopInfo.get("回路起点用电器接口编号") != null) {
+                        startAppPort = loopInfo.get("回路起点用电器接口编号").toString();
+                    }
+                    if (!startAppPort.isEmpty()) {
+//                        找到用电器接口对应的map集合
+                        Map<String, Set<String>> interfaceMap = (Map<String, Set<String>>) appMap.get(startApp).get("interfaceMap");
+                        if (interfaceMap.containsKey(startAppPort)) {
+                            Set<String> stringSet1 = interfaceMap.get(startAppPort);
+                            stringSet1.add(loopInfo.get("回路id").toString());
+                        } else {
                             Map<String, Set<String>> idList = new HashMap<>();
                             Set<String> list1 = new HashSet<>();
                             list1.add(loopInfo.get("回路id").toString());
-                            interfaceMap.put(startAppPort, list1);
-                        }
-                        electricalMap.put("electricalList", electricalId);
-                        electricalMap.put("interfaceMap", interfaceMap);
-                        appMap.put(startApp, electricalMap);
-                    } else {
-//                    找出该用电器集合
-                        Set<String> stringSet = (Set<String>) appMap.get(startApp).get("electricalList");
-                        stringSet.add(loopInfo.get("回路id").toString());
-//                    String startAppPort = loopInfo.get("回路起点用电器接口编号").toString();
-                        String startAppPort = "";
-                        if (loopInfo.get("回路起点用电器接口编号") != null) {
-                            startAppPort = loopInfo.get("回路起点用电器接口编号").toString();
-                        }
-                        if (!startAppPort.isEmpty()) {
-//                        找到用电器接口对应的map集合
-                            Map<String, Set<String>> interfaceMap = (Map<String, Set<String>>) appMap.get(startApp).get("interfaceMap");
-                            if (interfaceMap.containsKey(startAppPort)) {
-                                Set<String> stringSet1 = interfaceMap.get(startAppPort);
-                                stringSet1.add(loopInfo.get("回路id").toString());
-                            } else {
-                                Map<String, Set<String>> idList = new HashMap<>();
-                                Set<String> list1 = new HashSet<>();
-                                list1.add(loopInfo.get("回路id").toString());
-                                idList.put(startAppPort, list1);
-                                interfaceMap.putAll(idList);
-                            }
+                            idList.put(startAppPort, list1);
+                            interfaceMap.putAll(idList);
                         }
                     }
                 }
-                if (!endApp.isEmpty()) {
-                    if (!appMap.containsKey(endApp)) {
-                        Map<String, Object> electricalMap = new HashMap<>();
+            }
+            if (!endApp.isEmpty()) {
+                if (!appMap.containsKey(endApp)) {
+                    Map<String, Object> electricalMap = new HashMap<>();
 //                   用电器接口id
-                        Set<String> electricalId = new HashSet<>();
+                    Set<String> electricalId = new HashSet<>();
 //                    用电器接口集合
-                        Map<String, Set<String>> interfaceMap = new HashMap<>();
-                        electricalId.add(loopInfo.get("回路id").toString());
+                    Map<String, Set<String>> interfaceMap = new HashMap<>();
+                    electricalId.add(loopInfo.get("回路id").toString());
 //                    用电器接口
 //                    String startAppPort = loopInfo.get("回路终点用电器接口编号").toString();
-                        String startAppPort = "";
-                        if (loopInfo.get("回路终点用电器接口编号") != null) {
-                            startAppPort = loopInfo.get("回路终点用电器接口编号").toString();
-                        }
+                    String startAppPort = "";
+                    if (loopInfo.get("回路终点用电器接口编号") != null) {
+                        startAppPort = loopInfo.get("回路终点用电器接口编号").toString();
+                    }
 
-                        if (!startAppPort.isEmpty()) {
+                    if (!startAppPort.isEmpty()) {
+                        Map<String, Set<String>> idList = new HashMap<>();
+                        Set<String> list1 = new HashSet<>();
+                        list1.add(loopInfo.get("回路id").toString());
+                        interfaceMap.put(startAppPort, list1);
+                    }
+                    electricalMap.put("electricalList", electricalId);
+                    electricalMap.put("interfaceMap", interfaceMap);
+                    appMap.put(endApp, electricalMap);
+                } else {
+                    Set<String> stringSet = (Set<String>) appMap.get(endApp).get("electricalList");
+                    stringSet.add(loopInfo.get("回路id").toString());
+//                    String endAppPort = loopInfo.get("回路终点用电器接口编号").toString();
+                    String endAppPort = "";
+                    if (loopInfo.get("回路终点用电器接口编号") != null) {
+                        endAppPort = loopInfo.get("回路终点用电器接口编号").toString();
+                    }
+                    if (!endAppPort.isEmpty()) {
+                        Map<String, Set<String>> interfaceMap = (Map<String, Set<String>>) appMap.get(endApp).get("interfaceMap");
+                        if (interfaceMap.containsKey(endAppPort)) {
+                            Set<String> stringSet1 = interfaceMap.get(endAppPort);
+                            stringSet1.add(loopInfo.get("回路id").toString());
+                        } else {
                             Map<String, Set<String>> idList = new HashMap<>();
                             Set<String> list1 = new HashSet<>();
                             list1.add(loopInfo.get("回路id").toString());
-                            interfaceMap.put(startAppPort, list1);
-                        }
-                        electricalMap.put("electricalList", electricalId);
-                        electricalMap.put("interfaceMap", interfaceMap);
-                        appMap.put(endApp, electricalMap);
-                    } else {
-                        Set<String> stringSet = (Set<String>) appMap.get(endApp).get("electricalList");
-                        stringSet.add(loopInfo.get("回路id").toString());
-//                    String endAppPort = loopInfo.get("回路终点用电器接口编号").toString();
-                        String endAppPort = "";
-                        if (loopInfo.get("回路终点用电器接口编号") != null) {
-                            endAppPort = loopInfo.get("回路终点用电器接口编号").toString();
-                        }
-                        if (!endAppPort.isEmpty()) {
-                            Map<String, Set<String>> interfaceMap = (Map<String, Set<String>>) appMap.get(endApp).get("interfaceMap");
-                            if (interfaceMap.containsKey(endAppPort)) {
-                                Set<String> stringSet1 = interfaceMap.get(endAppPort);
-                                stringSet1.add(loopInfo.get("回路id").toString());
-                            } else {
-                                Map<String, Set<String>> idList = new HashMap<>();
-                                Set<String> list1 = new HashSet<>();
-                                list1.add(loopInfo.get("回路id").toString());
-                                idList.put(endAppPort, list1);
-                                interfaceMap.putAll(idList);
-                            }
+                            idList.put(endAppPort, list1);
+                            interfaceMap.putAll(idList);
                         }
                     }
                 }
             }
         }
+
 
         Map<String, Object> systemCircuitInfo = new HashMap<>();
         Map<String, Object> elecRelatedCircuitInfo = new HashMap<>();
@@ -543,10 +547,7 @@ public class ProjectCircuitInfoOutput {
         //回路绕线长度计算
         circuitCoilingLength(loopdetails, edges, adjacencyMatrixGraphConnector, projectInfo);
         //所有回路信息的总和
-        Map<String, Object> projectCircuitInfo = new HashMap<>();
-        if (whetherCalculate) {
-            projectCircuitInfo = circuitProjectInfo(loopdetails);
-        }
+        Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails);
         //            对分支进行计算
         IntergateCircuitInfo circuitInfoIntergation = new IntergateCircuitInfo();
 
@@ -874,7 +875,7 @@ public class ProjectCircuitInfoOutput {
         Double cost = 0.0;
         for (String id : listId) {
             for (Map<String, Object> objectMap : circuitInfo) {
-                if (id.equals(objectMap.get("回路id").toString())) {
+                if (objectMap != null && id.equals(objectMap.get("回路id").toString())) {
                     String wireType = objectMap.get("导线选型").toString();
                     Map<String, String> wireTypeMap = (Map<String, String>) elecFixedLocationLibrary.get(wireType);
                     double v = Double.parseDouble(wireTypeMap.get("导线打断成本（元/次）"));
@@ -1517,6 +1518,9 @@ public class ProjectCircuitInfoOutput {
                     List<List<Integer>> allPathBetweenTwoPoint = findAllPath.findAllPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(integer), adjacencyMatrixGraph.getAllPoint().indexOf(endName));
                     String startElectricalId = findIdByName(integer, pointList);
                     for (List<Integer> list : allPathBetweenTwoPoint) {
+                        if(list == null || list.size() == 0){
+                            continue;
+                        }
                         Map<String, Object> sinaglePath = new LinkedMap<>();
                         CalculateCircuitInfo acceptLoopInfo = new CalculateCircuitInfo();
                         List<String> listname = convertPathToNumbers(list, adjacencyMatrixGraph.getAllPoint());
@@ -1577,6 +1581,9 @@ public class ProjectCircuitInfoOutput {
                         sinaglePath.put("回路所有分支数量", ((List<String>) twoPointMsg.get("所有分支")).size());
                         sinaglePath.put("回路理论直径", Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("外径").toString()))));
                         sonPathList.add(sinaglePath);
+                    }
+                    if(sonPathList == null || sonPathList.size() == 0){
+                        continue;
                     }
 //                 所有路径中最优的路径,根据成本，重量，长度计算综合得分，选择得分最优的路径
                     Map<String, Object> bestPath = pathSelectBetweenPoint(sonPathList);
@@ -1958,6 +1965,9 @@ public class ProjectCircuitInfoOutput {
                 double length2 = 0.0;
                 for (int j = 1; j < mapsize2; j++) {
                     Map<String, Object> electricalMap2 = (Map<String, Object>) contrastMap.get("到" + j + "用电器的信息");
+                    if(electricalMap2 == null){
+                        continue;
+                    }
                     Map<String, Object> pathMap = (Map<String, Object>) electricalMap2.get("最优路径");
                     cost2 = cost2 + Double.parseDouble(pathMap.get("回路总成本").toString());
                     weight2 = weight2 + Double.parseDouble(pathMap.get("回路重量").toString());
@@ -1997,8 +2007,11 @@ public class ProjectCircuitInfoOutput {
                     return null;
                 }
                 List<Integer> shortestPathBetweenTwoPoint = findShortestPath.findShortestPathBetweenTwoPoint(adj, start, endpoint);
-                for (Integer integers : shortestPathBetweenTwoPoint) {
-                    set.add(integers);
+                //TODO 修改加上长度判断
+                if(shortestPathBetweenTwoPoint != null && shortestPathBetweenTwoPoint.size() > 0) {
+                    for (Integer integers : shortestPathBetweenTwoPoint) {
+                        set.add(integers);
+                    }
                 }
             }
         }

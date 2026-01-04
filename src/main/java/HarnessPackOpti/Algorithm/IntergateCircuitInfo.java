@@ -40,6 +40,10 @@ public class IntergateCircuitInfo {
         int count = 0;
         for (String s : pathId) {
             Map<String, Object> objectMap = (Map<String, Object>) pointList.get(s);
+            //排除分支信息为空的
+            if(objectMap == null){
+                continue;
+            }
             totalCost.put("总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("总成本").toString()) + Double.parseDouble(objectMap.get("回路总成本").toString()))));
             totalCost.put("回路湿区成本总加成",Double.parseDouble( df.format(Double.parseDouble( totalCost.get("回路湿区成本总加成").toString()) + Double.parseDouble(objectMap.get("回路湿区成本加成").toString()))));
             totalCost.put("回路打断总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路打断总成本").toString()) + Double.parseDouble(objectMap.get("回路打断成本").toString()))));

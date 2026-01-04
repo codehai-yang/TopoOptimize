@@ -56,7 +56,7 @@ public class FindAllPath {
         allPath.add(shortestPath);
 
         //当最短路径的元素个数≥3个，才进一步找出其他路径
-        if (shortestPath.size() >= 3) {
+        if (shortestPath != null && shortestPath.size() >= 3) {
 
             for (int i = 1; i < shortestPath.size() - 1; i++) {//从第二个元素开始，到倒数第二个元素结束
                 //获取path中第i个元素，命名为breakPoint
@@ -101,70 +101,69 @@ public class FindAllPath {
                             allPath.add(shortPath);
                         }
                     }
-
-
                 }
             }
         }
 //        重点与起点互换位置再次进行计算
         List<Integer> shortestPathreversal = shortestPathSearch.findShortestPathBetweenTwoPoint(adj, end, start);
         List<Integer> copyShortestPath = new ArrayList<>();
-        for (Integer integer : shortestPathreversal) {
-            copyShortestPath.add(integer);
-        }
-        Collections.reverse(copyShortestPath);
-        if (!allPath.contains(copyShortestPath)) {
-            allPath.add(copyShortestPath);
-        }
-        if (shortestPathreversal.size() >= 3) {
-            for (int i = 1; i < shortestPathreversal.size() - 1; i++) {//从第二个元素开始，到倒数第二个元素结束
-                Integer breakPoint = shortestPathreversal.get(i);
-                List<List<Integer>> newAdj = new ArrayList<>();
-                for (int j = 0; j < adj.size(); j++) {
-                    List<Integer> newAdjItem = new ArrayList<>();
-                    newAdjItem.addAll(adj.get(j));
-                    newAdj.add(newAdjItem);
-                }
-                //将newAdj中第breakPoint项的元素清空
-                newAdj.get(breakPoint).clear();
-                //若能找到最短路径
-                if (shortestPathSearch.findShortestPathBetweenTwoPoint(newAdj,end,start) != null) {
-                    List<Integer> otherShortestPath = shortestPathSearch.findShortestPathBetweenTwoPoint(newAdj,end,start);
-                    List<Integer> copyOtherShortestPath = new ArrayList<>();
-                    for (Integer integer : otherShortestPath) {
-                        copyOtherShortestPath.add(integer);
-                    }
-                    Collections.reverse(copyOtherShortestPath);
-
-
-                    if (!allPath.contains(copyOtherShortestPath)) {
-                        allPath.add(copyOtherShortestPath);
-                    }
-
-
-                    List<List<Integer>> copyAdj = new ArrayList<>();
-                    for (int j = 0; j < newAdj.size(); j++) {
+        if (shortestPathreversal != null) {
+            for (Integer integer : shortestPathreversal) {
+                copyShortestPath.add(integer);
+            }
+            Collections.reverse(copyShortestPath);
+            if (!allPath.contains(copyShortestPath)) {
+                allPath.add(copyShortestPath);
+            }
+            if (shortestPathreversal.size() >= 3) {
+                for (int i = 1; i < shortestPathreversal.size() - 1; i++) {//从第二个元素开始，到倒数第二个元素结束
+                    Integer breakPoint = shortestPathreversal.get(i);
+                    List<List<Integer>> newAdj = new ArrayList<>();
+                    for (int j = 0; j < adj.size(); j++) {
                         List<Integer> newAdjItem = new ArrayList<>();
-                        newAdjItem.addAll(newAdj.get(j));
-                        copyAdj.add(newAdjItem);
+                        newAdjItem.addAll(adj.get(j));
+                        newAdj.add(newAdjItem);
                     }
-
-                    Integer breakPointNumber = otherShortestPath.get(1);
-                    copyAdj.get(breakPointNumber).clear();
-                    if (shortestPathSearch.findShortestPathBetweenTwoPoint(copyAdj,end ,start ) != null) {
-                        List<Integer> shortPath = shortestPathSearch.findShortestPathBetweenTwoPoint(newAdj, end, start);
-                        List<Integer> copyShortPath = new ArrayList<>();
-                        for (Integer integer : shortPath) {
-                            copyShortPath.add(integer);
+                    //将newAdj中第breakPoint项的元素清空
+                    newAdj.get(breakPoint).clear();
+                    //若能找到最短路径
+                    if (shortestPathSearch.findShortestPathBetweenTwoPoint(newAdj, end, start) != null) {
+                        List<Integer> otherShortestPath = shortestPathSearch.findShortestPathBetweenTwoPoint(newAdj, end, start);
+                        List<Integer> copyOtherShortestPath = new ArrayList<>();
+                        for (Integer integer : otherShortestPath) {
+                            copyOtherShortestPath.add(integer);
                         }
-                        Collections.reverse(copyShortPath);
-                        if (!allPath.contains(copyShortPath)) {
-                            allPath.add(copyShortPath);
+                        Collections.reverse(copyOtherShortestPath);
+
+
+                        if (!allPath.contains(copyOtherShortestPath)) {
+                            allPath.add(copyOtherShortestPath);
+                        }
+
+
+                        List<List<Integer>> copyAdj = new ArrayList<>();
+                        for (int j = 0; j < newAdj.size(); j++) {
+                            List<Integer> newAdjItem = new ArrayList<>();
+                            newAdjItem.addAll(newAdj.get(j));
+                            copyAdj.add(newAdjItem);
+                        }
+
+                        Integer breakPointNumber = otherShortestPath.get(1);
+                        copyAdj.get(breakPointNumber).clear();
+                        if (shortestPathSearch.findShortestPathBetweenTwoPoint(copyAdj, end, start) != null) {
+                            List<Integer> shortPath = shortestPathSearch.findShortestPathBetweenTwoPoint(newAdj, end, start);
+                            List<Integer> copyShortPath = new ArrayList<>();
+                            for (Integer integer : shortPath) {
+                                copyShortPath.add(integer);
+                            }
+                            Collections.reverse(copyShortPath);
+                            if (!allPath.contains(copyShortPath)) {
+                                allPath.add(copyShortPath);
+                            }
                         }
                     }
                 }
             }
-
         }
         return allPath;
     }

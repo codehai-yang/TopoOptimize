@@ -21,6 +21,10 @@ public class FindBest {
         double maxLength = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总长度").toString());
 //        首先最大最小值
         for (Map<String, Object> map : radomList) {
+            //这里过滤掉初始方案
+            if(map.size() != 3){
+                continue;
+            }
             if (minCost > Double.parseDouble(((Map<String, Object>) map.get(name)).get("总成本").toString())) {
                 minCost = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总成本").toString());
             }

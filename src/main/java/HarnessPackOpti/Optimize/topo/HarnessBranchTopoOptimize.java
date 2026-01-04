@@ -19,24 +19,26 @@ import java.util.stream.Collectors;
 public class HarnessBranchTopoOptimize {
     //    随机变换样本数量
     public static Integer LessRandomSamleNumber = 100;
-    //   迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 500;
+    //   迭代最少样本数量 500->200
+    public static Integer HybridizationLessRandomSamleNumber = 200;
     //    top几的数量规定
     public static final Integer TopNumber = 20;
     //    每次迭代最优的成本
     public static Map<String, Double> BestCost = new HashMap<>();
     //    最优样本重复次数
     public static Integer BestRepetitionNumber = 0;
-    //    迭代重复的次数限值
-    public static Integer IterationRestrictNumber = 30;
+    //    迭代重复的次数限值 重复次数降低30->10
+    public static Integer IterationRestrictNumber = 10;
     //    定义一个仓库
     public static List<List<String>> WareHouse = new ArrayList<>();
+    //定义一个已经计算过的仓库
+    public static List<List<String>> WareHouseCalculated = new ArrayList<>();
     //    变异的次数
     public static Integer VariationNumber = 1;
     //每次迭代得到的top20
     public static List<Map<String, Object>> TopDetail = new ArrayList<>();
     //    初始化自动补全得次数
-    public static Integer InitializeAutoCompleteNumber = 1000;
+    public static Integer InitializeAutoCompleteNumber = 500;
     //    自动补全得次数
     public static Integer AutoCompleteNumber = 30;
 
@@ -366,7 +368,7 @@ public class HarnessBranchTopoOptimize {
         Map<String, Double> breakCostMap = new HashMap<>();
         // TODO 优化整车信息计算，剔除不必要的字段  false代表不需要计算回路及分支信息以外的字段，以节省时间 剔除了系统信息，用电器接口信息，方案所有回路信息，用电器信息
         long circuitStart = System.currentTimeMillis();
-        String detail = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap), false);
+        String detail = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap), true);
         System.out.println("整车方案计算耗时:" + (System.currentTimeMillis() - circuitStart));
         Map<String, Object> objectMap = jsonToMap.TransJsonToMap(detail);
         //提取经过各个分支的所有回路信息
@@ -541,6 +543,7 @@ public class HarnessBranchTopoOptimize {
         //对上面生成的闭环方案进行计算，计算他们的成本，按价格排序 ，返回成本最优的20条方案
         //TODO 利用多线程优化查找top20的方法
         List<Map<String, Object>> findBest = changeAndFindBest(simpleList, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS);
+        WareHouseCalculated.addAll(simpleList);
         TopDetail = findBest;
         if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
             initializeCaseResultMap.put("finishStatue", "abnormal");
@@ -557,8 +560,6 @@ public class HarnessBranchTopoOptimize {
 
 //        将初始化方案也放入到迭代中去
         Map<String, Object> addtoMap = new HashMap<>();
-        addtoMap.put("serviceableStatue", primeList);
-        findBest.add(addtoMap);
         long functionStartTime = System.currentTimeMillis();
         //遗传算法
         //TODO 遗传算法里的各项循环参数降低，节省时间  上一代如果是14，这一带是18看是否重复计算了
@@ -604,6 +605,7 @@ public class HarnessBranchTopoOptimize {
                 if (Math.abs(BestCost.get("总成本") - costTotal) < 0.000001
                         && Math.abs(BestCost.get("总长度") - costLenth) < 0.000001
                         && Math.abs(BestCost.get("总重量") - costWeight) < 0.000001) {
+                    System.out.println("与上一代最优一样，重复次数加1");
                     BestRepetitionNumber = BestRepetitionNumber + 1;        //相同则计数器加1
                 } else {
                     BestRepetitionNumber = 0;           //不同则重置计数器
@@ -615,17 +617,23 @@ public class HarnessBranchTopoOptimize {
             }
             //TODO 迭代次数过多，多余的迭代次数会增加耗时
             if (BestRepetitionNumber == IterationRestrictNumber) {
-                System.out.println("迭代结束原因：迭代次数达到限制，后续与上一代结果相同达到30次");
+                System.out.println("迭代结束原因：迭代次数达到限制，后续与上一代结果相同达到10次");
                 break;
             }
             hybridizationNumber++;
+            //迭代次数太多直接返回结果
+            if (hybridizationNumber > 10) {
+                break;
+            }
         }
 
         long functionendTime = System.currentTimeMillis();
         System.out.println("遗传算法总迭代耗时：" + (functionendTime - functionStartTime));
         TopDetail = findBest;
-        System.out.println("有效方案数量：" + WareHouse.size());
+        System.out.println("有效方案数量：" + WareHouseCalculated.size());
+        long optimize = System.currentTimeMillis();
         List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "normal", singleBCList, singleSCList, singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
+        System.out.println("进一步优化时间：" + (System.currentTimeMillis() - optimize));
         initializeCaseResultMap.put("finishStatue", "normal");
         mapList.add(initializeCaseResultMap);
         String s = objectMapper.writeValueAsString(mapList);
@@ -633,7 +641,6 @@ public class HarnessBranchTopoOptimize {
         System.out.println("算法总耗时长：" + (end - start));
         return objectMapper.writeValueAsString(mapList);
     }
-
 
     /**
      * @Description: 对top的方案进行再次变异   结果中分支打断状况为S的 可以变化的进行变化  在总成本小于3的情况下 选择当前的方案(主要为了降低S的数量)
@@ -663,6 +670,10 @@ public class HarnessBranchTopoOptimize {
                                                          Map<String, Map<String, List<String>>> mutexMap,
                                                          List<Map<String, List<String>>> chooseOneList,
                                                          List<List<String>> togetherBCList) throws Exception {
+        //状态检查
+        if(threadPool.shouldStop()){
+            return null;
+        }
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         ObjectMapper objectMapper = new ObjectMapper();
         JsonToMap jsonToMap = new JsonToMap();
@@ -905,56 +916,108 @@ public class HarnessBranchTopoOptimize {
         Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
         Map<String, Object> projectInfo = (Map<String, Object>) jsonMap.get("projectInfo");
         List<Map<String, Object>> resultList = new ArrayList<>();
-        List<Map<String, Double>> costDeail = new ArrayList<>();
+        List<Map<String, Double>> costDeail = Collections.synchronizedList(new ArrayList<>());
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
         if (TopCostDetail != null) {
             long findBestTime = System.currentTimeMillis();
             //按成本找到最优的方案列表，按成本排序，打分，返回最优方案
             List<Map<String, Object>> sortcost = findBest(TopCostDetail, "成本");
             System.out.println("找最后的top最优方案:" + (System.currentTimeMillis() - findBestTime));
             for (Map<String, Object> sortcostMap : sortcost) {
+                tasks.add(() -> {
+
+//                    if (resultList.size() == TopNumber) {
+//                        break;
+//                    }
+                    List<Map<String, Object>> mapArrayList = new ArrayList<>();
+                    mapArrayList.add(sortcostMap);
+                    //对每个方案进一步变异,生成1个优化后的方案，因为这里只输入了一个方案进行变异，但是算法实际支持很多个方案
+                    List<Map<String, Object>> handleList = bestOptionVariation(mapArrayList, singleBCList, singleSCList, singleBSList, singleBSCList, normList, jsonMap, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
+                    if (handleList.size() == 0) {
+                        return null;
+                    }
+                    //上面的方案变异后这里只取一个方案
+                    Map<String, Object> objectMap = handleList.get(0);
+                    Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
+                    synchronized (costDeail) {
+                        if (costDeail.contains(cost)) {
+                            return null;
+                        }
+                        // 保持线程安全
+                        costDeail.add(cost);
+                    }
+                    List<Map<String, Object>> mapList = (List<Map<String, Object>>) objectMap.get("serviceableEdges");
+                    //保持线程安全 浅拷贝一份
+                    HashMap<String, Object> newJsonMap = new HashMap<>(jsonMap);
+                    newJsonMap.put("edges", mapList);
+                    long projectCircuitInfoTime = System.currentTimeMillis();
+                    String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(newJsonMap), true);
+                    System.out.println("最后Top20每个方案计算整车信息耗时" + (System.currentTimeMillis() - projectCircuitInfoTime));
+                    List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
+                    for (Map<String, Object> map : mapList) {
+                        Map<String, String> result = new HashMap<>();
+                        result.put("edgeId", map.get("id").toString());
+                        result.put("statue", map.get("topologyStatusCode").toString());
+                        topoOptimizeResult.add(result);
+                    }
+                    Map<String, Object> map = jsonToMap.TransJsonToMap(s);
+                    Map<String, Object> projectCircuitInfo = (Map<String, Object>) map.get("projectCircuitInfo");
+                    Map<String, Double> projectCost = new HashMap<>();
+                    projectCost.put("总成本", (Double) projectCircuitInfo.get("总成本"));
+                    projectCost.put("总重量", (Double) projectCircuitInfo.get("回路总重量"));
+                    projectCost.put("总长度", (Double) projectCircuitInfo.get("回路总长度"));
+
+                    map.put("成本", projectCost);
+                    map.put("topoId", topoInfoMap.get("id").toString());
+                    map.put("caseId", projectInfo.get("caseId").toString());
+                    map.put("topoOptimizeResult", topoOptimizeResult);
+                    map.put("finishStatue", finishStatue);
+                    map.put("initializationScheme", false);
+                    return map;
+                });
+            }
+
+        }
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        int submittedCount = 0;
+        //每次提交10个任务
+        int batchSize = 10;
+        for (Callable<Map<String, Object>> task : tasks) {
+            //检查状态，防止多次提交
+            if(resultList.size() == TopNumber){
+                threadPool.terminateNow();
+                break;
+            }
+            Future<Map<String, Object>> submit = threadPool.submit(task);
+            futures.add(submit);
+            submittedCount++;
+            if (submittedCount % batchSize == 0 || submittedCount == tasks.size()) {
+                //获取已完成的任务结果
+                for (Future<Map<String, Object>> future : futures) {
+                    if (future.isDone() && !future.isCancelled()) {
+                        try {
+                            Map<String, Object> result = future.get();
+                            if (result != null) {
+                                resultList.add(result);
+                            }
+                            if (resultList.size() == TopNumber) {
+                                threadPool.terminateNow();
+                                System.out.println("方案数量已经达到20个");
+                                break;
+                            }
+                        } catch (Exception e) {
+                            System.out.println("线程池任务执行异常:" + e.getMessage());
+                            e.printStackTrace();
+                        }
+                    }
+                }
                 if (resultList.size() == TopNumber) {
                     break;
                 }
-                List<Map<String, Object>> mapArrayList = new ArrayList<>();
-                mapArrayList.add(sortcostMap);
-                //对每个方案进一步变异,生成1个优化后的方案，因为这里只输入了一个方案进行变异，但是算法实际支持很多个方案
-                List<Map<String, Object>> handleList = bestOptionVariation(mapArrayList, singleBCList, singleSCList, singleBSList, singleBSCList, normList, jsonMap, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
-                if (handleList.size() == 0) {
-                    continue;
-                }
-                //上面的方案变异后这里只取一个方案
-                Map<String, Object> objectMap = handleList.get(0);
-                Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
-                if (costDeail.contains(cost)) {
-                    continue;
-                }
-                costDeail.add(cost);
-                List<Map<String, Object>> mapList = (List<Map<String, Object>>) objectMap.get("serviceableEdges");
-                jsonMap.put("edges", mapList);
-                long projectCircuitInfoTime = System.currentTimeMillis();
-                String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap), true);
-                System.out.println("最后Top20每个方案计算整车信息耗时" + (System.currentTimeMillis() - projectCircuitInfoTime));
-                List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
-                for (Map<String, Object> map : mapList) {
-                    Map<String, String> result = new HashMap<>();
-                    result.put("edgeId", map.get("id").toString());
-                    result.put("statue", map.get("topologyStatusCode").toString());
-                    topoOptimizeResult.add(result);
-                }
-                Map<String, Object> map = jsonToMap.TransJsonToMap(s);
-                Map<String, Object> projectCircuitInfo = (Map<String, Object>) map.get("projectCircuitInfo");
-                Map<String, Double> projectCost = new HashMap<>();
-                projectCost.put("总成本", (Double) projectCircuitInfo.get("总成本"));
-                projectCost.put("总重量", (Double) projectCircuitInfo.get("回路总重量"));
-                projectCost.put("总长度", (Double) projectCircuitInfo.get("回路总长度"));
-
-                map.put("成本", projectCost);
-                map.put("topoId", topoInfoMap.get("id").toString());
-                map.put("caseId", projectInfo.get("caseId").toString());
-                map.put("topoOptimizeResult", topoOptimizeResult);
-                map.put("finishStatue", finishStatue);
-                map.put("initializationScheme", false);
-                resultList.add(map);
+            }
+            if(resultList.size() == TopNumber){
+                threadPool.terminateNow();
+                break;
             }
         }
 
@@ -1296,6 +1359,7 @@ public class HarnessBranchTopoOptimize {
         //如果方案数量不足，那么会生成额外的方案
         //TODO 要求生成的样本数太高，实际生成的样本数没有这个多，但是会强制循环500次
         while (simple.size() < HybridizationLessRandomSamleNumber) {
+            long wheel = System.currentTimeMillis();
             //TODO 对方案进行检查看是否逻辑正确，是否会有生成的方案有效的，但是约束判断错了，或者生成的方案无效，没有剔除掉
             List<List<String>> simpleList = initialOptimize(minLoopNumber, maxLoopNumber, initialScheme, togetherBCList,
                     conformList, normList, onlyNameS, edges, appPositions, eleclection, mutexMap, mutexGroupList, chooseOneList, sortedMapExcel, sortedMap, circuitInfoList);
@@ -1308,21 +1372,39 @@ public class HarnessBranchTopoOptimize {
                     }
                 }
             }
-
-
             //TODO 自动补全次数稍微有点多，无效补充会导致时间增加，可适当降低，目前是30
             if (completeNumber > AutoCompleteNumber) {
                 break;
             }
             completeNumber++;
         }
+        //对之前计算过的方案进行去重
+        List<List<String>> newSimple = new ArrayList<>();
+        for (List<String> strings : simple) {
+            //如果有方案在之前计算过
+            if (!containsList(strings, WareHouseCalculated)) {
+                newSimple.add(strings);
+            }
+        }
         long completeEndTime = System.currentTimeMillis();
         System.out.println("方案补充时间：" + (completeEndTime - completeStartTime));
 
         //查找每一代最优结果耗时
         long topTenStartTime = System.currentTimeMillis();
+        List<Map<String, Object>> mapList = new ArrayList<>();
 //        接下来就是对simple 进行一个分支闭环的检查
-        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS);
+        if (newSimple.size() != 0) {
+            mapList = changeAndFindBest(newSimple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS);
+            //查找完最优值后，把当前所有方案加入到仓库中，以防止下一代重复计算方案耗费时间
+            for (List<String> list : newSimple) {
+                WareHouse.add(list);
+            }
+        } else {
+            //如果没有最优方案了(生成的方案都是仓库中已经有的)，则返回上一代top20结果
+            return TopDetail;
+        }
+        //将已经计算过的方案进行添加
+        WareHouseCalculated.addAll(newSimple);
         System.out.println("查找每一代最优结果耗时：" + (System.currentTimeMillis() - topTenStartTime));
         return mapList;
     }
@@ -1391,12 +1473,13 @@ public class HarnessBranchTopoOptimize {
                 }
 
                 List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
-                jsonMap.put("edges", serviceableEdge);
+                Map<String, Object> threadLocalJsonMap = new HashMap<>(jsonMap);
+                threadLocalJsonMap.put("edges", serviceableEdge);
 
 
                 Map<String, Double> breakCostMap = new HashMap<>();
                 //节省时间，剔除不必要字段
-                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap), true);
+                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap), true);
                 Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
                 Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
 
@@ -1443,8 +1526,6 @@ public class HarnessBranchTopoOptimize {
                             scrapOrNot = true;
                             break;
                         }
-                        System.out.println(costResultData.get("总成本"));
-                        System.out.println(breakCostMap.get(minCostKey));
                         costResultData.put("总成本", (Double) costResultData.get("总成本") + breakCostMap.get(minCostKey));
                         serviceableStatue.set(normList.indexOf(minCostKey), "S");
                     } else {
@@ -1501,10 +1582,16 @@ public class HarnessBranchTopoOptimize {
         }
         //获取线程池结果
         for (Future<Map<String, Object>> future : futures) {
-            Map<String, Object> result = future.get();
-            if(result != null){
-                resultList.add(result);
+            try {
+                Map<String, Object> result = future.get();
+                if (result != null) {
+                    resultList.add(result);
+                }
+            } catch (Exception e) {
+                System.out.println("线程池任务执行异常:" + e.getMessage());
+                e.printStackTrace();
             }
+
         }
 //        每个方案进行计算
         List<Map<String, Object>> topBeat = findBest.findBest(resultList, "成本", TopNumber);
@@ -1664,7 +1751,7 @@ public class HarnessBranchTopoOptimize {
 
                     }
                 }
-
+                //统计多选一中，变b和s的分支
                 for (Map<String, String> map : chooseResultList) {
                     for (String s : map.keySet()) {
                         if (map.get(s).equals("B")) {
