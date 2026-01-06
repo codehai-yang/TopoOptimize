@@ -21,12 +21,12 @@ public class main {
     public static void main(String[] args) throws Exception {
 
         //线束拓扑优化
-        File file = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
-        String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
-        HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
-        harnessBranchTopoOptimize.topoOptimize(jsonContent);
-        HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
-        harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
+//        File file = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
+//        String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
+//        HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
+//        harnessBranchTopoOptimize.topoOptimize(jsonContent);
+//        HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
+//        harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
 
 //        用电器优化
 //        long startTime = System.currentTimeMillis();
@@ -97,10 +97,10 @@ public class main {
 //
 //
         //整车信息计算
-//        File file1 = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\circuitInfo.txt");
-//        String jsonContent1 = new String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
-//        CircuitErrorOutput circuitErrorOutput=new CircuitErrorOutput();
-//        circuitErrorOutput.circuitErrorOutput(jsonContent1);
+        File file1 = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\circuitInfo.txt");
+        String jsonContent1 = new String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
+        CircuitErrorOutput circuitErrorOutput=new CircuitErrorOutput();
+        circuitErrorOutput.circuitErrorOutput(jsonContent1);
 
 
 //        File file2 = new File("data/DataCoopWithEB/123.txt");

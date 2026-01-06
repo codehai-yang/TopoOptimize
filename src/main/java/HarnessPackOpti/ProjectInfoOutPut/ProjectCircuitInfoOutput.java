@@ -12,10 +12,18 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.codec.binary.StringUtils;
 import org.apache.commons.collections4.map.LinkedMap;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.util.StringUtil;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOError;
+import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.text.DecimalFormat;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -167,6 +175,9 @@ public class ProjectCircuitInfoOutput {
         for (String name : set) {
             //焊点名称，拿到该焊点对应的所有回路,矩阵对象，导线价格信息，所有回路信息，是否固定，用电器可变位置点名称，导线物料单价商务成本
             Map<String, Object> groupInfo = findGroupInfo(name, fixMultiLoopInfos.get(name), adjacencyMatrixGraph, elecFixedLocationLibrary, projectInfo, true, null, electricalSet, elecBusinessPrice);
+            if(groupInfo == null){
+                continue;
+            }
 //            将所有的回路都添加到loopdetails里面
             int size = groupInfo.keySet().size();
             for (int i = 1; i < size; i++) {
@@ -374,6 +385,9 @@ public class ProjectCircuitInfoOutput {
         Set<String> nonfixMultiLoopInfosSet = nonfixedNotGroupLoopsMapMultiLoopInfos.keySet();
         for (String name : nonfixMultiLoopInfosSet) {
             Map<String, Object> groupInfo = findGroupInfo(name, nonfixedNotGroupLoopsMapMultiLoopInfos.get(name), adjacencyMatrixGraph, elecFixedLocationLibrary, projectInfo, false, bestInterFaceInfo, electricalSet, elecBusinessPrice);
+            if(groupInfo == null){
+                continue;
+            }
             int size = groupInfo.keySet().size();
             for (int i = 1; i < size; i++) {
                 Map<String, Object> groupDetailMap = (Map<String, Object>) groupInfo.get("到" + i + "用电器的信息");
@@ -637,10 +651,390 @@ public class ProjectCircuitInfoOutput {
         resultMap.put("bundeleRelatedCircuitInfo", bundeleRelatedCircuitInfo);
         resultMap.put("circuitInfo", circuitInfo);
         resultMap.put("projectCircuitInfo", projectCircuitInfo);
+        //导出表格用电器和系统信息
+        exportExcel(systemCircuitInfo,elecRelatedCircuitInfo);
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
         String json = objectMapper.writeValueAsString(resultMap);// 将Map转换为JSON字符串
 //        System.out.println("信息汇总:\n" +json);
         return json;
+    }
+
+    public static void  exportExcel(Map<String, Object> systemCircuitInfo,Map<String,Object> elecRelatedCircuitInfo) throws IOException {
+        Workbook workbook = null;
+        try{
+            //创建工作簿
+            workbook = new XSSFWorkbook();
+            Sheet systemSheet = workbook.createSheet("系统回路信息");
+            Sheet elecSheet = workbook.createSheet("用电器回路信息");
+
+            //创建样式
+            CellStyle titleStyle = createTitleStyle(workbook);
+            CellStyle headerStyle = createHeaderStyle(workbook);
+            CellStyle subHeaderStyle = createSubHeaderStyle(workbook);
+
+            //创建表头
+            createHead(systemSheet, elecSheet, titleStyle, headerStyle, subHeaderStyle);
+            int systemSheetLastRowNum = systemSheet.getLastRowNum();
+            int elecSheetLastRowNum = elecSheet.getLastRowNum();
+
+            String directory = "C:\\Users\\yhy\\Desktop";
+            //构建完整路径
+            String filePath = Paths.get(directory, "系统与用电器信息.xlsx").toString();
+            File file = new File(filePath);
+            //写入文件
+            FileOutputStream fileOutputStream = new FileOutputStream(file);
+            workbook.write(fileOutputStream);
+        }catch (Exception e){
+            e.printStackTrace();
+        }finally {
+            if (workbook != null) {
+                workbook.close();
+            }
+        }
+
+    }
+
+    //表头前半部分
+    public static void createHead(Sheet systemSheet, Sheet elecSheet,CellStyle titleStyle,
+                                  CellStyle headerStyle, CellStyle subHeaderStyl) {
+        Sheet[] sheets = new Sheet[]{systemSheet, elecSheet};
+        for (int j = 0; j < sheets.length; j++) {
+            if(j == 0){
+                //第0行表头(系统回路表头)
+                Row titleRow = systemSheet.createRow(0);
+                Row row2 = systemSheet.createRow(1);
+                Row row3 = systemSheet.createRow(2);
+                for (int i = 0; i < 8; i++) {
+                    Cell cell = titleRow.createCell(i);
+                    if (i == 0) {
+                        cell.setCellValue("回路信息");
+                        cell.setCellStyle(titleStyle);
+                    } else {
+                        cell.setCellStyle(titleStyle);
+                    }
+                    switch (i){
+                        case 0:
+                            Cell cell2 = row2.createCell(i);
+                            Cell cell3 = row3.createCell(i);
+                            cell2.setCellValue("方案名称");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 1:
+                            Cell cell4 = row2.createCell(i);
+                            Cell cell5 = row3.createCell(i);
+                            cell4.setCellValue("所属系统");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 2:
+                            Cell cell6 = row2.createCell(i);
+                            Cell cell7 = row3.createCell(i);
+                            cell6.setCellValue("回路编号");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 3:
+                            Cell cell8 = row2.createCell(i);
+                            Cell cell9 = row3.createCell(i);
+                            cell8.setCellValue("起点用电器名称");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 4:
+                            Cell cell10 = row2.createCell(i);
+                            Cell cell11 = row3.createCell(i);
+                            cell10.setCellValue("终点用电器名称");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 5:
+                            Cell cell12 = row2.createCell(i);
+                            Cell cell13 = row3.createCell(i);
+                            cell12.setCellValue("回路信号名");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 6:
+                            Cell cell14 = row2.createCell(i);
+                            Cell cell15 = row3.createCell(i);
+                            cell14.setCellValue("导线选型");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 7:
+                            Cell cell16 = row2.createCell(i);
+                            Cell cell17 = row3.createCell(i);
+                            cell16.setCellValue("回路属性");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                //合并第0行
+                systemSheet.addMergedRegion(new CellRangeAddress(0, 0, 0, 7));
+
+            }else {
+                //第0行表头(系统回路表头)
+                Row elecTitleRow = elecSheet.createRow(0);
+                Row row2 = elecSheet.createRow(1);
+                Row row3 = elecSheet.createRow(2);
+                for (int i = 0; i < 9; i++) {
+                    Cell cell = elecTitleRow.createCell(i);
+                    if (i == 0) {
+                        cell.setCellValue("回路信息");
+                        cell.setCellStyle(titleStyle);
+                    }else {
+                        cell.setCellStyle(titleStyle);
+                    }
+                    switch (i){
+                        case 0:
+                            Cell cell2 = row2.createCell(i);
+                            Cell cell3 = row3.createCell(i);
+                            cell2.setCellValue("方案名称");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 1:
+                            Cell cell4 = row2.createCell(i);
+                            Cell cell5 = row3.createCell(i);
+                            cell4.setCellValue("相关用电器");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 2:
+                            Cell cell6 = row2.createCell(i);
+                            Cell cell7 = row3.createCell(i);
+                            cell6.setCellValue("相关用电器接口编号");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 3:
+                            Cell cell8 = row2.createCell(i);
+                            Cell cell9 = row3.createCell(i);
+                            cell8.setCellValue("回路编号");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 4:
+                            Cell cell10 = row2.createCell(i);
+                            Cell cell11 = row3.createCell(i);
+                            cell10.setCellValue("起点用电器名称");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 5:
+                            Cell cell12 = row2.createCell(i);
+                            Cell cell13 = row3.createCell(i);
+                            cell12.setCellValue("起点用电器名称");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 6:
+                            Cell cell14 = row2.createCell(i);
+                            Cell cell15 = row3.createCell(i);
+                            cell14.setCellValue("回路信号名");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 7:
+                            Cell cell16 = row2.createCell(i);
+                            Cell cell17 = row3.createCell(i);
+                            cell16.setCellValue("导线选型");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        case 8:
+                            Cell cell18 = row2.createCell(i);
+                            Cell cell19 = row3.createCell(i);
+                            cell18.setCellValue("回路属性");
+                            systemSheet.addMergedRegion(new CellRangeAddress(1, 2, i, i));
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                //合并第0行
+                elecSheet.addMergedRegion(new CellRangeAddress(0, 0, 0, 8));
+
+            }
+        }
+        //制作后面的表头(两个sheet字段一样)
+        createLastHeader(systemSheet, elecSheet);
+    }
+
+    /**
+     * 制作后面的表头
+     * @param systemSheet
+     * @param elecSheet
+     */
+    public static void createLastHeader(Sheet systemSheet, Sheet elecSheet){
+        Sheet[] sheets = new Sheet[]{systemSheet, elecSheet};
+        for (int i = 0; i < sheets.length; i++) {
+            Sheet caseSheet = sheets[i];
+            Row row = caseSheet.getRow(0);
+            int lastCellNum = row.getLastCellNum();
+            Row row1 = caseSheet.getRow(1);
+            int lastCellNum1 = row1.getLastCellNum();
+            Row row2 = caseSheet.getRow(2);
+            int lastCellNum2 = row2.getLastCellNum();
+            //后半部分表头
+            for (int j = 1; j <= 25; j++) {
+                Cell cell = row.createCell(lastCellNum + j);
+                Cell cell2 = row1.createCell(lastCellNum1 + j);
+                Cell cell3 = row2.createCell(lastCellNum2 + j);
+                switch (j){
+                    case 1:
+                        cell2.setCellValue("理论直径(毫米)");
+                        cell.setCellValue("计算结果");
+                        break;
+                    case 2:
+                        cell2.setCellValue("回路总长度(米)");
+                        caseSheet.addMergedRegion(new CellRangeAddress(1, 2, lastCellNum + j, lastCellNum + j));
+                        break;
+                    case 3:
+                        cell2.setCellValue("回路总重量(克)");
+                        caseSheet.addMergedRegion(new CellRangeAddress(1, 2, lastCellNum + j, lastCellNum + j));
+                        break;
+                    case 4:
+                        cell2.setCellValue("回路总成本(元)");
+                        caseSheet.addMergedRegion(new CellRangeAddress(1, 2, lastCellNum + j, lastCellNum + j));
+                        break;
+                    case 5:
+                        cell2.setCellValue("回路成本分解");
+                        cell3.setCellValue("导线成本(元)");
+                        break;
+                    case 6:
+                        cell3.setCellValue("端子成本(元)");
+                        break;
+                    case 7:
+                        cell3.setCellValue("连接器塑壳成本(元)");
+                        break;
+                    case 8:
+                        cell3.setCellValue("防水赛成本(元)");
+                        caseSheet.addMergedRegion(new CellRangeAddress(0, 0, lastCellNum + 1, lastCellNum + j));
+                        caseSheet.addMergedRegion(new CellRangeAddress(1, 1, lastCellNum + 5, lastCellNum + j));
+                        break;
+                    case 9:
+                        cell.setCellValue("量化指标");
+                        cell2.setCellValue("回路数量-A类(根)");
+                        cell3.setCellValue("按照回路打断后计算");
+                        break;
+                    case 10:
+                        cell2.setCellValue("回路数量-B类(根)");
+                        cell3.setCellValue("按照回路打断前计算");
+                        break;
+                    case 11:
+                        cell2.setCellValue("回路重量均值(克/根)");
+                        cell3.setCellValue("回路重量总值+回路数量-B类");
+                        break;
+                    case 12:
+                        cell2.setCellValue("回路成本均值(元/根)");
+                        cell3.setCellValue("回路成本总值+回路数量-B类");
+                        break;
+                    case 13:
+                        cell2.setCellValue("回路长度均值(米/根)");
+                        cell3.setCellValue("回路长度总值+回路数量-B类");
+                        break;
+                    case 14:
+                        cell2.setCellValue("回路打断总次数(根)");
+                        cell3.setCellValue("回路数量-B类的所有回路共计被打断了多少次");
+                        break;
+                    case 15:
+                        cell2.setCellValue("回路打断数量占比(百分比)");
+                        cell3.setCellValue("回路打断总次数-回路数量-B类");
+                        break;
+                    case 16:
+                        cell2.setCellValue("回路打断成本总值(元)");
+                        cell3.setCellValue("inline的端子/塑壳/密封塞");
+                        break;
+                    case 17:
+                        cell2.setCellValue("回路打断成本均值(元/根)");
+                        cell3.setCellValue("回路打断成本总值+回路打断总数量");
+                        break;
+                    case 18:
+                        cell2.setCellValue("回路绕线总数量(根)");
+                        cell3.setCellValue("回路数量-B类的回路中有几根绕线");
+                        break;
+                    case 19:
+                        cell2.setCellValue("回路绕线数量占比(百分比)");
+                        cell3.setCellValue("回路绕线总数量+回路数量-B类");
+                        break;
+                    case 20:
+                        cell2.setCellValue("回路绕线长度总值(米)");
+                        cell3.setCellValue("回路绕线后长度-回路不绕线长度");
+                        break;
+                    case 21:
+                        cell2.setCellValue("回路绕线长度均值(米)");
+                        cell3.setCellValue("回路绕线长度总值+回路绕线总数量");
+                        break;
+                    case 22:
+                        cell2.setCellValue("能量流绕线总数量(根)");
+                        cell3.setCellValue("回路数量-B类的回路中有几根能量流绕路");
+                        break;
+                    case 23:
+                        cell2.setCellValue("能量流绕线数量占比(百分比)");
+                        cell3.setCellValue("能量流绕路总数量+回路数量-B类");
+                        break;
+                    case 24:
+                        cell2.setCellValue("能量流绕路长度总值(米)");
+                        cell3.setCellValue("能量流绕路后长度-能量流不绕路长度");
+                        break;
+                    case 25:
+                        cell2.setCellValue("能量流绕路长度均值(米/根)");
+                        cell3.setCellValue("能量流绕路长度总值+能量流绕路总数量");
+                        caseSheet.addMergedRegion(new CellRangeAddress(0, 0, lastCellNum + 9, lastCellNum + j));
+                        break;
+                    default:
+                        break;
+                }
+            }
+
+        }
+    }
+    /**
+     * 创建标题样式
+     */
+    private static CellStyle createTitleStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+        Font font = workbook.createFont();
+        font.setBold(true);
+        font.setFontHeightInPoints((short) 16);
+        style.setFont(font);
+        style.setAlignment(HorizontalAlignment.CENTER);
+        style.setVerticalAlignment(VerticalAlignment.CENTER);
+        style.setFillForegroundColor(IndexedColors.LIGHT_BLUE.getIndex());
+        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        style.setBorderBottom(BorderStyle.THIN);
+        style.setBorderTop(BorderStyle.THIN);
+        style.setBorderRight(BorderStyle.THIN);
+        style.setBorderLeft(BorderStyle.THIN);
+        return style;
+    }
+
+    /**
+     * 创建表头样式
+     */
+    private static CellStyle createHeaderStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+        Font font = workbook.createFont();
+        font.setBold(true);
+        font.setFontHeightInPoints((short) 12);
+        style.setFont(font);
+        style.setAlignment(HorizontalAlignment.CENTER);
+        style.setVerticalAlignment(VerticalAlignment.CENTER);
+        style.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
+        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        style.setBorderBottom(BorderStyle.THIN);
+        style.setBorderTop(BorderStyle.THIN);
+        style.setBorderRight(BorderStyle.THIN);
+        style.setBorderLeft(BorderStyle.THIN);
+        return style;
+    }
+
+    /**
+     * 创建子表头样式
+     */
+    private static CellStyle createSubHeaderStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+        Font font = workbook.createFont();
+        font.setBold(true);
+        style.setFont(font);
+        style.setAlignment(HorizontalAlignment.CENTER);
+        style.setVerticalAlignment(VerticalAlignment.CENTER);
+        style.setFillForegroundColor(IndexedColors.GREY_40_PERCENT.getIndex());
+        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        style.setBorderBottom(BorderStyle.THIN);
+        style.setBorderTop(BorderStyle.THIN);
+        style.setBorderRight(BorderStyle.THIN);
+        style.setBorderLeft(BorderStyle.THIN);
+        return style;
     }
 
     public void circuitCoilingLength(Map<String, Object> loopdetails, List<Map<String, String>> edges, GenerateTopoMatrixConnector adjacencyMatrixGraphConnector, Map<String, Object> projectInfo) {
@@ -775,8 +1169,15 @@ public class ProjectCircuitInfoOutput {
                 Map<String, String> map1 = elecFixedLocationLibrary.get(loopWireway);
 //               找最短距离 起点-终点最短路径列表
 //                获取用电器所在位置
+                //判断 两点是否在图结构中
+                if(adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路起点用电器").toString(), app)) == -1 || adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路终点用电器").toString(), app)) == -1){
+                    continue;
+                }
                 //用电器起点和终点对应的索引列表；回路起点用电器和终点用电器在表头的索引位置
                 List<Integer> shortestPathBetweenTwoPoint = findShortestPath.findShortestPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路起点用电器").toString(), app)), adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路终点用电器").toString(), app)));
+                if(shortestPathBetweenTwoPoint == null){
+                    continue;
+                }
                 //获取最短路径每个点的用电器名称
                 List<String> listname = convertPathToNumbers(shortestPathBetweenTwoPoint, adjacencyMatrixGraph.getAllPoint());
 
@@ -1637,12 +2038,14 @@ public class ProjectCircuitInfoOutput {
                 } else {
                     if (electricalSet.contains(end)) {
                         Map<String, String> map1 = (Map<String, String>) objectMap.get(end);
-                        if (port == null) {
-                            endName = map1.get("null");
-                        } else if (!map1.containsKey(port)) {
-                            endName = findNode(end, appPositions);
-                        } else {
-                            endName = map1.get(port);
+                        if(map1 != null) {
+                            if (port == null) {
+                                endName = map1.get("null");
+                            } else if (!map1.containsKey(port)) {
+                                endName = findNode(end, appPositions);
+                            } else {
+                                endName = map1.get(port);
+                            }
                         }
                     } else {
                         endName = findNode(end, appPositions);
@@ -1754,7 +2157,7 @@ public class ProjectCircuitInfoOutput {
      */
     public String getWaterParam(String name, List<Map<String, String>> maps) {
         for (Map<String, String> map : maps) {
-            if (name.equalsIgnoreCase(map.get("端点名称"))) {
+            if (StringUtil.isNotBlank(name) && name.equalsIgnoreCase(map.get("端点名称"))) {
                 return map.get("端点干湿");
             }
         }
