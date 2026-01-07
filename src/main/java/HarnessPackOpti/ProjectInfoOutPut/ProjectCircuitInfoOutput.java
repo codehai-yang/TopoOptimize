@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 
 public class ProjectCircuitInfoOutput {
     public static void main(String[] args) throws Exception {
-        File file = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\20250630.txt");
+        File file = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\量化参数自动预警demo假数据.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         String json = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent, true);
@@ -572,10 +572,10 @@ public class ProjectCircuitInfoOutput {
             for (String name : systemMapset) {
                 List<String> list = systemMap.get(name);
                 Map<String, Object> objectMap = circuitInfoIntergation.intergateCircuitInfo(list, loopdetails);
-                Map<String, Object> cloneMap = (Map<String, Object>) objectMap.get("circuitInfo");
-                cloneMap.remove("总理论直径");
+                Map<String, Object> cloneMap = (Map<String, Object>) objectMap.get("circuitInfoIntergation");
+//                cloneMap.remove("总理论直径");
                 cloneMap.remove("分支直径RGB坐标");
-                objectMap.put("circuitInfo", cloneMap);
+                objectMap.put("circuitInfoIntergation", cloneMap);
                 //系统回路信息整合
                 systemCircuitInfo.put(name, objectMap);
             }
@@ -653,14 +653,14 @@ public class ProjectCircuitInfoOutput {
         resultMap.put("circuitInfo", circuitInfo);
         resultMap.put("projectCircuitInfo", projectCircuitInfo);
         //导出表格用电器和系统信息
-        exportExcel(systemCircuitInfo,elecRelatedCircuitInfo,caseInfo);
+        exportExcel(systemCircuitInfo,elecRelatedCircuitInfo,caseInfo, loopdetails);
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
         String json = objectMapper.writeValueAsString(resultMap);// 将Map转换为JSON字符串
 //        System.out.println("信息汇总:\n" +json);
         return json;
     }
 
-    public static void  exportExcel(Map<String, Object> systemCircuitInfo,Map<String,Object> elecRelatedCircuitInfo,Map<String, Object> caseInfo) throws IOException {
+    public static void  exportExcel(Map<String, Object> systemCircuitInfo,Map<String,Object> elecRelatedCircuitInfo,Map<String, Object> caseInfo,Map<String, Object> loopdetails) throws IOException {
         Workbook workbook = null;
         try{
             //创建工作簿
@@ -676,8 +676,8 @@ public class ProjectCircuitInfoOutput {
             //创建表头
             createHead(systemSheet, elecSheet, titleStyle, headerStyle, subHeaderStyle);
             // 填充实际数据
-            populateSystemSheet(systemSheet, systemCircuitInfo, headerStyle, subHeaderStyle, caseInfo);
-            populateElecSheet(elecSheet, elecRelatedCircuitInfo, headerStyle, subHeaderStyle);
+            populateSystemSheet(systemSheet, systemCircuitInfo, headerStyle, subHeaderStyle, caseInfo,loopdetails);
+            populateElecSheet(elecSheet, elecRelatedCircuitInfo, headerStyle, subHeaderStyle,caseInfo,loopdetails);
 
             // 自动调整所有列的宽度
             for (int i = 0; i < systemSheet.getRow(0).getLastCellNum(); i++) {
@@ -736,8 +736,40 @@ public class ProjectCircuitInfoOutput {
         }
 
     }
-// ... existing code ...
 
+
+    /**
+     * 给指定行的指定列范围设置颜色
+     * @param row 行对象
+     * @param startIndex 起始列索引（从0开始）
+     * @param endIndex 结束列索引（包含）
+     * @param workbook 工作簿对象
+     * @param backgroundColor 背景色
+     */
+    public static void colorRowRange(Row row, int startIndex, int endIndex, Workbook workbook, IndexedColors backgroundColor) {
+        CellStyle colorStyle = workbook.createCellStyle();
+        Font font = workbook.createFont();
+        font.setBold(true);
+        font.setFontHeightInPoints((short) 12);
+        colorStyle.setFont(font);
+        colorStyle.setAlignment(HorizontalAlignment.CENTER);
+        colorStyle.setVerticalAlignment(VerticalAlignment.CENTER);
+        colorStyle.setWrapText(true);
+        colorStyle.setFillForegroundColor(backgroundColor.getIndex());
+        colorStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        colorStyle.setBorderBottom(BorderStyle.THIN);
+        colorStyle.setBorderTop(BorderStyle.THIN);
+        colorStyle.setBorderRight(BorderStyle.THIN);
+        colorStyle.setBorderLeft(BorderStyle.THIN);
+
+        for (int i = startIndex; i <= endIndex; i++) {
+            Cell cell = row.getCell(i);
+            if (cell == null) {
+                cell = row.createCell(i);
+            }
+            cell.setCellStyle(colorStyle);
+        }
+    }
     /**
      * 填充系统回路信息表
      * @param sheet 系统回路表
@@ -745,19 +777,18 @@ public class ProjectCircuitInfoOutput {
      * @param headerStyle 表头样式
      * @param subHeaderStyle 子表头样式
      */
-    public static void populateSystemSheet(Sheet sheet, Map<String, Object> systemCircuitInfo, CellStyle headerStyle, CellStyle subHeaderStyle,Map<String, Object> caseInfo) {
+    public static void populateSystemSheet(Sheet sheet, Map<String, Object> systemCircuitInfo, CellStyle headerStyle, CellStyle subHeaderStyle,Map<String, Object> caseInfo,Map<String, Object> loopdetails) {
         int rowNum = 3; // 从第4行开始填充数据（前面3行是表头）
-
         for (String systemName : systemCircuitInfo.keySet()) {
             Map<String, Object> systemData = (Map<String, Object>) systemCircuitInfo.get(systemName);
-            Map<String, Object> circuitInfo = (Map<String, Object>) systemData.get("circuitInfo");
+            Map<String, Object> circuitInfo = (Map<String, Object>) systemData.get("circuitInfoIntergation");
             //系统相关回路信息
-            Map<String, Object> circuitList = (Map<String, Object>) systemData.get("circuitList");
+            List<String> circuitList = (List<String>) systemData.get("circuitList");
 
             Row row = sheet.createRow(rowNum++);
-
+            int lastCellNum = sheet.getRow(1).getLastCellNum();
             // 填充基础信息（前8列）
-            createCell(row, 0, caseInfo.get("caseName").toString(), headerStyle); // 回路信息
+            createCell(row, 0, caseInfo.get("方案名称").toString(), headerStyle); // 回路信息
             createCell(row, 1, systemName, headerStyle); // 所属系统
             createCell(row, 2, "", headerStyle); // 回路编号
             createCell(row, 3, "", headerStyle); // 起点用电器名称
@@ -768,8 +799,8 @@ public class ProjectCircuitInfoOutput {
 
             // 填充计算结果（后续列）
             int colIndex = 8; // 从第9列开始
-            createCell(row, colIndex++, circuitInfo.get("理论直径") != null ?
-                    circuitInfo.get("理论直径").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("总理论直径") != null ?
+                    circuitInfo.get("总理论直径").toString() : "0", headerStyle);
             createCell(row, colIndex++, circuitInfo.get("回路总长度") != null ?
                     circuitInfo.get("回路总长度").toString() : "0", headerStyle);
             createCell(row, colIndex++, circuitInfo.get("回路总重量") != null ?
@@ -792,36 +823,113 @@ public class ProjectCircuitInfoOutput {
                     circuitInfo.get("回路数量(打断后)").toString() : "0", headerStyle);
             createCell(row, colIndex++, circuitInfo.get("回路数量(打断前)") != null ?
                     circuitInfo.get("回路数量(打断前)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路重量均值(克/根)") != null ?
-                    circuitInfo.get("回路重量均值(克/根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路成本均值(元/根)") != null ?
-                    circuitInfo.get("回路成本均值(元/根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路长度均值(米/根)") != null ?
-                    circuitInfo.get("回路长度均值(米/根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路打断总次数(根)") != null ?
-                    circuitInfo.get("回路打断总次数(根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路打断数量占比(百分比)") != null ?
-                    circuitInfo.get("回路打断数量占比(百分比)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路打断成本总值(元)") != null ?
-                    circuitInfo.get("回路打断成本总值(元)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路打断成本均值(元/根)") != null ?
-                    circuitInfo.get("回路打断成本均值(元/根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路绕线总数量(根)") != null ?
-                    circuitInfo.get("回路绕线总数量(根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路绕线数量占比(百分比)") != null ?
-                    circuitInfo.get("回路绕线数量占比(百分比)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路绕线长度总值(米)") != null ?
-                    circuitInfo.get("回路绕线长度总值(米)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路绕线长度均值(米)") != null ?
-                    circuitInfo.get("回路绕线长度均值(米)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("能量流绕路总数量(根)") != null ?
-                    circuitInfo.get("能量流绕路总数量(根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("能量流绕路数量占比(百分比)") != null ?
-                    circuitInfo.get("能量流绕路数量占比(百分比)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("能量流绕路长度总值(米)") != null ?
-                    circuitInfo.get("能量流绕路长度总值(米)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("能量流绕路长度均值(米/根)") != null ?
-                    circuitInfo.get("能量流绕路长度均值(米/根)").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路重量均值") != null ?
+                    circuitInfo.get("回路重量均值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路成本均值") != null ?
+                    circuitInfo.get("回路成本均值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路长度均值(打断前)") != null ?
+                    circuitInfo.get("回路长度均值(打断前)").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路打断总次数") != null ?
+                    circuitInfo.get("回路打断总次数").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路打断数量占比") != null ?
+                    circuitInfo.get("回路打断数量占比").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路打断总成本") != null ?
+                    circuitInfo.get("回路打断总成本").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路打断成本代价均值") != null ?
+                    circuitInfo.get("回路打断成本代价均值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路绕线数量") != null ?
+                    circuitInfo.get("回路绕线数量").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路绕线数量占比") != null ?
+                    circuitInfo.get("回路绕线数量占比").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路绕线长度总值") != null ?
+                    circuitInfo.get("回路绕线长度总值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路绕线长度均值") != null ?
+                    circuitInfo.get("回路绕线长度均值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("能量流绕路总数量") != null ?
+                    circuitInfo.get("能量流绕路总数量").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("能量流绕路数量占比") != null ?
+                    circuitInfo.get("能量流绕路数量占比").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("能量流绕路长度总值") != null ?
+                    circuitInfo.get("能量流绕路长度总值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("能量流绕路长度均值") != null ?
+                    circuitInfo.get("能量流绕路长度均值").toString() : "0", headerStyle);
+            colorRowRange(row, 0, lastCellNum - 1, sheet.getWorkbook(), IndexedColors.YELLOW);
+            //填充子级信息
+            for (int i = 0; i < circuitList.size(); i++) {
+
+                Row anotherRow = sheet.createRow(rowNum++);
+                //回路id
+                String id = circuitList.get(i);
+                Map<String,Object> loopInfo = (Map<String,Object>)loopdetails.get(id);
+                // 填充基础信息（前8列）
+                createCell(anotherRow, 0, caseInfo.get("方案名称").toString(), headerStyle); // 回路信息
+                createCell(anotherRow, 1, systemName, headerStyle); // 所属系统
+                createCell(anotherRow, 2, loopInfo.get("回路编号").toString(), headerStyle); // 回路编号
+                createCell(anotherRow, 3, loopInfo.get("起点用电器名称").toString(), headerStyle); // 起点用电器名称
+                createCell(anotherRow, 4, loopInfo.get("终点用电器名称").toString(), headerStyle); // 终点用电器名称
+                createCell(anotherRow, 5, loopInfo.get("回路信号名").toString(), headerStyle); // 回路信号名
+                createCell(anotherRow, 6, loopInfo.get("导线选型").toString(), headerStyle); // 导线选型
+                createCell(anotherRow, 7, loopInfo.get("回路属性") == null?"null":loopInfo.get("回路属性").toString(), headerStyle); // 回路属性
+
+                // 填充计算结果（后续列）
+                int cell =8;
+                createCell(anotherRow, cell++, loopInfo.get("回路理论直径") != null ?
+                        loopInfo.get("回路理论直径").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路长度") != null ?
+                        loopInfo.get("回路长度").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路重量") != null ?
+                        loopInfo.get("回路重量").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路总成本") != null ?
+                        loopInfo.get("回路总成本").toString() : "0", headerStyle);
+
+                // 填充成本分解
+                createCell(anotherRow, cell++, loopInfo.get("回路导线成本") != null ?
+                        loopInfo.get("回路导线成本").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("端子成本") != null ?
+                        loopInfo.get("端子成本").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("连接器塑壳成本") != null ?
+                        loopInfo.get("连接器塑壳成本").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("防水塞成本") != null ?
+                        loopInfo.get("防水塞成本").toString() : "0", headerStyle);
+
+                DecimalFormat percentFormat = new DecimalFormat("0.00%");
+                double percentage = Double.parseDouble(loopInfo.get("回路打断次数").toString()) / 1.0;
+                String percentageString = percentFormat.format(percentage);
+                //回路打断总数量
+                int breakNumber = Integer.parseInt(loopInfo.get("回路打断次数").toString()) + 1;
+                //回路绕线数量
+                double backNumber = Double.parseDouble(loopInfo.get("回路绕线长度").toString()) == 0 ? 0:1;
+                double percentBack = backNumber / 1.0;
+                String percentBackString = percentFormat.format(percentBack);
+                // 填充量化指标
+                createCell(anotherRow, cell++, breakNumber + "", headerStyle);
+                createCell(anotherRow, cell++, "1", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路重量") != null ?
+                        loopInfo.get("回路重量").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路总成本") != null ?
+                        loopInfo.get("回路总成本").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路长度") != null ?
+                        loopInfo.get("回路长度").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路打断次数") != null ?
+                        loopInfo.get("回路打断次数").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, percentageString, headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路打断成本") != null ?
+                        loopInfo.get("回路打断成本").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, Double.parseDouble(loopInfo.get("回路打断成本").toString()) / breakNumber + "", headerStyle);
+                createCell(anotherRow, cell++, backNumber + "", headerStyle);
+                createCell(anotherRow, cell++, percentBackString, headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路绕线长度") != null ?
+                        loopInfo.get("回路绕线长度").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, backNumber == 0? 0 + "":(Double.parseDouble(loopInfo.get("回路绕线长度").toString()) / 1) + "", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("能量流绕路总数量") != null ?
+                        loopInfo.get("能量流绕路总数量").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("能量流绕路数量占比") != null ?
+                        loopInfo.get("能量流绕路数量占比").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("能量流绕路长度总值") != null ?
+                        loopInfo.get("能量流绕路长度总值").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("能量流绕路长度均值") != null ?
+                        loopInfo.get("能量流绕路长度均值").toString() : "0", headerStyle);
+            }
         }
     }
 
@@ -832,17 +940,18 @@ public class ProjectCircuitInfoOutput {
      * @param headerStyle 表头样式
      * @param subHeaderStyle 子表头样式
      */
-    public static void populateElecSheet(Sheet sheet, Map<String, Object> elecRelatedCircuitInfo, CellStyle headerStyle, CellStyle subHeaderStyle) {
+    public static void populateElecSheet(Sheet sheet, Map<String, Object> elecRelatedCircuitInfo, CellStyle headerStyle, CellStyle subHeaderStyle,Map<String, Object> caseInfo,Map<String, Object> loopdetails) {
         int rowNum = 3; // 从第4行开始填充数据（前面3行是表头）
 
         for (String elecName : elecRelatedCircuitInfo.keySet()) {
             Map<String, Object> elecData = (Map<String, Object>) elecRelatedCircuitInfo.get(elecName);
-            Map<String, Object> circuitInfo = (Map<String, Object>) elecData.get("circuitInfo");
+            Map<String, Object> circuitInfo = (Map<String, Object>) elecData.get("circuitInfoIntergation");
+            List<String> circuitList = (List<String>) elecData.get("circuitList");
 
             Row row = sheet.createRow(rowNum++);
-
+            int lastCellNum = sheet.getRow(1).getLastCellNum();
             // 填充基础信息（前9列）
-            createCell(row, 0, "", headerStyle); // 回路信息
+            createCell(row, 0, caseInfo.get("方案名称").toString(), headerStyle); // 方案名称
             createCell(row, 1, elecName, headerStyle); // 相关用电器
             createCell(row, 2, "", headerStyle); // 相关用电器接口编号
             createCell(row, 3, "", headerStyle); // 回路编号
@@ -854,60 +963,138 @@ public class ProjectCircuitInfoOutput {
 
             // 填充计算结果（后续列）
             int colIndex = 9; // 从第10列开始
-            createCell(row, colIndex++, circuitInfo.get("理论直径(毫米)") != null ?
-                    circuitInfo.get("理论直径(毫米)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路总长度(米)") != null ?
-                    circuitInfo.get("回路总长度(米)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路总重量(克)") != null ?
-                    circuitInfo.get("回路总重量(克)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路总成本(元)") != null ?
-                    circuitInfo.get("回路总成本(元)").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("总理论直径") != null ?
+                    circuitInfo.get("总理论直径").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路总长度") != null ?
+                    circuitInfo.get("回路总长度").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路总重量") != null ?
+                    circuitInfo.get("回路总重量").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("总成本") != null ?
+                    circuitInfo.get("总成本").toString() : "0", headerStyle);
 
             // 填充成本分解
-            createCell(row, colIndex++, circuitInfo.get("导线成本(元)") != null ?
-                    circuitInfo.get("导线成本(元)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("端子成本(元)") != null ?
-                    circuitInfo.get("端子成本(元)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("连接器塑壳成本(元)") != null ?
-                    circuitInfo.get("连接器塑壳成本(元)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("防水塞成本(元)") != null ?
-                    circuitInfo.get("防水塞成本(元)").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路导线总成本") != null ?
+                    circuitInfo.get("回路导线总成本").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("端子总成本") != null ?
+                    circuitInfo.get("端子总成本").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("连接器塑壳总成本") != null ?
+                    circuitInfo.get("连接器塑壳总成本").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("防水塞总成本") != null ?
+                    circuitInfo.get("防水塞总成本").toString() : "0", headerStyle);
 
             // 填充量化指标
-            createCell(row, colIndex++, circuitInfo.get("回路数量-A类(根)") != null ?
-                    circuitInfo.get("回路数量-A类(根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路数量-B类(根)") != null ?
-                    circuitInfo.get("回路数量-B类(根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路重量均值(克/根)") != null ?
-                    circuitInfo.get("回路重量均值(克/根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路成本均值(元/根)") != null ?
-                    circuitInfo.get("回路成本均值(元/根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路长度均值(米/根)") != null ?
-                    circuitInfo.get("回路长度均值(米/根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路打断总次数(根)") != null ?
-                    circuitInfo.get("回路打断总次数(根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路打断数量占比(百分比)") != null ?
-                    circuitInfo.get("回路打断数量占比(百分比)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路打断成本总值(元)") != null ?
-                    circuitInfo.get("回路打断成本总值(元)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路打断成本均值(元/根)") != null ?
-                    circuitInfo.get("回路打断成本均值(元/根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路绕线总数量(根)") != null ?
-                    circuitInfo.get("回路绕线总数量(根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路绕线数量占比(百分比)") != null ?
-                    circuitInfo.get("回路绕线数量占比(百分比)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路绕线长度总值(米)") != null ?
-                    circuitInfo.get("回路绕线长度总值(米)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("回路绕线长度均值(米)") != null ?
-                    circuitInfo.get("回路绕线长度均值(米)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("能量流绕路总数量(根)") != null ?
-                    circuitInfo.get("能量流绕路总数量(根)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("能量流绕路数量占比(百分比)") != null ?
-                    circuitInfo.get("能量流绕路数量占比(百分比)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("能量流绕路长度总值(米)") != null ?
-                    circuitInfo.get("能量流绕路长度总值(米)").toString() : "0", headerStyle);
-            createCell(row, colIndex++, circuitInfo.get("能量流绕路长度均值(米/根)") != null ?
-                    circuitInfo.get("能量流绕路长度均值(米/根)").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路数量(打断后)") != null ?
+                    circuitInfo.get("回路数量(打断后)").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路数量(打断前)") != null ?
+                    circuitInfo.get("回路数量(打断前)").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路重量均值") != null ?
+                    circuitInfo.get("回路重量均值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路成本均值") != null ?
+                    circuitInfo.get("回路成本均值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路长度均值(打断前)") != null ?
+                    circuitInfo.get("回路长度均值(打断前)").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路打断总次数") != null ?
+                    circuitInfo.get("回路打断总次数").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路打断数量占比") != null ?
+                    circuitInfo.get("回路打断数量占比").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路打断总成本") != null ?
+                    circuitInfo.get("回路打断总成本").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路打断成本代价均值") != null ?
+                    circuitInfo.get("回路打断成本代价均值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路绕线数量") != null ?
+                    circuitInfo.get("回路绕线数量").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路绕线数量占比") != null ?
+                    circuitInfo.get("回路绕线数量占比").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路绕线长度总值") != null ?
+                    circuitInfo.get("回路绕线长度总值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("回路绕线长度均值") != null ?
+                    circuitInfo.get("回路绕线长度均值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("能量流绕路总数量") != null ?
+                    circuitInfo.get("能量流绕路总数量").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("能量流绕路数量占比") != null ?
+                    circuitInfo.get("能量流绕路数量占比").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("能量流绕路长度总值") != null ?
+                    circuitInfo.get("能量流绕路长度总值").toString() : "0", headerStyle);
+            createCell(row, colIndex++, circuitInfo.get("能量流绕路长度均值") != null ?
+                    circuitInfo.get("能量流绕路长度均值").toString() : "0", headerStyle);
+            colorRowRange(row, 0, lastCellNum-1, sheet.getWorkbook(), IndexedColors.YELLOW);
+            //填充子级信息
+            for (int i = 0; i < circuitList.size(); i++) {
+
+                Row anotherRow = sheet.createRow(rowNum++);
+                //回路id
+                String id = circuitList.get(i);
+                Map<String,Object> loopInfo = (Map<String,Object>)loopdetails.get(id);
+                // 填充基础信息（前8列）
+                createCell(anotherRow, 0, caseInfo.get("方案名称").toString(), headerStyle); // 回路信息
+                createCell(anotherRow, 1, elecName, headerStyle); // 所属系统
+                createCell(anotherRow, 2, loopInfo.get("回路起点用电器接口编号") + "/" + loopInfo.get("回路终点用电器接口编号"), headerStyle); // 回路编号
+                createCell(anotherRow, 3, loopInfo.get("回路编号").toString(), headerStyle); // 回路编号
+                createCell(anotherRow, 4, loopInfo.get("起点用电器名称").toString(), headerStyle); // 起点用电器名称
+                createCell(anotherRow, 5, loopInfo.get("终点用电器名称").toString(), headerStyle); // 终点用电器名称
+                createCell(anotherRow, 6, loopInfo.get("回路信号名").toString(), headerStyle); // 回路信号名
+                createCell(anotherRow, 7, loopInfo.get("导线选型").toString(), headerStyle); // 导线选型
+                createCell(anotherRow, 8, loopInfo.get("回路属性") == null ? "null" : loopInfo.get("回路属性").toString(), headerStyle); // 回路属性
+
+                // 填充计算结果（后续列）
+                int cell =9;
+                createCell(anotherRow, cell++, loopInfo.get("回路理论直径") != null ?
+                        loopInfo.get("回路理论直径").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路长度") != null ?
+                        loopInfo.get("回路长度").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路重量") != null ?
+                        loopInfo.get("回路重量").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路总成本") != null ?
+                        loopInfo.get("回路总成本").toString() : "0", headerStyle);
+
+                // 填充成本分解
+                createCell(anotherRow, cell++, loopInfo.get("回路导线成本") != null ?
+                        loopInfo.get("回路导线成本").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("端子成本") != null ?
+                        loopInfo.get("端子成本").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("连接器塑壳成本") != null ?
+                        loopInfo.get("连接器塑壳成本").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("防水塞成本") != null ?
+                        loopInfo.get("防水塞成本").toString() : "0", headerStyle);
+
+                DecimalFormat percentFormat = new DecimalFormat("0.00%");
+                double percentage = Double.parseDouble(loopInfo.get("回路打断次数").toString()) / 1.0;
+                String percentageString = percentFormat.format(percentage);
+                //回路打断总数量
+                int breakNumber = Integer.parseInt(loopInfo.get("回路打断次数").toString()) + 1;
+                //回路绕线数量
+                double backNumber = Double.parseDouble(loopInfo.get("回路绕线长度").toString()) == 0 ? 0:1;
+                double percentBack = backNumber / 1.0;
+                String percentBackString = percentFormat.format(percentBack);
+                // 填充量化指标
+                createCell(anotherRow, cell++, breakNumber + "", headerStyle);
+                createCell(anotherRow, cell++, "1", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路重量") != null ?
+                        loopInfo.get("回路重量").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路总成本") != null ?
+                        loopInfo.get("回路总成本").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路长度") != null ?
+                        loopInfo.get("回路长度").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路打断次数") != null ?
+                        loopInfo.get("回路打断次数").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, percentageString, headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路打断成本") != null ?
+                        loopInfo.get("回路打断成本").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, Double.parseDouble(loopInfo.get("回路打断成本").toString()) / breakNumber + "", headerStyle);
+                createCell(anotherRow, cell++, backNumber + "", headerStyle);
+                createCell(anotherRow, cell++, percentBackString, headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("回路绕线长度") != null ?
+                        loopInfo.get("回路绕线长度").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, backNumber == 0? 0 + "":(Double.parseDouble(loopInfo.get("回路绕线长度").toString()) / 1) + "", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("能量流绕路总数量") != null ?
+                        loopInfo.get("能量流绕路总数量").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("能量流绕路数量占比") != null ?
+                        loopInfo.get("能量流绕路数量占比").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("能量流绕路长度总值") != null ?
+                        loopInfo.get("能量流绕路长度总值").toString() : "0", headerStyle);
+                createCell(anotherRow, cell++, loopInfo.get("能量流绕路长度均值") != null ?
+                        loopInfo.get("能量流绕路长度均值").toString() : "0", headerStyle);
+            }
         }
     }
 
@@ -921,7 +1108,14 @@ public class ProjectCircuitInfoOutput {
     private static void createCell(Row row, int columnIndex, String value, CellStyle style) {
         Cell cell = row.createCell(columnIndex);
         if (value != null) {
-            cell.setCellValue(value);
+            try {
+                // 尝试将字符串转换为数值
+                double numericValue = Double.parseDouble(value);
+                cell.setCellValue(numericValue);
+            } catch (NumberFormatException e) {
+                // 如果不是数值格式，则作为字符串处理
+                cell.setCellValue(value);
+            }
         } else {
             cell.setCellValue("");
         }
