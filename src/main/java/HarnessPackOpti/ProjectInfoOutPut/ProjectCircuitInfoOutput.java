@@ -639,7 +639,7 @@ public class ProjectCircuitInfoOutput {
                 }
             }
             Map<String, String> colorMap = getColorByEdges(list, circuitInfo, wet.equals("W"), elecFixedLocationLibrary);
-            Map<String, Object> objectMap1 = (Map<String, Object>) objectMap.get("circuitInfo");
+            Map<String, Object> objectMap1 = (Map<String, Object>) objectMap.get("circuitInfoIntergation");
             objectMap1.put("分支打断代价RGB坐标", colorMap.get("color"));
             objectMap1.put("分支打断代价", colorMap.get("cost"));
         }
@@ -1887,7 +1887,7 @@ public class ProjectCircuitInfoOutput {
         totalCost.put("回路长度均值(打断后)", avgLength2);
         totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * 1.3)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
-        map.put("circuitInfo", totalCost);
+        map.put("circuitInfoIntergation", totalCost);
         map.put("circuitList", mapList);
         return map;
     }
