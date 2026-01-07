@@ -563,14 +563,15 @@ public class ProjectCircuitInfoOutput {
         //所有回路信息的总和
         Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails);
         //            对分支进行计算
-        IntergateCircuitInfo circuitInfo = new IntergateCircuitInfo();
+        IntergateCircuitInfo circuitInfoIntergation = new IntergateCircuitInfo();
+
 
         if (whetherCalculate) {
             Set<String> systemMapset = systemMap.keySet();
             //要求计算才会计算
             for (String name : systemMapset) {
                 List<String> list = systemMap.get(name);
-                Map<String, Object> objectMap = circuitInfo.intergateCircuitInfo(list, loopdetails);
+                Map<String, Object> objectMap = circuitInfoIntergation.intergateCircuitInfo(list, loopdetails);
                 Map<String, Object> cloneMap = (Map<String, Object>) objectMap.get("circuitInfo");
                 cloneMap.remove("总理论直径");
                 cloneMap.remove("分支直径RGB坐标");
@@ -585,7 +586,7 @@ public class ProjectCircuitInfoOutput {
 
             for (String name : elecMap.keySet()) {
                 List<String> listSet = elecMap.get(name);
-                Map<String, Object> objectMap1 = circuitInfo.intergateCircuitInfo(listSet.stream().collect(Collectors.toList()), loopdetails);
+                Map<String, Object> objectMap1 = circuitInfoIntergation.intergateCircuitInfo(listSet.stream().collect(Collectors.toList()), loopdetails);
                 elecRelatedCircuitInfo.put(name, objectMap1);
             }
 
@@ -598,7 +599,7 @@ public class ProjectCircuitInfoOutput {
                     Map<String, Object> objectMap2 = new HashMap<>();
                     for (String key : interfaceDetailList.keySet()) {
                         Set<String> list1 = (Set<String>) interfaceDetailList.get(key);
-                        Map<String, Object> interfaceCost = circuitInfo.intergateCircuitInfo(list1.stream().collect(Collectors.toList()), loopdetails);
+                        Map<String, Object> interfaceCost = circuitInfoIntergation.intergateCircuitInfo(list1.stream().collect(Collectors.toList()), loopdetails);
                         objectMap2.put(key, interfaceCost);
                     }
                     elecInterfaceRelatedCircuitInfo.put(name, objectMap2);

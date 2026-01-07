@@ -83,6 +83,7 @@ public class IntergateCircuitInfo {
             totalCost.put("回路绕线数量占比","0.00%");
             totalCost.put("回路打断数量占比","0.00%");
         }
+        totalCost.put("回路重量均值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / pathId.size())));
         totalCost.put("回路数量(打断前)", pathId.size());
         totalCost.put("回路数量(打断后)", count);
         //回路均值打断前
