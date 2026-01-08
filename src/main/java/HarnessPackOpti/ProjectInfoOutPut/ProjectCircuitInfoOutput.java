@@ -653,7 +653,7 @@ public class ProjectCircuitInfoOutput {
         resultMap.put("circuitInfo", circuitInfo);
         resultMap.put("projectCircuitInfo", projectCircuitInfo);
         //导出表格用电器和系统信息
-//        exportExcel(systemCircuitInfo,elecRelatedCircuitInfo,caseInfo, loopdetails);
+        exportExcel(systemCircuitInfo,elecRelatedCircuitInfo,caseInfo, loopdetails);
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
         String json = objectMapper.writeValueAsString(resultMap);// 将Map转换为JSON字符串
 //        System.out.println("信息汇总:\n" +json);
