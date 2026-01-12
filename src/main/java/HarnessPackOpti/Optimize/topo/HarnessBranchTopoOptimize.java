@@ -671,7 +671,7 @@ public class HarnessBranchTopoOptimize {
                                                          List<Map<String, List<String>>> chooseOneList,
                                                          List<List<String>> togetherBCList) throws Exception {
         //状态检查
-        if(threadPool.shouldStop()){
+        if (threadPool.shouldStop()) {
             return null;
         }
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
@@ -754,6 +754,7 @@ public class HarnessBranchTopoOptimize {
                         break;
                     }
                     if (loopList.size() > 0) {
+                        //对存在闭环的分支进行逐个打断，看打断后的新方案是否符合约束条件，如果符合则存储，对生成的方案和原始方案成本进行比较，小于3
                         for (String s1 : loopList) {
                             List<String> calculateLoop = newEdges.stream().collect(Collectors.toList());
                             calculateLoop.set(normList.indexOf(s1), "B");
@@ -790,6 +791,9 @@ public class HarnessBranchTopoOptimize {
                             statueList.set(normList.indexOf(s), "S");
                             break;
                         }
+                    } else {
+                        //如果对存在闭环的分支都进行打断还是没有符合约束规则的优化方案，则不需要一直while了
+                        break;
                     }
                 }
             }
@@ -939,6 +943,9 @@ public class HarnessBranchTopoOptimize {
                     //上面的方案变异后这里只取一个方案
                     Map<String, Object> objectMap = handleList.get(0);
                     Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
+                    if (costDeail.contains(cost)) {
+                        return null;
+                    }
                     synchronized (costDeail) {
                         if (costDeail.contains(cost)) {
                             return null;
@@ -979,12 +986,13 @@ public class HarnessBranchTopoOptimize {
 
         }
         List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        List<Future<Map<String, Object>>> completeFutures = new ArrayList<>();
         int submittedCount = 0;
         //每次提交10个任务
         int batchSize = 10;
         for (Callable<Map<String, Object>> task : tasks) {
             //检查状态，防止多次提交
-            if(resultList.size() == TopNumber){
+            if (resultList.size() == TopNumber) {
                 threadPool.terminateNow();
                 break;
             }
@@ -994,33 +1002,73 @@ public class HarnessBranchTopoOptimize {
             if (submittedCount % batchSize == 0 || submittedCount == tasks.size()) {
                 //获取已完成的任务结果
                 for (Future<Map<String, Object>> future : futures) {
-                    if (future.isDone() && !future.isCancelled()) {
-                        try {
-                            Map<String, Object> result = future.get();
+                    if (completeFutures.contains(future)) {
+                        continue;  // 已处理过的跳过
+                    }
+                    try {
+                        Map<String, Object> result = future.get();
+                        synchronized (resultList) {
                             if (result != null) {
                                 resultList.add(result);
                             }
-                            if (resultList.size() == TopNumber) {
-                                threadPool.terminateNow();
-                                System.out.println("方案数量已经达到20个");
-                                break;
-                            }
-                        } catch (Exception e) {
-                            System.out.println("线程池任务执行异常:" + e.getMessage());
-                            e.printStackTrace();
+                            completeFutures.add(future);  // 添加到已完成列表
+                        }
+
+                        if (resultList.size() == TopNumber) {
+                            threadPool.terminateNow();
+                            System.out.println("方案数量已经达到20个");
+                            break;
+                        }
+                    } catch (Exception e) {
+                        System.out.println("线程池任务执行异常:" + e.getMessage());
+                        e.printStackTrace();
+                        synchronized (resultList) {
+                            completeFutures.add(future);  // 异常也算完成，添加到已完成列表
                         }
                     }
+
                 }
                 if (resultList.size() == TopNumber) {
                     break;
                 }
             }
-            if(resultList.size() == TopNumber){
+            if (resultList.size() == TopNumber) {
                 threadPool.terminateNow();
                 break;
             }
         }
 
+        // 确保等待所有任务完成
+        System.out.println("等待所有任务完成...");
+        for (Future<Map<String, Object>> future : futures) {
+            if (completeFutures.contains(future)) {
+                continue;  // 已完成的跳过
+            }
+            try {
+                // 使用超时机制避免无限期等待
+                Map<String, Object> result = future.get(180, java.util.concurrent.TimeUnit.SECONDS);
+                synchronized (resultList) {
+                    if (result != null) {
+                        resultList.add(result);
+                    }
+                    completeFutures.add(future);  // 添加到已完成列表
+                }
+            } catch (java.util.concurrent.TimeoutException e) {
+                System.out.println("任务执行超时，取消任务: " + e.getMessage());
+                future.cancel(true); // 取消未完成的任务
+                synchronized (resultList) {
+                    completeFutures.add(future);  // 添加到已完成列表
+                }
+            } catch (Exception e) {
+                System.out.println("线程异常: " + e.getMessage());
+                e.printStackTrace();
+                synchronized (resultList) {
+                    completeFutures.add(future);  // 添加到已完成列表
+                }
+            }
+        }
+
+        System.out.println("所有任务完成，结果数: " + resultList.size());
         resultList = findBest(resultList, "成本");
         for (Map<String, Object> map : resultList) {
             map.remove("成本");
@@ -1642,7 +1690,7 @@ public class HarnessBranchTopoOptimize {
                                               List<Map<String, List<String>>> chooseOneList,
                                               Map<String, Map<String, String>> sortedMapExcel,
                                               Map<String, Double> sortedMap,
-                                              List<Map<String, Object>> circuitInfoList) throws Exception{
+                                              List<Map<String, Object>> circuitInfoList) throws Exception {
         List<List<String>> resultList = Collections.synchronizedList(new ArrayList<>());
         Random random = new Random();
         int totalNumber = 0;
@@ -1831,7 +1879,7 @@ public class HarnessBranchTopoOptimize {
             }
             for (Future<List<String>> future : futures) {
                 List<String> list = future.get();
-                if(list != null) {
+                if (list != null) {
                     resultList.add(list);
                 }
             }
