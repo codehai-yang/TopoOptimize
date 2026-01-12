@@ -622,7 +622,7 @@ public class HarnessBranchTopoOptimize {
             }
             hybridizationNumber++;
             //迭代次数太多直接返回结果
-            if (hybridizationNumber > 10) {
+            if (hybridizationNumber > 1) {
                 break;
             }
         }
@@ -759,7 +759,7 @@ public class HarnessBranchTopoOptimize {
                             List<String> calculateLoop = newEdges.stream().collect(Collectors.toList());
                             calculateLoop.set(normList.indexOf(s1), "B");
                             List<Map<String, Object>> calculateEdgesDetail = createNewEdges(calculateLoop, edges, normList);
-                            Boolean sonSate = checkFirstOption(calculateEdgesDetail, appPositions, eleclection);
+                            Boolean sonSate = checkFirstOption(normList, calculateLoop, calculateEdgesDetail, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
                             if (!sonSate) {
                                 continue;
                             }
@@ -798,7 +798,8 @@ public class HarnessBranchTopoOptimize {
                 }
             }
             List<Map<String, Object>> EdgesDetail = createNewEdges(statueList, edges, normList);
-            Boolean sonSate = checkFirstOption(EdgesDetail, appPositions, eleclection);
+            List<String> newEdges1 = statueList.stream().collect(Collectors.toList());
+            Boolean sonSate = checkFirstOption(normList, newEdges1, EdgesDetail, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
             if (!sonSate) {
                 continue;
             }
@@ -826,7 +827,8 @@ public class HarnessBranchTopoOptimize {
                 newEdges.set(normList.indexOf(s), "B");
                 List<Map<String, Object>> edgesDetail = createNewEdges(newEdges, edges, normList);
 //                对当前的方案进行一个检查
-                Boolean flag = checkFirstOption(edgesDetail, appPositions, eleclection);
+                Boolean flag = checkFirstOption(normList, newEdges, edgesDetail, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
+
                 if (flag) {
                     statueList.set(normList.indexOf(s), "B");
                 } else {
@@ -856,7 +858,7 @@ public class HarnessBranchTopoOptimize {
                 List<String> newEdges = statueList.stream().collect(Collectors.toList());
                 newEdges.set(normList.indexOf(s), "B");
                 List<Map<String, Object>> edgesDetail = createNewEdges(newEdges, edges, normList);
-                Boolean flag = checkFirstOption(edgesDetail, appPositions, eleclection);
+                Boolean flag = checkFirstOption(normList, newEdges, edgesDetail, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
                 if (flag) {
                     jsonMap.put("edges", edgesDetail);
                     String betweenoptimizeInterfacesresultSon = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap), true);
@@ -923,24 +925,20 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, Double>> costDeail = Collections.synchronizedList(new ArrayList<>());
         List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
         if (TopCostDetail != null) {
-            long findBestTime = System.currentTimeMillis();
-            //按成本找到最优的方案列表，按成本排序，打分，返回最优方案
             List<Map<String, Object>> sortcost = findBest(TopCostDetail, "成本");
-            System.out.println("找最后的top最优方案:" + (System.currentTimeMillis() - findBestTime));
             for (Map<String, Object> sortcostMap : sortcost) {
                 tasks.add(() -> {
-
-//                    if (resultList.size() == TopNumber) {
-//                        break;
-//                    }
+//                if (resultList.size() == TopNumber) {
+//                    break;
+//                }
                     List<Map<String, Object>> mapArrayList = new ArrayList<>();
                     mapArrayList.add(sortcostMap);
-                    //对每个方案进一步变异,生成1个优化后的方案，因为这里只输入了一个方案进行变异，但是算法实际支持很多个方案
+                    long startTime = System.currentTimeMillis();
                     List<Map<String, Object>> handleList = bestOptionVariation(mapArrayList, singleBCList, singleSCList, singleBSList, singleBSCList, normList, jsonMap, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
+                    System.out.println("方案变异时间:" + (System.currentTimeMillis() - startTime));
                     if (handleList.size() == 0) {
                         return null;
                     }
-                    //上面的方案变异后这里只取一个方案
                     Map<String, Object> objectMap = handleList.get(0);
                     Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
                     if (costDeail.contains(cost)) {
@@ -957,9 +955,7 @@ public class HarnessBranchTopoOptimize {
                     //保持线程安全 浅拷贝一份
                     HashMap<String, Object> newJsonMap = new HashMap<>(jsonMap);
                     newJsonMap.put("edges", mapList);
-                    long projectCircuitInfoTime = System.currentTimeMillis();
                     String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(newJsonMap), true);
-                    System.out.println("最后Top20每个方案计算整车信息耗时" + (System.currentTimeMillis() - projectCircuitInfoTime));
                     List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
                     for (Map<String, Object> map : mapList) {
                         Map<String, String> result = new HashMap<>();
@@ -983,7 +979,6 @@ public class HarnessBranchTopoOptimize {
                     return map;
                 });
             }
-
         }
         List<Future<Map<String, Object>>> futures = new ArrayList<>();
         List<Future<Map<String, Object>>> completeFutures = new ArrayList<>();
@@ -1038,7 +1033,7 @@ public class HarnessBranchTopoOptimize {
             }
         }
 
-        // 确保等待所有任务完成
+// 确保等待所有任务完成
         System.out.println("等待所有任务完成...");
         for (Future<Map<String, Object>> future : futures) {
             if (completeFutures.contains(future)) {
@@ -1046,7 +1041,7 @@ public class HarnessBranchTopoOptimize {
             }
             try {
                 // 使用超时机制避免无限期等待
-                Map<String, Object> result = future.get(180, java.util.concurrent.TimeUnit.SECONDS);
+                Map<String, Object> result = future.get(240, java.util.concurrent.TimeUnit.SECONDS);
                 synchronized (resultList) {
                     if (result != null) {
                         resultList.add(result);
@@ -1606,8 +1601,6 @@ public class HarnessBranchTopoOptimize {
                                 }
                             }
                         }
-
-
 //                    serviceableList.add(serviceableStatue);
                         map.put("成本", costResultData);
                         map.put("serviceableEdges", serviceableEdge);
