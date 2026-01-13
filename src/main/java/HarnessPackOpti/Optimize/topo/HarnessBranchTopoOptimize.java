@@ -622,7 +622,7 @@ public class HarnessBranchTopoOptimize {
             }
             hybridizationNumber++;
             //迭代次数太多直接返回结果
-            if (hybridizationNumber > 1) {
+            if (hybridizationNumber > 2) {
                 break;
             }
         }
