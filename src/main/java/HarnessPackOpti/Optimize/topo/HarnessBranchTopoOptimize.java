@@ -8,6 +8,7 @@ import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
+import HarnessPackOpti.utils.ThreadPool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.*;
@@ -42,6 +43,7 @@ public class HarnessBranchTopoOptimize {
     public static List<List<String>> WareHouseTop = new ArrayList<>();
     //每次迭代得到的top10
     public static List<Map<String, Object>> TopCostDetail = new ArrayList<>();
+    private static ThreadPool threadPool = new ThreadPool(10, 10);
 
 
     //    当前方案的id
