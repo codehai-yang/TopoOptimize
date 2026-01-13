@@ -906,54 +906,150 @@ public class HarnessBranchTopoOptimize {
         Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
         Map<String, Object> projectInfo = (Map<String, Object>) jsonMap.get("projectInfo");
         List<Map<String, Object>> resultList = new ArrayList<>();
-        List<Map<String, Double>> costDeail = new ArrayList<>();
+        List<Map<String, Double>> costDeail = Collections.synchronizedList(new ArrayList<>());
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
         if (TopCostDetail != null) {
             List<Map<String, Object>> sortcost = findBest(TopCostDetail, "成本");
             for (Map<String, Object> sortcostMap : sortcost) {
+                tasks.add(() -> {
+//                if (resultList.size() == TopNumber) {
+//                    break;
+//                }
+                    List<Map<String, Object>> mapArrayList = new ArrayList<>();
+                    mapArrayList.add(sortcostMap);
+                    long startTime = System.currentTimeMillis();
+                    List<Map<String, Object>> handleList = bestOptionVariation(mapArrayList, singleBCList, singleSCList, singleBSList, singleBSCList, normList, jsonMap, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
+                    System.out.println("方案变异时间:" + (System.currentTimeMillis() - startTime));
+                    if (handleList.size() == 0) {
+                        return null;
+                    }
+                    Map<String, Object> objectMap = handleList.get(0);
+                    Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
+                    if (costDeail.contains(cost)) {
+                        return null;
+                    }
+                    synchronized (costDeail) {
+                        if (costDeail.contains(cost)) {
+                            return null;
+                        }
+                        // 保持线程安全
+                        costDeail.add(cost);
+                    }
+                    List<Map<String, Object>> mapList = (List<Map<String, Object>>) objectMap.get("serviceableEdges");
+                    //保持线程安全 浅拷贝一份
+                    HashMap<String, Object> newJsonMap = new HashMap<>(jsonMap);
+                    newJsonMap.put("edges", mapList);
+                    String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(newJsonMap));
+                    List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
+                    for (Map<String, Object> map : mapList) {
+                        Map<String, String> result = new HashMap<>();
+                        result.put("edgeId", map.get("id").toString());
+                        result.put("statue", map.get("topologyStatusCode").toString());
+                        topoOptimizeResult.add(result);
+                    }
+                    Map<String, Object> map = jsonToMap.TransJsonToMap(s);
+                    Map<String, Object> projectCircuitInfo = (Map<String, Object>) map.get("projectCircuitInfo");
+                    Map<String, Double> projectCost = new HashMap<>();
+                    projectCost.put("总成本", (Double) projectCircuitInfo.get("总成本"));
+                    projectCost.put("总重量", (Double) projectCircuitInfo.get("回路总重量"));
+                    projectCost.put("总长度", (Double) projectCircuitInfo.get("回路总长度"));
+
+                    map.put("成本", projectCost);
+                    map.put("topoId", topoInfoMap.get("id").toString());
+                    map.put("caseId", projectInfo.get("caseId").toString());
+                    map.put("topoOptimizeResult", topoOptimizeResult);
+                    map.put("finishStatue", finishStatue);
+                    map.put("initializationScheme", false);
+                    return map;
+                });
+            }
+        }
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        List<Future<Map<String, Object>>> completeFutures = new ArrayList<>();
+        int submittedCount = 0;
+        //每次提交10个任务
+        int batchSize = 10;
+        for (Callable<Map<String, Object>> task : tasks) {
+            //检查状态，防止多次提交
+            if (resultList.size() == TopNumber) {
+                threadPool.terminateNow();
+                break;
+            }
+            Future<Map<String, Object>> submit = threadPool.submit(task);
+            futures.add(submit);
+            submittedCount++;
+            if (submittedCount % batchSize == 0 || submittedCount == tasks.size()) {
+                //获取已完成的任务结果
+                for (Future<Map<String, Object>> future : futures) {
+                    if (completeFutures.contains(future)) {
+                        continue;  // 已处理过的跳过
+                    }
+                    try {
+                        Map<String, Object> result = future.get();
+                        synchronized (resultList) {
+                            if (result != null) {
+                                resultList.add(result);
+                            }
+                            completeFutures.add(future);  // 添加到已完成列表
+                        }
+
+                        if (resultList.size() == TopNumber) {
+                            threadPool.terminateNow();
+                            System.out.println("方案数量已经达到20个");
+                            break;
+                        }
+                    } catch (Exception e) {
+                        System.out.println("线程池任务执行异常:" + e.getMessage());
+                        e.printStackTrace();
+                        synchronized (resultList) {
+                            completeFutures.add(future);  // 异常也算完成，添加到已完成列表
+                        }
+                    }
+
+                }
                 if (resultList.size() == TopNumber) {
                     break;
                 }
-                List<Map<String, Object>> mapArrayList = new ArrayList<>();
-                mapArrayList.add(sortcostMap);
-                List<Map<String, Object>> handleList = bestOptionVariation(mapArrayList, singleBCList, singleSCList, singleBSList, singleBSCList, normList, jsonMap, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
-                if (handleList.size() == 0) {
-                    continue;
-                }
-                Map<String, Object> objectMap = handleList.get(0);
-                Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
-                if (costDeail.contains(cost)) {
-                    continue;
-                }
-                costDeail.add(cost);
-                List<Map<String, Object>> mapList = (List<Map<String, Object>>) objectMap.get("serviceableEdges");
-                jsonMap.put("edges", mapList);
-                String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
-                List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
-                for (Map<String, Object> map : mapList) {
-                    Map<String, String> result = new HashMap<>();
-                    result.put("edgeId", map.get("id").toString());
-                    result.put("statue", map.get("topologyStatusCode").toString());
-                    topoOptimizeResult.add(result);
-                }
-                Map<String, Object> map = jsonToMap.TransJsonToMap(s);
-                Map<String, Object> projectCircuitInfo = (Map<String, Object>) map.get("projectCircuitInfo");
-                Map<String, Double> projectCost = new HashMap<>();
-                projectCost.put("总成本", (Double) projectCircuitInfo.get("总成本"));
-                projectCost.put("总重量", (Double) projectCircuitInfo.get("回路总重量"));
-                projectCost.put("总长度", (Double) projectCircuitInfo.get("回路总长度"));
-
-                map.put("成本", projectCost);
-                map.put("topoId", topoInfoMap.get("id").toString());
-                map.put("caseId", projectInfo.get("caseId").toString());
-                map.put("topoOptimizeResult", topoOptimizeResult);
-                map.put("finishStatue", finishStatue);
-                map.put("initializationScheme", false);
-                resultList.add(map);
+            }
+            if (resultList.size() == TopNumber) {
+                threadPool.terminateNow();
+                break;
             }
         }
 
-         resultList = findBest(resultList, "成本");
-        for (Map<String, Object> map : resultList){
+// 确保等待所有任务完成
+        System.out.println("等待所有任务完成...");
+        for (Future<Map<String, Object>> future : futures) {
+            if (completeFutures.contains(future)) {
+                continue;  // 已完成的跳过
+            }
+            try {
+                // 使用超时机制避免无限期等待
+                Map<String, Object> result = future.get(240, java.util.concurrent.TimeUnit.SECONDS);
+                synchronized (resultList) {
+                    if (result != null) {
+                        resultList.add(result);
+                    }
+                    completeFutures.add(future);  // 添加到已完成列表
+                }
+            } catch (java.util.concurrent.TimeoutException e) {
+                System.out.println("任务执行超时，取消任务: " + e.getMessage());
+                future.cancel(true); // 取消未完成的任务
+                synchronized (resultList) {
+                    completeFutures.add(future);  // 添加到已完成列表
+                }
+            } catch (Exception e) {
+                System.out.println("线程异常: " + e.getMessage());
+                e.printStackTrace();
+                synchronized (resultList) {
+                    completeFutures.add(future);  // 添加到已完成列表
+                }
+            }
+        }
+
+        System.out.println("所有任务完成，结果数: " + resultList.size());
+        resultList = findBest(resultList, "成本");
+        for (Map<String, Object> map : resultList) {
             map.remove("成本");
         }
 
