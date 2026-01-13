@@ -605,6 +605,9 @@ public class HarnessBranchTopoOptimize {
                 break;
             }
             hybridizationNumber++;
+            if(hybridizationNumber > 1){
+                break;
+            }
         }
         long functionendTime = System.currentTimeMillis();
         System.out.println("遗传算法总迭代耗时：" + (functionendTime - functionStartTime));
