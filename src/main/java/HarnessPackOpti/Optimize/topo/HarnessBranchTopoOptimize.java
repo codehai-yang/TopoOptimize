@@ -1521,14 +1521,13 @@ public class HarnessBranchTopoOptimize {
                                               List<Map<String, List<String>>> chooseOneList,
                                               Map<String, Map<String, String>> sortedMapExcel,
                                               Map<String, Double> sortedMap,
-                                              List<Map<String, Object>> circuitInfoList) throws Exception {
-        List<List<String>> resultList = Collections.synchronizedList(new ArrayList<>());
+                                              List<Map<String, Object>> circuitInfoList) {
+        List<List<String>> resultList = new ArrayList<>();
         Random random = new Random();
         int totalNumber = 0;
 //        最少生成随机方案数量  不然一直循环
         int completeNumber = 0;
 
-        List<Callable<List<String>>> tasks = new ArrayList<>();
         //方案数量必须为100
         while (resultList.size() < LessRandomSamleNumber) {
             //b的数量
@@ -1536,24 +1535,44 @@ public class HarnessBranchTopoOptimize {
                 if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                     return null;
                 }
-                final int loopIndex = i;
-                tasks.add(() -> {
-
-                    List<String> needChangeBId = new ArrayList<>();
-                    List<String> needChangeSId = new ArrayList<>();
-                    Set<String> mutexKey = mutexMap.keySet();
+                totalNumber++;
+                List<String> needChangeBId = new ArrayList<>();
+                List<String> needChangeSId = new ArrayList<>();
+                Set<String> mutexKey = mutexMap.keySet();
 //                组团互斥的情况  当一组为B的情况下   另一组也可以为B、C、S
-                    for (String s : mutexKey) {
-                        Map<String, List<String>> mutexDetail = mutexMap.get(s);
-                        Set<String> set = mutexDetail.keySet();
-                        Object[] objects = set.toArray();
-                        String firststatue = null;
-                        for (int j = 0; j < objects.length; j++) {
-                            if (j == 0) {
+                for (String s : mutexKey) {
+                    Map<String, List<String>> mutexDetail = mutexMap.get(s);
+                    Set<String> set = mutexDetail.keySet();
+                    Object[] objects = set.toArray();
+                    String firststatue = null;
+                    for (int j = 0; j < objects.length; j++) {
+                        if (j == 0) {
 //                           根据产生的随机整数 来决定随机选择一个B或者S   0：B  1：C
+                            int randomNumber = random.nextInt(2);
+                            if (randomNumber == 0) {
+                                firststatue = "B";
+                                List<String> list1 = mutexDetail.get((String) objects[j]);
+                                for (String s1 : list1) {
+//                            是否存在存在组团的情况
+                                    Boolean flag = false;
+                                    for (List<String> strings : mutexGroupList) {
+                                        if (strings.contains(s1)) {
+                                            needChangeBId.addAll(strings);
+                                            flag = true;
+                                        }
+                                    }
+                                    if (!flag) {
+                                        needChangeBId.add(s1);
+                                    }
+                                }
+                            } else {
+                                firststatue = "C";
+                            }
+                        }
+                        if (j == 1) {
+                            if (firststatue.equals("B")) {
                                 int randomNumber = random.nextInt(2);
                                 if (randomNumber == 0) {
-                                    firststatue = "B";
                                     List<String> list1 = mutexDetail.get((String) objects[j]);
                                     for (String s1 : list1) {
 //                            是否存在存在组团的情况
@@ -1568,133 +1587,108 @@ public class HarnessBranchTopoOptimize {
                                             needChangeBId.add(s1);
                                         }
                                     }
-                                } else {
-                                    firststatue = "C";
+                                }
+                            } else if (firststatue.equals("C")) {
+                                List<String> list1 = mutexDetail.get((String) objects[j]);
+                                for (String s1 : list1) {
+//                            是否存在存在组团的情况
+                                    Boolean flag = false;
+                                    for (List<String> strings : mutexGroupList) {
+                                        if (strings.contains(s1)) {
+                                            needChangeBId.addAll(strings);
+                                            flag = true;
+                                        }
+                                    }
+                                    if (!flag) {
+                                        needChangeBId.add(s1);
+                                    }
                                 }
                             }
-                            if (j == 1) {
-                                if (firststatue.equals("B")) {
-                                    int randomNumber = random.nextInt(2);
-                                    if (randomNumber == 0) {
-                                        List<String> list1 = mutexDetail.get((String) objects[j]);
-                                        for (String s1 : list1) {
-//                            是否存在存在组团的情况
-                                            Boolean flag = false;
-                                            for (List<String> strings : mutexGroupList) {
-                                                if (strings.contains(s1)) {
-                                                    needChangeBId.addAll(strings);
-                                                    flag = true;
-                                                }
-                                            }
-                                            if (!flag) {
-                                                needChangeBId.add(s1);
-                                            }
-                                        }
-                                    }
-                                } else if (firststatue.equals("C")) {
-                                    List<String> list1 = mutexDetail.get((String) objects[j]);
-                                    for (String s1 : list1) {
-//                            是否存在存在组团的情况
-                                        Boolean flag = false;
-                                        for (List<String> strings : mutexGroupList) {
-                                            if (strings.contains(s1)) {
-                                                needChangeBId.addAll(strings);
-                                                flag = true;
-                                            }
-                                        }
-                                        if (!flag) {
-                                            needChangeBId.add(s1);
-                                        }
-                                    }
-                                }
 
-                            }
                         }
                     }
-                    List<Map<String, String>> chooseResultList = new ArrayList<>();
+                }
+                List<Map<String, String>> chooseResultList = new ArrayList<>();
 //                对三选一的情况进行一个生成
-                    for (Map<String, List<String>> listMap : chooseOneList) {
-                        Set<String> set = listMap.keySet();
-                        while (true) {
-                            int numberC = 0;
-                            Map<String, String> chooseResult = new HashMap<>();
-                            for (String s : set) {
-                                List<String> list1 = listMap.get(s);
-                                String edgeStatue = list1.get(random.nextInt(list1.size()));
-                                chooseResult.put(s, edgeStatue);
-                                if (edgeStatue.equals("C")) {
-                                    numberC++;
-                                }
+                for (Map<String, List<String>> listMap : chooseOneList) {
+                    Set<String> set = listMap.keySet();
+                    while (true) {
+                        int numberC = 0;
+                        Map<String, String> chooseResult = new HashMap<>();
+                        for (String s : set) {
+                            List<String> list1 = listMap.get(s);
+                            String edgeStatue = list1.get(random.nextInt(list1.size()));
+                            chooseResult.put(s, edgeStatue);
+                            if (edgeStatue.equals("C")) {
+                                numberC++;
                             }
-                            if (numberC < 2) {
-                                chooseResultList.add(chooseResult);
-                                break;
-                            }
+                        }
+                        if (numberC < 2) {
+                            chooseResultList.add(chooseResult);
+                            break;
+                        }
 
+                    }
+                }
+
+                for (Map<String, String> map : chooseResultList) {
+                    for (String s : map.keySet()) {
+                        if (map.get(s).equals("B")) {
+                            needChangeBId.add(s);
+                        }
+                        if (map.get(s).equals("S")) {
+                            needChangeSId.add(s);
                         }
                     }
-                    //统计多选一中，变b和s的分支
-                    for (Map<String, String> map : chooseResultList) {
-                        for (String s : map.keySet()) {
-                            if (map.get(s).equals("B")) {
-                                needChangeBId.add(s);
-                            }
-                            if (map.get(s).equals("S")) {
-                                needChangeSId.add(s);
-                            }
-                        }
-                    }
+                }
 
 //               组团变化每一个组根据随机生成的数字惊醒选择B 还是C   0为B  1为C
-                    for (List<String> list : togetherBCList) {
-                        int randomNumber = random.nextInt(2);
-                        if (randomNumber == 0) {
-                            needChangeBId.addAll(list);
-                        }
+                for (List<String> list : togetherBCList) {
+                    int randomNumber = random.nextInt(2);
+                    if (randomNumber == 0) {
+                        needChangeBId.addAll(list);
                     }
+                }
 
-                    if (needChangeBId.size() > loopIndex) {
-                        return null;
-                    }
+                if (needChangeBId.size() > i) {
+                    continue;
+                }
 
-                    //这个方法的目的：获取后50%的并集分支列表，这些是打断代价相对较低且低成本导线相关分支，从这些分支中随机选择一部分作为补充B的状态分支
-                    Map<String, List<String>> percentage = getPercentage(sortedMapExcel, sortedMap, circuitInfoList, 0.5);
-                    List<String> getTopintersection = percentage.get("getLastunion");
-                    //进行筛选，只保留同时存在在conformList中的分支,conformList包含了所有可以设置为b状态的分支id集合
-                    getTopintersection.retainAll(conformList);
+                //这个方法的目的：获取后50%的并集分支列表，这些是打断代价相对较低且低成本导线相关分支，从这些分支中随机选择一部分作为补充B的状态分支
+                Map<String, List<String>> percentage = getPercentage(sortedMapExcel, sortedMap, circuitInfoList, 0.5);
+                List<String> getTopintersection = percentage.get("getLastunion");
+                //进行筛选，只保留同时存在在conformList中的分支,conformList包含了所有可以设置为b状态的分支id集合
+                getTopintersection.retainAll(conformList);
 
-                    //如果经过约束后需要打断的b的数量小于目标打断数量，则从可打断分支集合中随机选择分支进行打断，已达到目标打断数量
-                    List<String> list = selectId(getTopintersection, loopIndex - needChangeBId.size());
-                    needChangeBId.addAll(list);
-                    List<String> changeList = initialScheme.stream().collect(Collectors.toList());
+                //如果经过约束后需要打断的b的数量小于目标打断数量，则从可打断分支集合中随机选择分支进行打断，已达到目标打断数量
+                List<String> list = selectId(getTopintersection, i - needChangeBId.size());
+                needChangeBId.addAll(list);
+                List<String> changeList = initialScheme.stream().collect(Collectors.toList());
 
-                    for (String s : needChangeBId) {
-                        int number = normList.indexOf(s);
-                        changeList.set(number, "B");
-                    }
-                    for (String s : needChangeSId) {
-                        int number = normList.indexOf(s);
-                        changeList.set(number, "S");
-                    }
-                    for (String s : onlyNameS) {
-                        int number = normList.indexOf(s);
-                        changeList.set(number, "S");
-                    }
-                    //新方案，所有的初始的分支，所有分支id集合,重新返回分支详情
-                    List<Map<String, Object>> coppysonedges = createNewEdges(changeList, edges, normList);
-                    Boolean sonSate = checkFirstOption(normList, changeList, coppysonedges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
+                for (String s : needChangeBId) {
+                    int number = normList.indexOf(s);
+                    changeList.set(number, "B");
+                }
+                for (String s : needChangeSId) {
+                    int number = normList.indexOf(s);
+                    changeList.set(number, "S");
+                }
+                for (String s : onlyNameS) {
+                    int number = normList.indexOf(s);
+                    changeList.set(number, "S");
+                }
+                //新方案，所有的初始的分支，所有分支id集合,重新返回分支详情
+                List<Map<String, Object>> coppysonedges = createNewEdges(changeList, edges, normList);
+                Boolean sonSate = checkFirstOption(normList, changeList, coppysonedges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
 //               判断生成的list方案是否可行，满足所有约束，  是否在仓库里界面    再判断是否在resultList集合里面
-                    if (sonSate) {
-                        if (!containsList(changeList, WareHouse)) {
-                            synchronized (resultList) {
-                                if (!containsList(changeList, resultList)) {
-                                    return changeList;
-                                }
-                            }
+                if (sonSate) {
+                    if (!containsList(changeList, WareHouse)) {
+                        if (!containsList(changeList, resultList)) {
+                            resultList.add(changeList);
                         }
                     }
-                    return null;
-                });
+                }
+
             }
             completeNumber++;
             //如果生成的方案大于1000，跳出循环
@@ -1702,20 +1696,8 @@ public class HarnessBranchTopoOptimize {
             if (completeNumber > InitializeAutoCompleteNumber) {
                 break;
             }
-            //获取每一轮线程执行结果
-            List<Future<List<String>>> futures = new ArrayList<>();
-            for (Callable<List<String>> task : tasks) {
-                Future<List<String>> submit = threadPool.submit(task);
-                futures.add(submit);
-            }
-            for (Future<List<String>> future : futures) {
-                List<String> list = future.get();
-                if (list != null) {
-                    resultList.add(list);
-                }
-            }
         }
-        System.out.println("初始化(补充)方案(有效和无效)数量：" + totalNumber);
+        System.out.println("初始化方案数量：" + totalNumber);
         return resultList;
     }
 
