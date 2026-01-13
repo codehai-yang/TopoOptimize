@@ -985,7 +985,7 @@ public class HarnessBranchTopoOptimize {
                         continue;  // 已处理过的跳过
                     }
                     try {
-                        Map<String, Object> result = future.get();
+                        Map<String, Object> result = future.get(240, java.util.concurrent.TimeUnit.SECONDS);
                         synchronized (resultList) {
                             if (result != null) {
                                 resultList.add(result);
@@ -999,8 +999,7 @@ public class HarnessBranchTopoOptimize {
                             break;
                         }
                     } catch (Exception e) {
-                        System.out.println("线程池任务执行异常:" + e.getMessage());
-                        e.printStackTrace();
+                        System.out.println("不符合的方案已丢弃");
                         synchronized (resultList) {
                             completeFutures.add(future);  // 异常也算完成，添加到已完成列表
                         }
@@ -1014,36 +1013,6 @@ public class HarnessBranchTopoOptimize {
             if (resultList.size() == TopNumber) {
                 threadPool.terminateNow();
                 break;
-            }
-        }
-
-// 确保等待所有任务完成
-        System.out.println("等待所有任务完成...");
-        for (Future<Map<String, Object>> future : futures) {
-            if (completeFutures.contains(future)) {
-                continue;  // 已完成的跳过
-            }
-            try {
-                // 使用超时机制避免无限期等待
-                Map<String, Object> result = future.get(240, java.util.concurrent.TimeUnit.SECONDS);
-                synchronized (resultList) {
-                    if (result != null) {
-                        resultList.add(result);
-                    }
-                    completeFutures.add(future);  // 添加到已完成列表
-                }
-            } catch (java.util.concurrent.TimeoutException e) {
-                System.out.println("任务执行超时，取消任务: " + e.getMessage());
-                future.cancel(true); // 取消未完成的任务
-                synchronized (resultList) {
-                    completeFutures.add(future);  // 添加到已完成列表
-                }
-            } catch (Exception e) {
-                System.out.println("线程异常: " + e.getMessage());
-                e.printStackTrace();
-                synchronized (resultList) {
-                    completeFutures.add(future);  // 添加到已完成列表
-                }
             }
         }
 
@@ -1453,120 +1422,139 @@ public class HarnessBranchTopoOptimize {
         ObjectMapper mapper = new ObjectMapper();
 //       检查生成的方案是否存在穿腔如果存在 将对应的闭环中   将打断成本最小的分支情况进行一个替换
         System.out.println("每个方案开始加s");
-        int addSNum = 0;
         List<Map<String, Object>> resultList = new ArrayList<>();
+        //创建Callable任务列表
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
         for (List<String> strings : simpleList) {
-
-            Map<String, Object> map = new HashMap<>();
-            System.out.println("当前方案：" + addSNum);
-            addSNum++;
+            tasks.add(() -> {
+                Map<String, Object> map = new HashMap<>();
 //            if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
 //               break;
 //            }
-            List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
-            for (int i = 0; i < serviceableStatue.size(); i++) {
-                if (serviceableStatue.get(i).equals("C") && edgeChooseBS.contains(normList.get(i))) {
-                    serviceableStatue.set(i, "S");
+                List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
+                for (int i = 0; i < serviceableStatue.size(); i++) {
+                    if (serviceableStatue.get(i).equals("C") && edgeChooseBS.contains(normList.get(i))) {
+                        serviceableStatue.set(i, "S");
+                    }
                 }
-            }
 
-            List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
-            jsonMap.put("edges", serviceableEdge);
-
-
-            Map<String, Double> breakCostMap = new HashMap<>();
-            String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap));
-            Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
-            Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
-
-            Map<String, Object> costResultData = new HashMap<>();
-            costResultData.put("总成本", projectCircuitInfo.get("总成本"));
-            costResultData.put("总长度", projectCircuitInfo.get("回路总长度"));
-            costResultData.put("总重量", projectCircuitInfo.get("回路总重量"));
+                List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+                Map<String, Object> threadLocalJsonMap = new HashMap<>(jsonMap);
+                threadLocalJsonMap.put("edges", serviceableEdge);
 
 
-            Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) objectMap.get("bundeleRelatedCircuitInfo");
-            for (String s : bundeleRelatedCircuitInfo.keySet()) {
-                Map<String, Object> edgeMap = (Map<String, Object>) bundeleRelatedCircuitInfo.get(s);
-                Map<String, Object> edgeDetail = (Map<String, Object>) edgeMap.get("circuitInfoIntergation");
-                breakCostMap.put(s, Double.parseDouble(edgeDetail.get("分支打断代价") != null ? edgeDetail.get("分支打断代价").toString() : "0"));
-            }
+                Map<String, Double> breakCostMap = new HashMap<>();
+                //节省时间，剔除不必要字段
+                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
+                Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
+                Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
+
+                Map<String, Object> costResultData = new HashMap<>();
+                costResultData.put("总成本", projectCircuitInfo.get("总成本"));
+                costResultData.put("总长度", projectCircuitInfo.get("回路总长度"));
+                costResultData.put("总重量", projectCircuitInfo.get("回路总重量"));
+
+
+                Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) objectMap.get("bundeleRelatedCircuitInfo");
+                for (String s : bundeleRelatedCircuitInfo.keySet()) {
+                    Map<String, Object> edgeMap = (Map<String, Object>) bundeleRelatedCircuitInfo.get(s);
+                    Map<String, Object> edgeDetail = (Map<String, Object>) edgeMap.get("circuitInfoIntergation");
+                    breakCostMap.put(s, Double.parseDouble(edgeDetail.get("分支打断代价") != null ? edgeDetail.get("分支打断代价").toString() : "0"));
+                }
 //            对当前的情况进行一个检查   当存在闭环的状况 将当中最打断成本最小的进行打S   直到没有闭环的时候跳出循环
-            boolean scrapOrNot = false;
-            while (true) {
-                serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
-                List<List<String>> recognizeLoopList = recognizeLoopNew(serviceableEdge);
+                boolean scrapOrNot = false;
+                while (true) {
+                    serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+                    List<List<String>> recognizeLoopList = recognizeLoopNew(serviceableEdge);
 //             每一个闭环中存在一个穿腔的分支的    整组成整个闭环的分支进行记录
-                List<String> recognizeLoopIdList = new ArrayList<>();
-                for (List<String> loop : recognizeLoopList) {
-                    for (String s : loop) {
-                        if (wearId.contains(s)) {
-                            recognizeLoopIdList.addAll(loop);
-                            break;
-                        }
-                    }
-                }
-
-
-                if (recognizeLoopIdList.size() != 0) {
-//                 将recognizeLoopIdList 里面分支打断成本最小的打断状况修改为S
-                    String minCostKey = null;
-                    List<String> keyList = findMinCostKey(recognizeLoopIdList, breakCostMap);
-                    for (String s : keyList) {
-                        if (canChangeS.contains(s)) {
-                            minCostKey = s;
-                            break;
-                        }
-                    }
-                    if (minCostKey == null) {
-                        scrapOrNot = true;
-                        break;
-                    }
-                    costResultData.put("总成本", (Double) costResultData.get("总成本") + breakCostMap.get(minCostKey));
-                    serviceableStatue.set(normList.indexOf(minCostKey), "S");
-                } else {
-//                   看是否开启闭环消除
-                    if (whetherOnLoop) {
-                        while (true) {
-                            serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
-                            List<List<String>> recognizeLoopListSon = recognizeLoopNew(serviceableEdge);
-                            if (recognizeLoopListSon.size() == 0) {
+                    List<String> recognizeLoopIdList = new ArrayList<>();
+                    for (List<String> loop : recognizeLoopList) {
+                        for (String s : loop) {
+                            if (wearId.contains(s)) {
+                                recognizeLoopIdList.addAll(loop);
                                 break;
-                            } else {
-                                Set<String> son = new HashSet<>();
-                                for (List<String> loop : recognizeLoopListSon) {
-                                    son.addAll(loop);
-                                }
-                                List<String> keyList = findMinCostKey(son.stream().collect(Collectors.toList()), breakCostMap);
-                                String minCostKey = null;
-                                for (String s : keyList) {
-                                    if (canChangeS.contains(s)) {
-                                        minCostKey = s;
-                                        break;
-                                    }
-                                }
-//                                如果当前的方案中没有可以打断的分支，则勾选一个打断代价最小的进行打断
-                                if (minCostKey == null) {
-                                    minCostKey = keyList.get(0);
-                                }
-                                costResultData.put("总成本", (Double) costResultData.get("总成本") + breakCostMap.get(minCostKey));
-                                serviceableStatue.set(normList.indexOf(minCostKey), "S");
                             }
                         }
                     }
 
-
+                    //检查当前方案中是否存在寻妖处理的闭环
+                    if (recognizeLoopIdList.size() != 0) {
+//                 将recognizeLoopIdList 里面分支打断成本最小的打断状况修改为S
+                        String minCostKey = null;
+                        List<String> keyList = findMinCostKey(recognizeLoopIdList, breakCostMap);
+                        for (String s : keyList) {
+                            if (canChangeS.contains(s)) {
+                                minCostKey = s;
+                                break;
+                            }
+                        }
+                        if (minCostKey == null) {
+                            scrapOrNot = true;
+                            break;
+                        }
+                        costResultData.put("总成本", (Double) costResultData.get("总成本") + breakCostMap.get(minCostKey));
+                        serviceableStatue.set(normList.indexOf(minCostKey), "S");
+                    } else {
+//                   看是否开启闭环消除
+                        if (whetherOnLoop) {
+                            while (true) {
+                                serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+                                List<List<String>> recognizeLoopListSon = recognizeLoopNew(serviceableEdge);
+                                if (recognizeLoopListSon.size() == 0) {
+                                    break;
+                                } else {
+                                    Set<String> son = new HashSet<>();
+                                    for (List<String> loop : recognizeLoopListSon) {
+                                        son.addAll(loop);
+                                    }
+                                    List<String> keyList = findMinCostKey(son.stream().collect(Collectors.toList()), breakCostMap);
+                                    String minCostKey = null;
+                                    for (String s : keyList) {
+                                        if (canChangeS.contains(s)) {
+                                            minCostKey = s;
+                                            break;
+                                        }
+                                    }
+//                                如果当前的方案中没有可以打断的分支，则勾选一个打断代价最小的进行打断
+                                    if (minCostKey == null) {
+                                        minCostKey = keyList.get(0);
+                                    }
+                                    costResultData.put("总成本", (Double) costResultData.get("总成本") + breakCostMap.get(minCostKey));
+                                    serviceableStatue.set(normList.indexOf(minCostKey), "S");
+                                }
+                            }
+                        }
 //                    serviceableList.add(serviceableStatue);
-                    map.put("成本", costResultData);
-                    map.put("serviceableEdges", serviceableEdge);
-                    map.put("serviceableStatue", serviceableStatue);
-                    resultList.add(map);
-                    break;
+                        map.put("成本", costResultData);
+                        map.put("serviceableEdges", serviceableEdge);
+                        map.put("serviceableStatue", serviceableStatue);
+                        break;
+                    }
                 }
+                //这里先按null返回，因为如果跳出大的循环，则其余方案无法检测到
+                if (scrapOrNot) {
+                    return null;
+                }
+                return map;
+            });
+        }
+        //线程池提交任务
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            Future<Map<String, Object>> submit = threadPool.submit(task);
+            futures.add(submit);
+        }
+        //获取线程池结果
+        for (Future<Map<String, Object>> future : futures) {
+            try {
+                Map<String, Object> result = future.get(300, java.util.concurrent.TimeUnit.SECONDS);
+                if (result != null) {
+                    resultList.add(result);
+                }
+            } catch (Exception e) {
+                System.out.println("不符合的方案已丢弃");
             }
-            if (scrapOrNot) {
-                break;
-            }
+
         }
 //        每个方案进行计算
         List<Map<String, Object>> topBeat = findBest.findBest(resultList, "成本", TopNumber);
