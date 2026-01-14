@@ -45,7 +45,7 @@ public class HarnessBranchTopoOptimize {
     public static List<List<String>> WareHouseTop = new ArrayList<>();
     //每次迭代得到的top10
     public static List<Map<String, Object>> TopCostDetail = new ArrayList<>();
-    private static ThreadPool threadPool = new ThreadPool(10, 10);
+    private static ThreadPool threadPool = new ThreadPool(11, 11);
 
 
     //    当前方案的id
@@ -1551,7 +1551,7 @@ public class HarnessBranchTopoOptimize {
                     resultList.add(result);
                 }
             } catch (Exception e) {
-                System.out.println();
+
             }
 
         }
