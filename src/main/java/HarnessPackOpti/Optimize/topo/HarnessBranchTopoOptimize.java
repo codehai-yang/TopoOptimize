@@ -11,6 +11,7 @@ import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import HarnessPackOpti.utils.ThreadPool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.beans.PropertyEditorSupport;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
@@ -389,6 +390,40 @@ public class HarnessBranchTopoOptimize {
         int selectNumberB = 1;
 //        每个B对应的的平均闭环数量
         System.out.println("结束分类以及初始方案检查，所用时间：" + (System.currentTimeMillis() - l));
+        //TODO 当用户输入的方案数量<1000时，使用枚举法直接计算最有方案
+        long totalCombinations = 1L;
+        //TODO 这里限制BSC的数量，枚举方法完成后直接废除
+        if (singleBSCList.size() > 1) {
+            singleBSCList = new ArrayList<>(singleBSCList.subList(5, 6));
+        }
+        if (singleSCList.size() > 1) {
+            singleSCList = new ArrayList<>(singleSCList.subList(0, 2));
+        }
+        if (!singleBCList.isEmpty()) {
+            totalCombinations *= Math.pow(2, singleBCList.size());
+        }
+
+        // SC分支：每条有2种选择
+        if (!singleSCList.isEmpty()) {
+            totalCombinations *= Math.pow(2, singleSCList.size());
+        }
+
+        // BS分支：每条有2种选择
+        singleBSList.clear();
+        if (!singleBSList.isEmpty()) {
+            totalCombinations *= Math.pow(2, singleBSList.size());
+        }
+
+        // BSC分支：每条有3种选择
+        if (!singleBSCList.isEmpty()) {
+            totalCombinations *= Math.pow(3, singleBSCList.size());
+        }
+        if(totalCombinations < 1000){
+            //递归枚举优化
+            System.out.println("递归开始");
+            branchEnum(singleBCList, singleSCList, singleBSList, singleBSCList, coppyedges,normList);
+        }
+
         l = System.currentTimeMillis();
         System.out.println("开始计算不同B闭环的平均值");
         //打断B的数量-平均闭环数
@@ -623,6 +658,136 @@ public class HarnessBranchTopoOptimize {
         long end = System.currentTimeMillis();
         System.out.println("算法总耗时长：" + (end - start));
         return objectMapper.writeValueAsString(mapList);
+    }
+
+    /**
+     * 分支枚举
+     * @param singleBCList
+     * @param singleSCList
+     * @param singleBSList
+     * @param singleBSCList
+     * @param coppyedges
+     * @param normList
+     */
+    public void branchEnum(List<String> singleBCList,List<String> singleSCList,List<String> singleBSList,List<String> singleBSCList,List<Map<String, Object>> coppyedges,List<String> normList) throws Exception{
+        //合并分支
+        //分支id-分支可选状态
+        long startTime = System.currentTimeMillis();
+        List<Map<String,List<String>>> branchList = new ArrayList<>();
+        //需要排序的分支id
+        List<String> idsList = new ArrayList<>();
+        List<List<String>> branchTypeList = new ArrayList<>();
+
+        if(singleBSCList.size()>0) {
+            for (String s : singleBSCList) {
+                Map<String, List<String>> branchType = new LinkedHashMap<>();
+                branchType.put(s, Arrays.asList("B", "C", "S"));
+                branchList.add(branchType);
+                branchTypeList.add(Arrays.asList("B", "C", "S"));
+                idsList.add(s);
+            }
+        }
+        if(singleSCList.size()>0) {
+            for (String s : singleSCList) {
+                Map<String, List<String>> branchType = new LinkedHashMap<>();
+                branchType.put(s, Arrays.asList("S", "C"));
+                branchList.add(branchType);
+                branchTypeList.add(Arrays.asList("S", "C"));
+                idsList.add(s);
+            }
+        }
+        if(singleBSList.size() > 0) {
+            for (String s : singleBSList) {
+                Map<String, List<String>> branchType = new LinkedHashMap<>();
+                branchType.put(s, Arrays.asList("B", "S"));
+                branchList.add(branchType);
+                branchTypeList.add(Arrays.asList("B", "S"));
+                idsList.add(s);
+            }
+        }
+        if(singleBCList.size() > 0) {
+            for (String s : singleBCList) {
+                Map<String, List<String>> branchType = new LinkedHashMap<>();
+                branchType.put(s, Arrays.asList("B", "C"));
+                branchTypeList.add(Arrays.asList("B", "C"));
+                branchList.add(branchType);
+                idsList.add(s);
+            }
+        }
+        List<Callable<List<Map<String, String>>>> tasks = new ArrayList<>();
+        //递归对分支状态进行枚举
+        for (int i = 0; i < 3; i++) {
+            final int index = i;
+            tasks.add(() -> {
+                List<List<String>> branchTypeListCopy = branchTypeList.stream().collect(Collectors.toList());
+                List<String> idsListCopy = idsList.stream().collect(Collectors.toList());
+                Map<String, List<String>> branchTypeInfo = branchList.get(0);
+                //拿到第一个分支的状态
+                List<String> branchType = branchTypeInfo.get(idsList.get(0));
+                //每个线程分支初始化状态
+                String s = branchType.get(index);
+                List<Map<String,String>> optimizeList = new ArrayList<>();
+                Map<String,String> cases = new LinkedHashMap<>();
+                cases.put(idsList.get(0),s);
+                List<Map<String,String>> result = new ArrayList<>();
+
+                //递归
+                int branchIndex = 0;
+                branchTypeListCopy.remove(0);
+                idsListCopy.remove(0);
+                List<Map<String, String>> maps = recursionEnum(branchTypeListCopy, branchIndex, cases, result, idsListCopy);
+                return maps;
+            });
+        }
+        //获取线程池执行结果
+        List<Future<List<Map<String, String>>>> futures = new ArrayList<>();
+        for (Callable<List<Map<String, String>>> task : tasks) {
+            futures.add(threadPool.submit(task));
+        }
+        List<Map<String,String>> result = new ArrayList<>();
+        for (Future<List<Map<String, String>>> future : futures) {
+            try {
+                List<Map<String, String>> maps = future.get();
+                result.addAll(maps);
+            } catch (Exception e) {
+                e.printStackTrace();
+                System.out.println("递归获取结果异常");
+            }
+        }
+        System.out.println("递归结束耗时：" + (System.currentTimeMillis() - startTime));
+        //分支状态替换
+        for (Map<String, String> types : result) {
+
+        }
+    }
+
+    /**
+     * 递归枚举
+     * @param branchTypeList    分支可选类型集合
+     * @param branchIndex   当前处理的分支索引
+     * @param cases     生成的方案
+     */
+    public List<Map<String,String>> recursionEnum(List<List<String>> branchTypeList,int branchIndex,Map<String,String> cases,List<Map<String,String>> result,List<String> idsList){
+        //终止条件,如果到达最后一层
+        if (branchIndex > branchTypeList.size() - 1) {
+            //对生成的组合进行约束检查,这里一定不要对原始的方案进行影响
+            result.add(new LinkedHashMap<>(cases));
+            return result;
+        }
+        List<String> types = branchTypeList.get(branchIndex);
+        String branchId = idsList.get(branchIndex);
+        for (String type : types) {
+            //分支选择状态
+            cases.put(branchId,type);
+            //递归
+            recursionEnum(branchTypeList,branchIndex + 1,cases,result,idsList);
+            //回溯
+            if(types.indexOf(type) == types.size() - 1){
+                break;
+            }
+            cases.remove(branchId);
+        }
+        return result;
     }
 
 
