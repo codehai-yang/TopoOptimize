@@ -12,6 +12,8 @@ import HarnessPackOpti.utils.ThreadPool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.beans.PropertyEditorSupport;
+import java.io.File;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
@@ -421,7 +423,18 @@ public class HarnessBranchTopoOptimize {
         if(totalCombinations < 1000){
             //递归枚举优化
             System.out.println("递归开始");
-            branchEnum(singleBCList, singleSCList, singleBSList, singleBSCList, coppyedges,normList);
+            long algorithm = System.currentTimeMillis();
+            String s = "";
+            try {
+                 s = branchEnum(singleBCList, singleSCList, singleBSList, singleBSCList, edges, normList, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, initializeCaseResultMap, wearId, topoOptimizeResult);
+            }finally {
+                threadPool.terminateNow();
+            }
+            File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\topoOptimizeOutput.txt");
+            Files.write(outputFile.toPath(), s.getBytes());
+            System.out.println("线束优化已成功输出到: " + outputFile.getAbsolutePath());
+            System.out.println("递归结束，所用时间：" + (System.currentTimeMillis() - algorithm));
+            return s;
         }
 
         l = System.currentTimeMillis();
@@ -666,10 +679,13 @@ public class HarnessBranchTopoOptimize {
      * @param singleSCList
      * @param singleBSList
      * @param singleBSCList
-     * @param coppyedges
-     * @param normList
+     * @param edges     原方案分支详情
+     * @param normList 原方案分支顺序
      */
-    public void branchEnum(List<String> singleBCList,List<String> singleSCList,List<String> singleBSList,List<String> singleBSCList,List<Map<String, Object>> coppyedges,List<String> normList) throws Exception{
+    public String branchEnum(List<String> singleBCList,List<String> singleSCList,List<String> singleBSList,List<String> singleBSCList,
+                           List<Map<String, Object>> edges,List<String> normList,List<Map<String, String>> appPositions,
+                           Map<String, String> eleclection,Map<String, Map<String, List<String>>> mutexMap,List<Map<String, List<String>>> chooseOneList,
+                           List<List<String>> togetherBCList,Map<String, Object> jsonMap,Map<String, Object> initializeCaseResultMap,List<String> wearId,List<Map<String, String>> topoOptimizeResultStatute) throws Exception{
         //合并分支
         //分支id-分支可选状态
         long startTime = System.currentTimeMillis();
@@ -677,7 +693,7 @@ public class HarnessBranchTopoOptimize {
         //需要排序的分支id
         List<String> idsList = new ArrayList<>();
         List<List<String>> branchTypeList = new ArrayList<>();
-
+        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         if(singleBSCList.size()>0) {
             for (String s : singleBSCList) {
                 Map<String, List<String>> branchType = new LinkedHashMap<>();
@@ -716,7 +732,7 @@ public class HarnessBranchTopoOptimize {
         }
         List<Callable<List<Map<String, String>>>> tasks = new ArrayList<>();
         //递归对分支状态进行枚举
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < branchTypeList.get(0).size(); i++) {
             final int index = i;
             tasks.add(() -> {
                 List<List<String>> branchTypeListCopy = branchTypeList.stream().collect(Collectors.toList());
@@ -741,6 +757,8 @@ public class HarnessBranchTopoOptimize {
         }
         //获取线程池执行结果
         List<Future<List<Map<String, String>>>> futures = new ArrayList<>();
+        ObjectMapper mapper = new ObjectMapper();
+        JsonToMap jsonToMap = new JsonToMap();
         for (Callable<List<Map<String, String>>> task : tasks) {
             futures.add(threadPool.submit(task));
         }
@@ -756,9 +774,93 @@ public class HarnessBranchTopoOptimize {
         }
         System.out.println("递归结束耗时：" + (System.currentTimeMillis() - startTime));
         //分支状态替换
+        List<Map<String,Object>> totalCase = Collections.synchronizedList(new ArrayList<>());
+        Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
+        Map<String, Object> projectInfo = (Map<String, Object>) jsonMap.get("projectInfo");
+        long costTime = System.currentTimeMillis();
+        List<Callable<Map<String, Object>>> tasksResult = new ArrayList<>();
+        List<List< String>> total = new ArrayList<>();
         for (Map<String, String> types : result) {
+            tasksResult.add(() -> {
+            List<Map<String, Object>> edgesCopy = edges.stream().collect(Collectors.toList());
 
+            List<String> collect = new ArrayList<>();
+            topoOptimizeResultStatute.forEach(map -> {
+                collect.add(map.get("statue"));
+            });
+            types.forEach((id, type) -> {
+                //分支id索引
+                int i = normList.indexOf(id);
+                collect.set(i, type);
+            });
+            if(containsList(collect, total)){
+                return null;
+            }else {
+                total.add(collect);
+            }
+            //每生成一个方案进行检查约束
+            List<Map<String, Object>> edgesDetail = createNewEdges(collect, edgesCopy, normList);
+            Boolean staute = checkFirstOption(normList, collect, edgesDetail, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
+            Map<String,Object> map = new LinkedHashMap<>();
+            if(staute) {
+                //计算成本
+                Map<String, Object> threadLocalJsonMap = new HashMap<>(jsonMap);
+                threadLocalJsonMap.put("edges", edgesDetail);
+
+                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
+                Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
+                Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
+
+                Map<String, Object> costResultData = new HashMap<>();
+                costResultData.put("总成本", projectCircuitInfo.get("总成本"));
+                costResultData.put("总长度", projectCircuitInfo.get("回路总长度"));
+                costResultData.put("总重量", projectCircuitInfo.get("回路总重量"));
+                List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
+                for (Map<String, Object> map1 : edgesDetail) {
+                    Map<String, String> temp = new HashMap<>();
+                    temp.put("edgeId", map1.get("id").toString());
+                    temp.put("statue", map1.get("topologyStatusCode").toString());
+                    topoOptimizeResult.add(temp);
+                }
+
+                map.put("成本", costResultData);
+                map.put("topoId",topoInfoMap.get("id").toString());
+                map.put("caseId",projectInfo.get("caseId").toString());
+                map.put("topoOptimizeResult", topoOptimizeResult);
+                map.put("finishStatue", "normal");
+                map.put("initializationScheme", false);
+                map.putAll(objectMap);
+            }
+            return map;
+            });
         }
+        List<Future<Map<String, Object>>> futuresResult = new ArrayList<>();
+        for (Callable<Map<String, Object>> mapCallable : tasksResult) {
+            futuresResult.add(threadPool.submit(mapCallable));
+        }
+        for (Future<Map<String, Object>> future : futuresResult) {
+            try {
+                Map<String, Object> map = future.get();
+                if(map.size() != 0 && map != null && "normal".equals(map.get("finishStatue"))){
+                    synchronized (totalCase) {
+                        totalCase.add(map);
+                    }
+                }
+            } catch (Exception e) {
+
+            }
+        }
+        System.out.println("方案成本与约束检查总耗时：" + (System.currentTimeMillis() - costTime));
+        FindBest findBest = new FindBest();
+        ObjectMapper objectMapper = new ObjectMapper();
+        totalCase = findBest.findBest(totalCase, "成本",TopNumber);
+        for (Map<String, Object> map : totalCase) {
+            map.remove("成本");
+        }
+        initializeCaseResultMap.put("finishStatue", "normal");
+        totalCase.add(initializeCaseResultMap);
+        String s = objectMapper.writeValueAsString(totalCase);
+        return s;
     }
 
     /**
