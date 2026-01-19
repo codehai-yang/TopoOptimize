@@ -44,7 +44,7 @@ public class ElecPositionVariantCalculation {
     //    初代样本量
     public static Integer InitialSampleNumber = 10000;
     //    优化阈值
-    public static Integer OptimizeThresholdValue = 100000;
+    public static Integer OptimizeThresholdValue = 10000;
     private static ThreadPool threadPool = new ThreadPool(11, 11);
 
 
