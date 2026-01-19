@@ -13,11 +13,15 @@ import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
+import HarnessPackOpti.utils.ThreadPool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.math.BigInteger;
 import java.text.DecimalFormat;
 import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class ElecPositionVariantCalculation {
@@ -41,6 +45,7 @@ public class ElecPositionVariantCalculation {
     public static Integer InitialSampleNumber = 10000;
     //    优化阈值
     public static Integer OptimizeThresholdValue = 100000;
+    private static ThreadPool threadPool = new ThreadPool(11, 11);
 
 
     private final OptimizeStopStatusStore optimizeStopStatusStore;
@@ -153,7 +158,9 @@ public class ElecPositionVariantCalculation {
 
 
         System.out.println("生成字典");
+        long start = System.currentTimeMillis();
         Map<String, Object> filtration = filtration(adjacencyMatrixGraph, projectInfo);
+        System.out.println("生成字典所用时间" + (System.currentTimeMillis() - start));
         System.out.println("字典生成完成");
 //        筛选出可变的回路
         List<Map<String, Object>> unfixedLoopInfoList = new ArrayList<>();
@@ -308,56 +315,77 @@ public class ElecPositionVariantCalculation {
      * @input: map 解析完成的整车信息
      * @Return: 返回两点之间所有的路径   每个路劲中又详细说明了长度、分支打断等情况
      */
-    public Map<String, Object> filtration(GenerateTopoMatrix adjacencyMatrixGraph, Map<String, Object> map) {
+    public Map<String, Object> filtration(GenerateTopoMatrix adjacencyMatrixGraph, Map<String, Object> map) throws Exception{
         Map<String, Object> result = new HashMap<>();
         List<String> allPoint = adjacencyMatrixGraph.getAllPoint();
         FindAllPath findAllPath = new FindAllPath();
         List<Map<String, String>> edges = (List<Map<String, String>>) map.get("所有分支信息");
+        //多线程查找路径信息
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
+        //统计所有点之间的所有路径，并统计回路长度，湿区个数等
         for (int i = 0; i < allPoint.size(); i++) {
             String startName = allPoint.get(i);
-            for (int j = 0; j < allPoint.size(); j++) {
-                String endName = allPoint.get(j);
-                List<List<Integer>> allPathBetweenTwoPoint = findAllPath.findAllPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(startName), adjacencyMatrixGraph.getAllPoint().indexOf(endName));
-                List<Object> currentPath = new ArrayList<>();
-                for (List<Integer> list : allPathBetweenTwoPoint) {
-                    //           将路径中的数字转化为对应的名称
-                    List<String> listname = convertPathToNumbers(list, adjacencyMatrixGraph.getAllPoint());
+            tasks.add(() -> {
+                Map<String,Object> pathInfo = new HashMap<>();
+                for (int j = 0; j < allPoint.size(); j++) {
+                    String endName = allPoint.get(j);
+                    //查找两点间的所有路径
+                    List<List<Integer>> allPathBetweenTwoPoint = findAllPath.findAllPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(startName), adjacencyMatrixGraph.getAllPoint().indexOf(endName));
+                    List<Object> currentPath = new ArrayList<>();
+                    for (List<Integer> list : allPathBetweenTwoPoint) {
+                        //           将路径中的数字转化为对应的名称
+                        List<String> listname = convertPathToNumbers(list, adjacencyMatrixGraph.getAllPoint());
 //                        开始及逆行一个计算
-                    Map<String, Object> information = new HashMap<>();
-                    FindBranchByNode findBranchByNode = new FindBranchByNode();
-                    Map<String, Object> MapbranchByNode = findBranchByNode.findBranchByNode(listname, edges);
-                    List<String> edgeIdList = (List<String>) MapbranchByNode.get("idList");
-                    CalculatePathLength calculatePathLength = new CalculatePathLength();
-                    Map<String, Object> pathLength = calculatePathLength.calculatePathLength(edgeIdList, map);
-                    CalculatePathBreakNumber calculatePathBreakNumber = new CalculatePathBreakNumber();
-                    Map<String, Object> objectMap = calculatePathBreakNumber.calculatePathBreakNumber(edgeIdList, map);
+                        Map<String, Object> information = new HashMap<>();
+                        FindBranchByNode findBranchByNode = new FindBranchByNode();
+                        //找到途径所有分支
+                        Map<String, Object> MapbranchByNode = findBranchByNode.findBranchByNode(listname, edges);
+                        List<String> edgeIdList = (List<String>) MapbranchByNode.get("idList");
+                        CalculatePathLength calculatePathLength = new CalculatePathLength();
+                        //计算回路长度
+                        Map<String, Object> pathLength = calculatePathLength.calculatePathLength(edgeIdList, map);
+                        CalculatePathBreakNumber calculatePathBreakNumber = new CalculatePathBreakNumber();
+                        Map<String, Object> objectMap = calculatePathBreakNumber.calculatePathBreakNumber(edgeIdList, map);
 //        分支打断名称
-                    List<String> topologyStatusCodeNameList = (List<String>) objectMap.get("nameList");
+                        List<String> topologyStatusCodeNameList = (List<String>) objectMap.get("nameList");
 
-                    Integer breakNumber = topologyStatusCodeNameList.size();
-                    CalculateInlineWet calculateInlineWet = new CalculateInlineWet();
-                    Map<String, String> inlineWet = calculateInlineWet.calculateInlineWet(topologyStatusCodeNameList, map);
-                    int count = 0;
-                    for (Object mapValue : inlineWet.values()) {
-                        if ("w".toUpperCase().equals(mapValue.toString())) {
+                        Integer breakNumber = topologyStatusCodeNameList.size();
+                        CalculateInlineWet calculateInlineWet = new CalculateInlineWet();
+                        //计算回路中分支干湿状态
+                        Map<String, String> inlineWet = calculateInlineWet.calculateInlineWet(topologyStatusCodeNameList, map);
+                        int count = 0;
+                        for (Object mapValue : inlineWet.values()) {
+                            if ("w".toUpperCase().equals(mapValue.toString())) {
+                                count++;
+                            }
+                        }
+                        //回路两端断点干湿
+                        if ("w".toUpperCase().equals(getWaterParam(listname.get(0), (List<Map<String, String>>) map.get("所有端点信息")))) {
                             count++;
                         }
+                        if ("w".toUpperCase().equals(getWaterParam(listname.get(listname.size() - 1), (List<Map<String, String>>) map.get("所有端点信息")))) {
+                            count++;
+                        }
+                        information.put("回路长度", (Double) pathLength.get("长度") / 1000);
+                        information.put("打断次数", breakNumber);
+                        information.put("湿区个数", count);
+                        information.put("路径", listname);
+                        currentPath.add(information);
                     }
-                    if ("w".toUpperCase().equals(getWaterParam(listname.get(0), (List<Map<String, String>>) map.get("所有端点信息")))) {
-                        count++;
-                    }
-                    if ("w".toUpperCase().equals(getWaterParam(listname.get(listname.size() - 1), (List<Map<String, String>>) map.get("所有端点信息")))) {
-                        count++;
-                    }
-                    information.put("回路长度", (Double) pathLength.get("长度") / 1000);
-                    information.put("打断次数", breakNumber);
-                    information.put("湿区个数", count);
-                    information.put("路径", listname);
-                    currentPath.add(information);
+                    String name = startName + "-" + endName;
+                    pathInfo.put(name, currentPath);
                 }
-                String name = startName + "-" + endName;
-                result.put(name, currentPath);
-            }
+                return pathInfo;
+            });
+        }
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            Future<Map<String, Object>> future = threadPool.submit(task);
+            futures.add(future);
+        }
+        for (Future<Map<String, Object>> future : futures) {
+            Map<String, Object> stringObjectMap = future.get(300, TimeUnit.SECONDS);
+            result.putAll(stringObjectMap);
         }
         return result;
     }
