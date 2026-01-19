@@ -304,7 +304,6 @@ public class ElecPositionVariantCalculation {
             }
         }
         String json = objectMapper.writeValueAsString(bestList);
-        System.out.println(json);
         return json;
     }
 
@@ -913,12 +912,15 @@ public class ElecPositionVariantCalculation {
 
         DecimalFormat df = new DecimalFormat("0.00");
         List<Map<String, Object>> allArrangementList = new ArrayList<>();
+        //多线程对所有的方案进行成本计算
+        List<Callable<Map<String,Object>>> tasks = new ArrayList<>();
         for (List<String> allArrangement : allArrangements) {
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                //关闭线程池
+                threadPool.terminateNow();
                 break;
             }
-
-            System.out.println(i++);
+            tasks.add(() -> {
             Map<String, Object> map = new HashMap<>();
             List<Map<String, Object>> copyAppPositions = (List<Map<String, Object>>) mapFile.get("appPositions");
             for (String s : electricalList) {
@@ -948,7 +950,16 @@ public class ElecPositionVariantCalculation {
             map.put("成本", cost);
             calculatemap.put("elecOptimizeResult", map);
             calculatemap.put("成本", cost);
-            allArrangementList.add(calculatemap);
+            return calculatemap;
+            });
+        }
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            futures.add(threadPool.submit(task));
+        }
+        for (Future<Map<String, Object>> future : futures) {
+            Map<String, Object> stringObjectMap = future.get(180, TimeUnit.SECONDS);
+            allArrangementList.add(stringObjectMap);
         }
         List<Map<String, Object>> cost = findBest.findBest(allArrangementList, "成本", TopNumber);
         List<Map<String, Object>> restore = restore(cost, initmapFile);
