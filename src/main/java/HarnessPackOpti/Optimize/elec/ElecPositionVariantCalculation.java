@@ -134,7 +134,8 @@ public class ElecPositionVariantCalculation {
             String s = elecChangeableList.get(i);
             Map<String, Object> elecInAllAddressDetail = new HashMap<>();
             Map<String, Object> mapFile = deepCopy(initmapFile);
-            List<Map<String, Object>> best = findOneGroup(mapFile, s, allPoint, "0");
+            //这里只传入每个用电器对应的可变位置点
+            List<Map<String, Object>> best = findOneGroup(mapFile, s, elecChangeablePosition.get(s), "0");
             elecInAllAddressDetail.put("group", s);
             elecInAllAddressDetail.put("detail", best);
             elecInAllAddress.add(elecInAllAddressDetail);

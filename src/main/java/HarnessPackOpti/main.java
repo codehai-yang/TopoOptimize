@@ -10,7 +10,7 @@ import java.nio.file.Files;
 
 public class main {
     public static void main(String[] args) throws Exception {
-
+        //线束拓扑优化
         File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
         HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
