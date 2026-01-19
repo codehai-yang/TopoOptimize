@@ -175,6 +175,7 @@ public class ElecPositionVariantCalculation {
         List<List<String>> correlationElec = new ArrayList<>();
 
 //      可变用电器一一比对   将符合要求的放到一个组里面
+        long groupTime = System.currentTimeMillis();
         for (int i = 0; i < elecChangeablePositionList.size() - 1; i++) {
             for (int j = i + 1; j < elecChangeablePositionList.size(); j++) {
                 String elec1 = elecChangeablePositionList.get(i);
@@ -203,9 +204,10 @@ public class ElecPositionVariantCalculation {
         }
 //        对当前的用电器进行一个分组
         List<List<String>> lists = elecGroup(elecChangeablePositionSet.stream().collect(Collectors.toList()), correlationElec);
-
+        System.out.println("用电器分组时间:" + (System.currentTimeMillis() - groupTime));
         List<Map<String, Object>> bestList = new ArrayList<>();
 //        针对不同的阈值进行一个计算
+        long optimizeTime = System.currentTimeMillis();
         for (List<String> list : lists) {
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 break;
@@ -269,7 +271,7 @@ public class ElecPositionVariantCalculation {
             BestCost = new HashMap<>();
             BestRepetitionNumber = 0;
         }
-
+        System.out.println("对分好组的用电器进行优化，耗时:" + (System.currentTimeMillis() - optimizeTime));
 //
         Set<String> groupSet = new HashSet<>();
         for (Map<String, Object> map : bestList) {
@@ -908,7 +910,6 @@ public class ElecPositionVariantCalculation {
 
 
         System.out.println(allArrangements.size());
-        int i = 0;
 
         DecimalFormat df = new DecimalFormat("0.00");
         List<Map<String, Object>> allArrangementList = new ArrayList<>();
@@ -965,6 +966,7 @@ public class ElecPositionVariantCalculation {
         List<Map<String, Object>> restore = restore(cost, initmapFile);
         result.addAll(restore);
         allArrangementList = null;
+        threadPool.terminateNow();
         System.gc();
         return result;
     }
@@ -981,9 +983,12 @@ public class ElecPositionVariantCalculation {
         ObjectMapper objectMapper = new ObjectMapper();
         JsonToMap jsonToMap = new JsonToMap();
         int i = 1;
+        //这里多线程还原
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
         for (Map<String, Object> map : originalMap) {
-            System.out.println("i=" + i);
-            i++;
+            tasks.add(() -> {
+
+
             Map<String, Object> mapFile = deepCopy(initmapFile);
             List<Map<String, Object>> copyAppPositions = (List<Map<String, Object>>) mapFile.get("appPositions");
             Map<String, Object> elecOptimizeResult = (Map<String, Object>) map.get("elecOptimizeResult");
@@ -999,7 +1004,16 @@ public class ElecPositionVariantCalculation {
             result.put("topoId", TopoId);
             result.put("caseId", CaseId);
             result.put("elecOptimizeResult", elecOptimizeResult);
-            resultList.add(result);
+            return result;
+            });
+        }
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            futures.add(threadPool.submit(task));
+        }
+        for (Future<Map<String, Object>> future : futures) {
+            Map<String, Object> stringObjectMap = future.get(180, TimeUnit.SECONDS);
+            resultList.add(stringObjectMap);
         }
         return resultList;
     }
