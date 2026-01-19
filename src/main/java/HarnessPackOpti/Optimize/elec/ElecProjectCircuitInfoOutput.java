@@ -33,7 +33,7 @@ public class ElecProjectCircuitInfoOutput {
         Set<String> pointNameSet = new HashSet<>();
         if (whetherToChange) {
             for (Map<String, Object> point : points) {
-                if (point.get("端点接口直连编号") != null) {
+                if (point.get("端点接口直连编号") != null && !"".equals(point.get("端点接口直连编号").toString())) {
                     String interfaceCode = point.get("端点接口直连编号").toString();
                     String pointName = point.get("端点名称").toString();
                     interfaceCode = interfaceCode.substring(0, interfaceCode.length() - 1);
