@@ -16,6 +16,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
@@ -33,7 +34,7 @@ public class HarnessBranchTopoOptimize {
     //    迭代重复的次数限值
     public static Integer IterationRestrictNumber = 30;
     //    定义一个仓库
-    public static List<List<String>> WareHouse = new ArrayList<>();
+    public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
     //    变异的次数
     public static Integer VariationNumber = 1;
     //每次迭代得到的top20
@@ -43,7 +44,7 @@ public class HarnessBranchTopoOptimize {
     //    自动补全得次数
     public static Integer AutoCompleteNumber = 30;
     //遗传算法迭代次数
-    public static Integer IterationNumber = 11;
+    public static Integer IterationNumber = 2;
 
 
     //    定义一个仓库
@@ -669,6 +670,7 @@ public class HarnessBranchTopoOptimize {
         String s = objectMapper.writeValueAsString(mapList);
         long end = System.currentTimeMillis();
         System.out.println("算法总耗时长：" + (end - start));
+        threadPool.terminateNow();
         return objectMapper.writeValueAsString(mapList);
     }
 
