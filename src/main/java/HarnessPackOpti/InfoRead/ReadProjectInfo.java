@@ -19,6 +19,7 @@ public class ReadProjectInfo {
             HashMap<String, Object> caseInfoMap= (HashMap<String, Object>) mapFromProject.get("caseInfo");
             caseInfo.put("直连接口是否发生变化",caseInfoMap.get("connect"));
             caseInfo.put("是否开启消除闭环",caseInfoMap.get("loopcreate"));
+            caseInfo.put("方案名称",caseInfoMap.get("caseName"));
         }
 
 
