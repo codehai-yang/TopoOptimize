@@ -44,7 +44,7 @@ public class HarnessBranchTopoOptimize {
     //    自动补全得次数
     public static Integer AutoCompleteNumber = 30;
     //遗传算法迭代次数
-    public static Integer IterationNumber = 2;
+    public static Integer IterationNumber = 11;
 
 
     //    定义一个仓库
@@ -2053,7 +2053,8 @@ public class HarnessBranchTopoOptimize {
             }
         }
         System.out.println("初始化方案数量：" + totalNumber);
-        return resultList;
+        List<List<String>> resultListCopy = resultList.stream().collect(Collectors.toList());
+        return resultListCopy;
     }
 
     /**
