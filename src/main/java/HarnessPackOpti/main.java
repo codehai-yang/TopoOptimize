@@ -30,7 +30,7 @@ public class main {
 
 //        用电器优化
         long startTime = System.currentTimeMillis();
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\用电器位置布局优化遗传算法样本.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\用电器位置布局优化TXT.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
         ElecPositionVariantCalculation elecPositionVariantCalculation=new ElecPositionVariantCalculation();
         elecPositionVariantCalculation.elecPositionVariantCalculation(jsonContent);

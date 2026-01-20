@@ -981,7 +981,9 @@ public class ElecPositionVariantCalculation {
             allArrangementList.add(stringObjectMap);
         }
         List<Map<String, Object>> cost = findBest.findBest(allArrangementList, "成本", TopNumber);
+        long restoreTime = System.currentTimeMillis();
         List<Map<String, Object>> restore = restore(cost, initmapFile);
+        System.out.println("方案还原耗时：" + (System.currentTimeMillis() - restoreTime));
         result.addAll(restore);
         allArrangementList = null;
         threadPool.terminateNow();
