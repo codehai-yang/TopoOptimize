@@ -628,6 +628,7 @@ public class ProjectCircuitInfoOutput {
         resultMap.put("projectCircuitInfo", projectCircuitInfo);
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
         String json = objectMapper.writeValueAsString(resultMap);// 将Map转换为JSON字符串
+        //excel导出
 //        System.out.println("信息汇总:\n" +json);
         return json;
     }
