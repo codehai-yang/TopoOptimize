@@ -42,6 +42,8 @@ public class HarnessBranchTopoOptimize {
     public static Integer InitializeAutoCompleteNumber = 1000;
     //    自动补全得次数
     public static Integer AutoCompleteNumber = 30;
+    //遗传算法迭代次数
+    public static Integer IterationNumber = 11;
 
 
     //    定义一个仓库
@@ -395,12 +397,12 @@ public class HarnessBranchTopoOptimize {
         //TODO 当用户输入的方案数量<1000时，使用枚举法直接计算最有方案
         long totalCombinations = 1L;
         //TODO 这里限制BSC的数量，枚举方法完成后直接废除
-        if (singleBSCList.size() > 1) {
-            singleBSCList = new ArrayList<>(singleBSCList.subList(5, 6));
-        }
-        if (singleSCList.size() > 1) {
-            singleSCList = new ArrayList<>(singleSCList.subList(0, 2));
-        }
+//        if (singleBSCList.size() > 1) {
+//            singleBSCList = new ArrayList<>(singleBSCList.subList(5, 6));
+//        }
+//        if (singleSCList.size() > 1) {
+//            singleSCList = new ArrayList<>(singleSCList.subList(0, 2));
+//        }
         if (!singleBCList.isEmpty()) {
             totalCombinations *= Math.pow(2, singleBCList.size());
         }
@@ -430,9 +432,6 @@ public class HarnessBranchTopoOptimize {
             }finally {
                 threadPool.terminateNow();
             }
-            File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\topoOptimizeOutput.txt");
-            Files.write(outputFile.toPath(), s.getBytes());
-            System.out.println("线束优化已成功输出到: " + outputFile.getAbsolutePath());
             System.out.println("递归结束，所用时间：" + (System.currentTimeMillis() - algorithm));
             return s;
         }
@@ -657,7 +656,7 @@ public class HarnessBranchTopoOptimize {
                 break;
             }
             hybridizationNumber++;
-            if (hybridizationNumber > 2) {
+            if (hybridizationNumber > IterationNumber) {
                 break;
             }
         }
