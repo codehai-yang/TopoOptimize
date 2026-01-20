@@ -134,6 +134,7 @@ public class ElecPositionVariantCalculation {
         System.out.println("计算用电器再每个点的成本");
 
 //        计算每个用电器在所有点的成本计算
+        long costTime = System.currentTimeMillis();
         List<Map<String, Object>> elecInAllAddress = new ArrayList<>();
         for (int i = 0; i < elecChangeableList.size(); i++) {
             String s = elecChangeableList.get(i);
@@ -149,7 +150,7 @@ public class ElecPositionVariantCalculation {
                 return objectMapper.writeValueAsString(elecInAllAddress);
             }
         }
-
+        System.out.println("计算用电器再每个点的成本所用时间" + (System.currentTimeMillis() - costTime));
         System.out.println("计算用电器再每个点的成本完成");
         if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
             String s1 = objectMapper.writeValueAsString(elecInAllAddress);
@@ -273,6 +274,7 @@ public class ElecPositionVariantCalculation {
         }
         System.out.println("对分好组的用电器进行优化，耗时:" + (System.currentTimeMillis() - optimizeTime));
 //
+        long noneGroupTime = System.currentTimeMillis();
         Set<String> groupSet = new HashSet<>();
         for (Map<String, Object> map : bestList) {
             String group = map.get("group").toString();
@@ -305,7 +307,9 @@ public class ElecPositionVariantCalculation {
 
             }
         }
+        System.out.println("对未分组用电器优化，耗时：" + (System.currentTimeMillis() - noneGroupTime));
         String json = objectMapper.writeValueAsString(bestList);
+        threadPool.terminateNow();
         return json;
     }
 
@@ -491,7 +495,9 @@ public class ElecPositionVariantCalculation {
         }
 
 //        按照新的位置点随机生成一批样本
+        long startTime = System.currentTimeMillis();
         List<List<String>> possibilityLists = initialOptimize(newElecChangeablePosition, electricalList);
+        System.out.println("生成初代样本耗时：" + (System.currentTimeMillis() - startTime));
         WareHouse.addAll(possibilityLists);
 //        找出这些可变用电器的相关回路
         List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) mapFile.get("loopInfos");
@@ -532,11 +538,13 @@ public class ElecPositionVariantCalculation {
         result.add(baseCalculateMap);
         temporarilyList.add(baseCalculateMap);
 //        计算在当前的方案下面筛选出来的回路成本:直接将要的回路放在里面   替换位置点的信息
-
+        long findBestTime = System.currentTimeMillis();
         List<Map<String, Object>> findBest = compute(possibilityLists, mapFile, electricalList, "0", elecFixedLocationLibrary, elecBusinessPrice, filtration);
+        System.out.println("初代方案中找最优Top耗时:" + (System.currentTimeMillis() - findBestTime));
         temporarilyList.addAll(findBest);
 //        开始进行一个迭代
         int hybridizationNumber = 1;
+        long hybridizationTime = System.currentTimeMillis();
         while (true) {
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 List<Map<String, Object>> restore = restore(findBest, initMapFile);
@@ -578,6 +586,7 @@ public class ElecPositionVariantCalculation {
             }
             hybridizationNumber++;
         }
+        System.out.println("遗传算法迭代耗时：" + (System.currentTimeMillis() - hybridizationTime));
         List<Map<String, Object>> restore = restore(findBest, initMapFile);
         result.addAll(restore);
         return result;
@@ -681,26 +690,26 @@ public class ElecPositionVariantCalculation {
         System.out.println("lists:" + lists.size() + "个方案");
         int numbber = 1;
         DecimalFormat df = new DecimalFormat("0.00");
+        //多线程优化(10000个方案)
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
         for (List<String> list : lists) {
-            Map<String, Object> mapFile = deepCopy(initMapFile);
-            numbber++;
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 break;
             }
+            tasks.add(() -> {
+            Map<String, Object> mapFile = deepCopy(initMapFile);
             Map<String, Object> map = new HashMap<>();
             List<Map<String, Object>> copyAppPositions = (List<Map<String, Object>>) mapFile.get("appPositions");
             for (String s : electricalList) {
                 for (Map<String, Object> copyAppPosition : copyAppPositions) {
                     if (copyAppPosition.get("appName").toString().equals(s)) {
                         copyAppPosition.put("unregularPointName", list.get(electricalList.indexOf(s)));
-                        continue;
                     }
                 }
             }
             mapFile.put("appPositions", copyAppPositions);
             long l = System.currentTimeMillis();
             String json = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile), filtration, elecFixedLocationLibrary, elecBusinessPrice);
-            System.out.println("第" + numbber + "个方案" + "用时" + (System.currentTimeMillis() - l));
             Map<String, Object> calculatemap = jsonToMap.TransJsonToMap(json);
             Map<String, Double> cost = new HashMap<>();
             Map<String, Object> projectCircuitInfo = (Map<String, Object>) calculatemap.get("projectCircuitInfo");
@@ -718,9 +727,17 @@ public class ElecPositionVariantCalculation {
             map.put("number", number);
             calculatemap.put("成本", cost);
             calculatemap.put("elecOptimizeResult", map);
-            result.add(calculatemap);
-            mapFile = null;
-
+            return calculatemap;
+            });
+        }
+        //获取结果
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            futures.add(threadPool.submit( task));
+        }
+        for (Future<Map<String, Object>> future : futures) {
+            Map<String, Object> stringObjectMap = future.get(180, TimeUnit.SECONDS);
+            result.add(stringObjectMap);
         }
         List<Map<String, Object>> best = findBest.findBest(result, "成本", TopNumber);
         result = null;
@@ -740,6 +757,7 @@ public class ElecPositionVariantCalculation {
         while (result.size() < LessRandomSamleNumber) {
             List<String> caseList = new ArrayList<>();
             for (String s : electricalList) {
+                //拿到可变位置
                 List<String> list = newElecChangeablePosition.get(s);
                 caseList.add(list.get(random.nextInt(list.size())));
             }
