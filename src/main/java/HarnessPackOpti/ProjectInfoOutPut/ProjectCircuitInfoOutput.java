@@ -8,6 +8,7 @@ import HarnessPackOpti.CircuitInfoCalculate.CalculatePathLength;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.JsonToMap;
+import HarnessPackOpti.utils.ExportExcelUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.codec.binary.StringUtils;
@@ -628,6 +629,9 @@ public class ProjectCircuitInfoOutput {
         resultMap.put("projectCircuitInfo", projectCircuitInfo);
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
         String json = objectMapper.writeValueAsString(resultMap);// 将Map转换为JSON字符串
+        //Excel导出
+//        ExportExcelUtils exportExcelUtils = new ExportExcelUtils();
+//        exportExcelUtils.exportExcel(systemCircuitInfo,elecRelatedCircuitInfo,caseInfo, loopdetails);
         //excel导出
 //        System.out.println("信息汇总:\n" +json);
         return json;
