@@ -22,6 +22,16 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class ProjectCircuitInfoOutput {
+    public static Map<String, Map<String, String>> elecFixedLocationLibrary = null;
+    public static Map<String, Double> elecBusinessPrice = null;
+
+    // 构造函数中读取Excel
+    public ProjectCircuitInfoOutput() throws Exception {
+        ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
+        this.elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
+        this.elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
+    }
+
     public static void main(String[] args) throws Exception {
         File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\20250630.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
@@ -35,6 +45,7 @@ public class ProjectCircuitInfoOutput {
 
 
     public String projectCircuitInfoOutput(String fileStringFormat) throws Exception {
+        long startTime = System.currentTimeMillis();
         JsonToMap jsonToMap = new JsonToMap();
         Map<String, Object> mapFile = jsonToMap.TransJsonToMap(fileStringFormat);
         ReadProjectInfo readProjectInfo = new ReadProjectInfo();
@@ -76,9 +87,13 @@ public class ProjectCircuitInfoOutput {
 
         //      读取线径excel文件
         ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
-        Map<String, Map<String, String>> elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
+        if(elecFixedLocationLibrary == null) {
+             elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
+        }
         //获取导线无聊单价   商务成本
-        Map<String, Double> elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
+        if(elecBusinessPrice == null) {
+             elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
+        }
 
 //       在points 找出所有可能发生变化点   并且将同一组的放在一起
         Map<String, List<String>> interfaceCodegroup = new HashMap<>();
@@ -634,6 +649,7 @@ public class ProjectCircuitInfoOutput {
 //        exportExcelUtils.exportExcel(systemCircuitInfo,elecRelatedCircuitInfo,caseInfo, loopdetails);
         //excel导出
 //        System.out.println("信息汇总:\n" +json);
+//        System.out.println("算法总耗时" + (System.currentTimeMillis() - startTime));
         return json;
     }
 

@@ -8,6 +8,7 @@ import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
+import HarnessPackOpti.utils.GenerateAiCaseUtils;
 import HarnessPackOpti.utils.ThreadPool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -24,7 +25,7 @@ public class HarnessBranchTopoOptimize {
     //    随机变换样本数量
     public static Integer LessRandomSamleNumber = 100;
     //   迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 200;
+    public static Integer HybridizationLessRandomSamleNumber = 100;
     //    top几的数量规定
     public static final Integer TopNumber = 20;
     //    每次迭代最优的成本
@@ -35,6 +36,10 @@ public class HarnessBranchTopoOptimize {
     public static Integer IterationRestrictNumber = 30;
     //    定义一个仓库
     public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
+    //定义仓库(所有裂变生成的方案，用于AI)
+    public static List<List<String>> WareHouseAI = new CopyOnWriteArrayList<>();
+    //AI仓库存放的样本数量限制
+    public static Integer AutoCompleteNumberLimit = 20;
     //    变异的次数
     public static Integer VariationNumber = 1;
     //每次迭代得到的top20
@@ -44,14 +49,14 @@ public class HarnessBranchTopoOptimize {
     //    自动补全得次数
     public static Integer AutoCompleteNumber = 30;
     //遗传算法迭代次数
-    public static Integer IterationNumber = 11;
+    public static Integer IterationNumber = 1;
 
 
     //    定义一个仓库
     public static List<List<String>> WareHouseTop = new ArrayList<>();
     //每次迭代得到的top10
     public static List<Map<String, Object>> TopCostDetail = new ArrayList<>();
-    private static ThreadPool threadPool = new ThreadPool(11, 11);
+    public static ThreadPool threadPool = new ThreadPool(11, 11);
 
 
     //    当前方案的id
@@ -153,7 +158,7 @@ public class HarnessBranchTopoOptimize {
                 edgeChooseBS.add(edge.get("id").toString());
             }
 //            找出那些可变S的情况，可以变为s状态的分支
-            if (edge.get("oneC") == null) {
+            if (edge.get("oneC") == null || "".equals(edge.get("oneC"))) {
                 if ((edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")) || (edge.get("statusC").toString().equals("C") && edge.get("statusS").toString().equals("S"))
                         || (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S") && edge.get("statusC").toString().equals("C"))) {
                     canChangeS.add(edge.get("id").toString());
@@ -201,7 +206,7 @@ public class HarnessBranchTopoOptimize {
 
 
 //            对多选的一个情况进行一个记录，具有相同onec值的分支属于同一组
-            if (edge.get("oneC") != null) {
+            if (edge.get("oneC") != null && !"".equals(edge.get("oneC"))) {
                 String chooseName = edge.get("oneC").toString();
                 List<String> chooselist = new ArrayList<>();
                 if (edge.get("statusB").toString().equals("B")) {
@@ -665,6 +670,12 @@ public class HarnessBranchTopoOptimize {
         System.out.println("遗传算法总迭代耗时：" + (functionendTime - functionStartTime));
         TopDetail = findBest;
         List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "normal", singleBCList, singleSCList, singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
+        //AI样本生成
+        GenerateAiCaseUtils generateAiCaseUtils = new GenerateAiCaseUtils();
+        System.out.println("AI样本开始生成");
+        long generateAiCase = System.currentTimeMillis();
+        generateAiCaseUtils.exportJson(normList, WareHouseAI, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap,ProjectCircuitInfoOutput.elecFixedLocationLibrary,togetherBCMap,chooseOneMap);
+        System.out.println("AI样本生成结束，耗时：" + (System.currentTimeMillis() - generateAiCase));
         initializeCaseResultMap.put("finishStatue", "normal");
         mapList.add(initializeCaseResultMap);
         String s = objectMapper.writeValueAsString(mapList);
@@ -1192,6 +1203,11 @@ public class HarnessBranchTopoOptimize {
                         return null;
                     }
                     Map<String, Object> objectMap = handleList.get(0);
+                    //变异后分支状态
+                    List<String> serviceableStatute = (List<String>)objectMap.get("serviceableStatute");
+                    if(!containsList(serviceableStatute, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit){
+                        WareHouseAI.add(serviceableStatute);
+                    }
                     Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
                     if (costDeail.contains(cost)) {
                         return null;
@@ -1563,6 +1579,8 @@ public class HarnessBranchTopoOptimize {
 
         //仓库中的方案检查看是否存在在仓库中时间
         long warehouseStartTime = System.currentTimeMillis();
+        //TODO 裂变出的所有方案必须去重
+
 //        变异的样本进行一个检查   如果不存在仓库或者容器当中  添加到容器当中
         for (List<String> list : changebTOc) {
             if (!containsList(list, WareHouse) && !containsList(list, simple)) {
@@ -1573,6 +1591,9 @@ public class HarnessBranchTopoOptimize {
                     int number = normList.indexOf(id);
                     String s = list.get(number);
                     coppyedge.put("topologyStatusCode", s);
+                }
+                if(!containsList(list,WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                    WareHouseAI.add(list);
                 }
                 Boolean sonSate = checkFirstOption(normList, list, coppysonedges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
                 if (sonSate) {
@@ -1589,6 +1610,9 @@ public class HarnessBranchTopoOptimize {
                     int number = normList.indexOf(id);
                     String s = list.get(number);
                     coppyedge.put("topologyStatusCode", s);
+                }
+                if(!containsList(list,WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                    WareHouseAI.add(list);
                 }
                 Boolean sonSate = checkFirstOption(normList, list, coppysonedges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
                 if (sonSate) {
@@ -1618,6 +1642,9 @@ public class HarnessBranchTopoOptimize {
             if (simpleList != null && simpleList.size() > 0) {
                 for (List<String> list : simpleList) {
                     if (!containsList(list, WareHouse) && !containsList(list, simple)) {
+                        if(!containsList(list,WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                            WareHouseAI.add(list);
+                        }
                         simple.add(list);
                         WareHouse.add(list);
                     }
@@ -1831,6 +1858,9 @@ public class HarnessBranchTopoOptimize {
             if (!containsList(list, WareHouseTop)) {
                 WareHouseTop.add(list);
                 TopCostDetail.add(map);
+            }
+            if(!containsList(list, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit){
+                WareHouseAI.add(list);
             }
         }
         return topBeat;
