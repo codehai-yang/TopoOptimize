@@ -13,6 +13,8 @@ public class TypeCheckUtils {
     private static final Map<String, Integer> TYPE_COUNT_MAP = new HashMap<>();
 
     static {
+        //类型说明：互斥，组团，多选一，连通，用电器周围至少存在一个分支，不符合约束，存在闭环，成本，重量，长度
+        //0和1都按上面进行排序：0：违反某一约束，1：符合某一约束
         TYPE_MAP.put(0b0111100, "TYPE_1");
         TYPE_MAP.put(0b0111101, "TYPE_2");
         TYPE_MAP.put(0b0011100, "TYPE_3");

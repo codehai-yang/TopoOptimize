@@ -797,6 +797,10 @@ public class ProjectCircuitInfoOutput {
                 Map<String, String> map1 = elecFixedLocationLibrary.get(loopWireway);
 //               找最短距离 起点-终点最短路径列表
 //                获取用电器所在位置
+                //判断 两点是否在图结构中
+                if(adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路起点用电器").toString(), app)) == -1 || adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路终点用电器").toString(), app)) == -1){
+                    continue;
+                }
                 //用电器起点和终点对应的索引列表；回路起点用电器和终点用电器在表头的索引位置
                 List<Integer> shortestPathBetweenTwoPoint = findShortestPath.findShortestPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路起点用电器").toString(),app)), adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路终点用电器").toString(),app)));
                 if(shortestPathBetweenTwoPoint == null){
