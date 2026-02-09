@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 
 public class HarnessBranchTopoOptimize {
     //    随机变换样本数量
-    public static Integer LessRandomSamleNumber = 100;
+    public static Integer LessRandomSamleNumber = 15;
     //   迭代最少样本数量
     public static Integer HybridizationLessRandomSamleNumber = 100;
     //    top几的数量规定
@@ -39,7 +39,7 @@ public class HarnessBranchTopoOptimize {
     //定义仓库(所有裂变生成的方案，用于AI)
     public static List<List<String>> WareHouseAI = new CopyOnWriteArrayList<>();
     //AI仓库存放的样本数量限制
-    public static Integer AutoCompleteNumberLimit = 20;
+    public static Integer AutoCompleteNumberLimit = 1000;
     //    变异的次数
     public static Integer VariationNumber = 1;
     //每次迭代得到的top20
@@ -2082,8 +2082,8 @@ public class HarnessBranchTopoOptimize {
                 break;
             }
         }
-        System.out.println("初始化方案数量：" + totalNumber);
         List<List<String>> resultListCopy = resultList.stream().collect(Collectors.toList());
+        System.out.println("初始化方案数量：" + resultListCopy.size());
         return resultListCopy;
     }
 

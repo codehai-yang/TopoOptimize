@@ -50,6 +50,9 @@ public class TypeCheckUtils {
             }
         }
         String type = TYPE_MAP.getOrDefault(mask, "UNKNOWN_TYPE");
+        if(type.equals("UNKNOWN_TYPE")){
+            System.out.println("未知类型：" + flags);
+        }
         // 更新计数器
         TYPE_COUNT_MAP.merge(type, 1, Integer::sum);
         return type;

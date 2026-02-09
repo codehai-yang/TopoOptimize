@@ -62,15 +62,19 @@ public class GenerateAiCaseUtils {
                 Map<String,Object> result = new LinkedHashMap<>();
                 //对每个方案进行整车计算
                 //创建新的边
+                if(list == null){
+                    return null;
+                }
                 List<Map<String, Object>> newEdges = harnessBranchTopoOptimize.createNewEdges(list, edges, normList);
                 Map<String ,Object> jsonMapCopy = new HashMap<>(jsonMap);
                 jsonMapCopy.put("edges",newEdges);
                 //TODO 这里有可能需要重新启方法，只需要成本等字段，会有其他逻辑拦截
                 String projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMapCopy));
                 Map<String, Object> stringObjectMap = jsonToMap.TransJsonToMap(projectInfo);
-                double baseCost = (Double) stringObjectMap.get("总成本");
-                double baseWeight = (Double) stringObjectMap.get("回路总重量");
-                double baseLength = (Double) stringObjectMap.get("回路总长度");
+                Map<String,Object> projectCircuitlnfo = (Map<String,Object>)stringObjectMap.get("projectCircuitInfo");
+                double baseCost = (Double) projectCircuitlnfo.get("总成本");
+                double baseWeight = (Double) projectCircuitlnfo.get("回路总重量");
+                double baseLength = (Double) projectCircuitlnfo.get("回路总长度");
                 //分支id分配编号
                 Map<String, String> branchIdMap = new HashMap<>();
                 //分支起点和终点对应的编号
@@ -150,27 +154,33 @@ public class GenerateAiCaseUtils {
                     //分支id-互斥编号
                     mutex.put( stringListMap.values().iterator().next().get(0),stringListMap.keySet().iterator().next());
                 }
-                List<String> branchMutexList = new ArrayList<>(normList.size());
+                String[] branchMutexArray = new String[normList.size()];
                 mutex.forEach((k,v)->{
                     int i = normList.indexOf(k);
-                    branchMutexList.add(i,v);
+                    if(i >= 0) {
+                        branchMutexArray[i] = v;
+                    }
                 });
                 //多选一
-                List<String> branchChooseOneList = new ArrayList<>(normList.size());
+                String[] branchChooseOneArray = new String[normList.size()];
                 chooseOneMap.forEach((k,v)->{
                     v.forEach((k1,v1) -> {
                         for (String s : v1) {
                             int i = normList.indexOf(s);
-                            branchChooseOneList.add(i,k1);
+                            if(i >= 0) {
+                                branchChooseOneArray[i] = k1;
+                            }
                         }
                     });
                 });
                 //组团一起
-                List<String> branchTogetherBCList = new ArrayList<>(normList.size());
+                String[] branchTogetherBCArray = new String[normList.size()];
                 togetherBCMap.forEach((k,v)->{
                     for (String s : v) {
                         int i = normList.indexOf(s);
-                        branchTogetherBCList.add(i,k);
+                        if(i >= 0) {
+                            branchTogetherBCArray[i] = k;
+                        }
                     }
                 });
                 //分支约束检测Label
@@ -201,9 +211,9 @@ public class GenerateAiCaseUtils {
                 result.put("branchLength",branchLengthList);            //分支特征参数2(长度)
                 result.put("branchIdPointList",branchIdPointLiST);      //分支点id列表
                 result.put("circuitCostList",circuitCostList);          //分支点特征(连通的显示为导线商务单价，元/米)
-                result.put("branchMutexList",branchMutexList);          //互斥特征
-                result.put("branchChooseOneList",branchChooseOneList);  //多选一特征
-                result.put("branchTogetherBCList",branchTogetherBCList);    //组团特征
+                result.put("branchMutexList",Arrays.asList(branchMutexArray));          //互斥特征
+                result.put("branchChooseOneList",Arrays.asList(branchChooseOneArray));  //多选一特征
+                result.put("branchTogetherBCList",Arrays.asList(branchTogetherBCArray));    //组团特征
 
                 // Label标签
                 result.put("mutexMap", stringBooleanMap.get("mutexMap")? 1 : 0);        //方案是否互斥
@@ -222,13 +232,23 @@ public class GenerateAiCaseUtils {
         //获取结果
         List<Future<Map<String, Object>>> futures = new ArrayList<>();
         for (Callable<Map<String, Object>> task : tasks) {
-            futures.add(HarnessBranchTopoOptimize.threadPool.submit( task));
+            if(task != null) {
+                futures.add(HarnessBranchTopoOptimize.threadPool.submit(task));
+            }
         }
         for (Future<Map<String, Object>> future : futures) {
-            Map<String, Object> result = future.get( 240, TimeUnit.SECONDS);
-            allResult.add(result);
+            try {
+                Map<String, Object> result = future.get( 240, TimeUnit.SECONDS);
+                if(result != null) {
+                    allResult.add(result);
+                }
+            }catch (Exception e){
+                e.printStackTrace();
+            }
+
         }
         String s = objectMapper.writeValueAsString(allResult);
+        System.out.println("生成的各类型方案数量:" + TypeCheckUtils.getAllTypeCounts());
         return s;
     }
 
@@ -416,11 +436,11 @@ public class GenerateAiCaseUtils {
                     }
                 }
                 cycleNumber++;
-                if(!result.get("mutexMap")){
+                if(result.get("mutexMap") != null && !result.get("mutexMap")){
                     break;
                 }
             }
-            if (!result.get("mutexMap")) {
+            if (result.get("mutexMap") != null && !result.get("mutexMap")) {
                 break;
             }
         }
@@ -455,23 +475,26 @@ public class GenerateAiCaseUtils {
 //            2、 每个用电器周围至少存在一个分支  3、生成的方案必须使得每个回路导通
         if (breakRec.size() != 1) {
             result.put("breakRec", false);
+        }else if(breakRec.size() == 1){
+            result.put("breakRec", true);
+        }else {
+            result.put("breakRec", false);
         }
 
-        Boolean edgesFlag = true;
+        Boolean existEdge = true;
 
         for (Map<String, String> appPosition : appPositions) {
             if (!appPosition.get("appName").startsWith("[")) {
                 String pointName = eleclection.get(appPosition.get("appName"));
                 if (!checkElecEdge(pointName, edges)) {
                     result.put("existEdge", false);
+                    existEdge = false;
                     break;
                 }
             }
         }
 
-        if (breakRec.size() == 1 && edgesFlag) {
-            //全部约束符合，返回空
-            result.put("breakRec", true);
+        if ( existEdge) {
             result.put("existEdge", true);
         }
         returnResult.put("mutexMap", result.get("mutexMap"));

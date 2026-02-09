@@ -174,6 +174,9 @@ public class ProjectCircuitInfoOutput {
         for (Map<String, String> list : fixTwoPoints) {
             //单个固定回路，所有回路信息，矩阵对象，导线价格信息，用电器可变位置点，导线无聊单价商务成本
             Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, adjacencyMatrixGraph, elecFixedLocationLibrary, true, null, electricalSet, elecBusinessPrice);
+            if(twoPointInfo == null){
+                continue;
+            }
             loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
         }
 //        对焊点的进行计算
@@ -181,6 +184,9 @@ public class ProjectCircuitInfoOutput {
         for (String name : set) {
             //焊点名称，拿到该焊点对应的所有回路,矩阵对象，导线价格信息，所有回路信息，是否固定，用电器可变位置点名称，导线物料单价商务成本
             Map<String, Object> groupInfo = findGroupInfo(name, fixMultiLoopInfos.get(name), adjacencyMatrixGraph, elecFixedLocationLibrary, projectInfo, true, null, electricalSet, elecBusinessPrice);
+            if(groupInfo == null){
+                continue;
+            }
 //            将所有的回路都添加到loopdetails里面
             int size = groupInfo.keySet().size();
             for (int i = 1; i < size; i++) {
@@ -378,6 +384,9 @@ public class ProjectCircuitInfoOutput {
         //使用之前确定的最佳用电器位置配置来计算这些简单回路
         for (Map<String, String> list : nonfixedNotGroupLoopsTwo) {
             Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, adjacencyMatrixGraph, elecFixedLocationLibrary, false, bestInterFaceInfo, electricalSet, elecBusinessPrice);
+            if(twoPointInfo == null){
+                continue;
+            }
             loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
         }
 //            对焊点的进行一个计算 并将最优的结果添加到loopdetails里面
@@ -386,6 +395,9 @@ public class ProjectCircuitInfoOutput {
         Set<String> nonfixMultiLoopInfosSet = nonfixedNotGroupLoopsMapMultiLoopInfos.keySet();
         for (String name : nonfixMultiLoopInfosSet) {
             Map<String, Object> groupInfo = findGroupInfo(name, nonfixedNotGroupLoopsMapMultiLoopInfos.get(name), adjacencyMatrixGraph, elecFixedLocationLibrary, projectInfo, false, bestInterFaceInfo, electricalSet, elecBusinessPrice);
+            if(groupInfo == null){
+                continue;
+            }
             int size = groupInfo.keySet().size();
             for (int i = 1; i < size; i++) {
                 Map<String, Object> groupDetailMap = (Map<String, Object>) groupInfo.get("到" + i + "用电器的信息");
@@ -787,6 +799,9 @@ public class ProjectCircuitInfoOutput {
 //                获取用电器所在位置
                 //用电器起点和终点对应的索引列表；回路起点用电器和终点用电器在表头的索引位置
                 List<Integer> shortestPathBetweenTwoPoint = findShortestPath.findShortestPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路起点用电器").toString(),app)), adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路终点用电器").toString(),app)));
+                if(shortestPathBetweenTwoPoint == null){
+                    continue;
+                }
                 //获取最短路径每个点的用电器名称
                 List<String> listname = convertPathToNumbers(shortestPathBetweenTwoPoint, adjacencyMatrixGraph.getAllPoint());
 
@@ -2008,6 +2023,9 @@ public class ProjectCircuitInfoOutput {
                     return null;
                 }
                 List<Integer> shortestPathBetweenTwoPoint = findShortestPath.findShortestPathBetweenTwoPoint(adj, start, endpoint);
+                if(shortestPathBetweenTwoPoint == null){
+                    continue;
+                }
                 for (Integer integers : shortestPathBetweenTwoPoint) {
                     set.add(integers);
                 }
