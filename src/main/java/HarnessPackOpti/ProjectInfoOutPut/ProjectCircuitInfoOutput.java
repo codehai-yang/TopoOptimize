@@ -1660,12 +1660,14 @@ public class ProjectCircuitInfoOutput {
                 } else {
                     if (electricalSet.contains(end)) {
                         Map<String, String> map1 = (Map<String, String>) objectMap.get(end);
-                        if (port == null) {
-                            endName = map1.get("null");
-                        } else if (!map1.containsKey(port)) {
-                            endName = findNode(end, appPositions);
-                        } else {
-                            endName = map1.get(port);
+                        if(map1 != null) {
+                            if (port == null) {
+                                endName = map1.get("null");
+                            } else if (!map1.containsKey(port)) {
+                                endName = findNode(end, appPositions);
+                            } else {
+                                endName = map1.get(port);
+                            }
                         }
                     } else {
                         endName = findNode(end, appPositions);
