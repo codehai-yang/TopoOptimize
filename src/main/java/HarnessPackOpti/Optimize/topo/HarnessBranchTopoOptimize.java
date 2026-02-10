@@ -603,8 +603,10 @@ public class HarnessBranchTopoOptimize {
 //        将初始化方案也放入到迭代中去
         Map<String, Object> addtoMap = new HashMap<>();
         addtoMap.put("serviceableStatue", primeList);
+        WareHouseAI.add(primeList);
         findBest.add(addtoMap);
         long functionStartTime = System.currentTimeMillis();
+        System.out.println("遗传算法前WarehouseAi仓库样本数量：" + WareHouseAI.size());
         //遗传算法
         while (true) {
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
@@ -666,10 +668,13 @@ public class HarnessBranchTopoOptimize {
                 break;
             }
         }
+        System.out.println("遗传算法后WarehouseAi仓库样本数量：" + WareHouseAI.size());
         long functionendTime = System.currentTimeMillis();
         System.out.println("遗传算法总迭代耗时：" + (functionendTime - functionStartTime));
+        System.out.println("遗传算法后WarehouseAi样本数量：" + WareHouseAI.size());
         TopDetail = findBest;
         List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "normal", singleBCList, singleSCList, singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
+        System.out.println("方案再优化后，WarehouseAi样本数量:" + WareHouseAI.size());
         //AI样本生成
         GenerateAiCaseUtils generateAiCaseUtils = new GenerateAiCaseUtils();
         System.out.println("AI样本开始生成");
@@ -1205,8 +1210,10 @@ public class HarnessBranchTopoOptimize {
                     Map<String, Object> objectMap = handleList.get(0);
                     //变异后分支状态
                     List<String> serviceableStatute = (List<String>)objectMap.get("serviceableStatute");
-                    if(!containsList(serviceableStatute, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit){
-                        WareHouseAI.add(serviceableStatute);
+                    synchronized (WareHouseAI) {
+                        if (!containsList(serviceableStatute, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                            WareHouseAI.add(serviceableStatute);
+                        }
                     }
                     Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
                     if (costDeail.contains(cost)) {
@@ -1278,7 +1285,6 @@ public class HarnessBranchTopoOptimize {
                         }
 
                         if (resultList.size() == TopNumber) {
-                            threadPool.terminateNow();
                             System.out.println("方案数量已经达到20个");
                             break;
                         }
@@ -1294,7 +1300,6 @@ public class HarnessBranchTopoOptimize {
                 }
             }
             if (resultList.size() == TopNumber) {
-                threadPool.terminateNow();
                 break;
             }
         }
@@ -1611,9 +1616,9 @@ public class HarnessBranchTopoOptimize {
                     String s = list.get(number);
                     coppyedge.put("topologyStatusCode", s);
                 }
-                if(!containsList(list,WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
-                    WareHouseAI.add(list);
-                }
+//                if(!containsList(list,WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+//                    WareHouseAI.add(list);
+//                }
                 Boolean sonSate = checkFirstOption(normList, list, coppysonedges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
                 if (sonSate) {
                     simple.add(list);
@@ -1829,6 +1834,7 @@ public class HarnessBranchTopoOptimize {
                 if (scrapOrNot) {
                     return null;
                 }
+
                 return map;
             });
         }
@@ -1859,8 +1865,10 @@ public class HarnessBranchTopoOptimize {
                 WareHouseTop.add(list);
                 TopCostDetail.add(map);
             }
-            if(!containsList(list, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit){
-                WareHouseAI.add(list);
+            synchronized (WareHouseAI) {
+                if (!containsList(list, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                    WareHouseAI.add(list);
+                }
             }
         }
         return topBeat;
@@ -2070,6 +2078,12 @@ public class HarnessBranchTopoOptimize {
                                 if (!containsList(changeList, resultList)) {
                                     resultList.add(changeList);
                                 }
+                            }
+                        }
+                        //样本仓库添加
+                        synchronized (WareHouseAI){
+                            if (!containsList(changeList, WareHouseAI)) {
+                                WareHouseAI.add(changeList);
                             }
                         }
                     }

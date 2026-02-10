@@ -41,6 +41,15 @@ public class TypeCheckUtils {
         TYPE_MAP.put(0b0001101, "TYPE_24");
         TYPE_MAP.put(0b1111110, "TYPE_25");
         TYPE_MAP.put(0b1111111, "TYPE_26");
+        TYPE_MAP.put(0b1110000, "TYPE_27");
+        TYPE_MAP.put(0b1110100, "TYPE_28");
+        TYPE_MAP.put(0b1011100, "TYPE_29");
+        TYPE_MAP.put(0b1101100, "TYPE_30");
+        TYPE_MAP.put(0b1100100, "TYPE_31");
+        TYPE_MAP.put(0b0101100, "TYPE_32");
+        TYPE_MAP.put(0b1101000, "TYPE_33");
+        TYPE_MAP.put(0b1111000, "TYPE_34");
+        TYPE_MAP.put(0b1111001, "TYPE_35");
 
     }
 
@@ -53,7 +62,7 @@ public class TypeCheckUtils {
         }
         String type = TYPE_MAP.getOrDefault(mask, "UNKNOWN_TYPE");
         if(type.equals("UNKNOWN_TYPE")){
-            System.out.println("未知类型：" + flags);
+            System.out.println("未知类型：" + flags + "mask:" + mask);
         }
         // 更新计数器
         TYPE_COUNT_MAP.merge(type, 1, Integer::sum);

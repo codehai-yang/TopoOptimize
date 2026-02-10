@@ -1547,6 +1547,9 @@ public class ProjectCircuitInfoOutput {
                     List<List<Integer>> allPathBetweenTwoPoint = findAllPath.findAllPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(integer), adjacencyMatrixGraph.getAllPoint().indexOf(endName));
                     String startElectricalId = findIdByName(integer, pointList);
                     for (List<Integer> list : allPathBetweenTwoPoint) {
+                        if(list == null || list.size() == 0){
+                            continue;
+                        }
                         Map<String, Object> sinaglePath = new LinkedMap<>();
                         CalculateCircuitInfo acceptLoopInfo = new CalculateCircuitInfo();
                         List<String> listname = convertPathToNumbers(list, adjacencyMatrixGraph.getAllPoint());

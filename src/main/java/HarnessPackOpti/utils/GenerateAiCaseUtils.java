@@ -243,7 +243,7 @@ public class GenerateAiCaseUtils {
                     allResult.add(result);
                 }
             }catch (Exception e){
-                e.printStackTrace();
+
             }
 
         }

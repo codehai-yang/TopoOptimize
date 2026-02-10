@@ -56,7 +56,7 @@ public class FindAllPath {
         allPath.add(shortestPath);
 
         //当最短路径的元素个数≥3个，才进一步找出其他路径
-        if (shortestPath.size() >= 3) {
+        if (shortestPath != null && shortestPath.size() >= 3) {
 
             for (int i = 1; i < shortestPath.size() - 1; i++) {//从第二个元素开始，到倒数第二个元素结束
                 //获取path中第i个元素，命名为breakPoint
