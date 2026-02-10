@@ -8,7 +8,6 @@ import HarnessPackOpti.CircuitInfoCalculate.CalculatePathLength;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.JsonToMap;
-import HarnessPackOpti.utils.ExportExcelUtils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.codec.binary.StringUtils;
@@ -33,11 +32,12 @@ public class ProjectCircuitInfoOutput {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\20250630.txt");
+
+        File file = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\20250630.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         String json = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
-        File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\output.txt");
+        File outputFile = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\output.txt");
         Files.write(outputFile.toPath(), json.getBytes());
         System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
 
@@ -45,7 +45,6 @@ public class ProjectCircuitInfoOutput {
 
 
     public String projectCircuitInfoOutput(String fileStringFormat) throws Exception {
-        long startTime = System.currentTimeMillis();
         JsonToMap jsonToMap = new JsonToMap();
         Map<String, Object> mapFile = jsonToMap.TransJsonToMap(fileStringFormat);
         ReadProjectInfo readProjectInfo = new ReadProjectInfo();
@@ -88,11 +87,11 @@ public class ProjectCircuitInfoOutput {
         //      读取线径excel文件
         ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
         if(elecFixedLocationLibrary == null) {
-             elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
+            elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
         }
         //获取导线无聊单价   商务成本
         if(elecBusinessPrice == null) {
-             elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
+            elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
         }
 
 //       在points 找出所有可能发生变化点   并且将同一组的放在一起
@@ -174,9 +173,6 @@ public class ProjectCircuitInfoOutput {
         for (Map<String, String> list : fixTwoPoints) {
             //单个固定回路，所有回路信息，矩阵对象，导线价格信息，用电器可变位置点，导线无聊单价商务成本
             Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, adjacencyMatrixGraph, elecFixedLocationLibrary, true, null, electricalSet, elecBusinessPrice);
-            if(twoPointInfo == null){
-                continue;
-            }
             loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
         }
 //        对焊点的进行计算
@@ -184,9 +180,6 @@ public class ProjectCircuitInfoOutput {
         for (String name : set) {
             //焊点名称，拿到该焊点对应的所有回路,矩阵对象，导线价格信息，所有回路信息，是否固定，用电器可变位置点名称，导线物料单价商务成本
             Map<String, Object> groupInfo = findGroupInfo(name, fixMultiLoopInfos.get(name), adjacencyMatrixGraph, elecFixedLocationLibrary, projectInfo, true, null, electricalSet, elecBusinessPrice);
-            if(groupInfo == null){
-                continue;
-            }
 //            将所有的回路都添加到loopdetails里面
             int size = groupInfo.keySet().size();
             for (int i = 1; i < size; i++) {
@@ -384,9 +377,6 @@ public class ProjectCircuitInfoOutput {
         //使用之前确定的最佳用电器位置配置来计算这些简单回路
         for (Map<String, String> list : nonfixedNotGroupLoopsTwo) {
             Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, adjacencyMatrixGraph, elecFixedLocationLibrary, false, bestInterFaceInfo, electricalSet, elecBusinessPrice);
-            if(twoPointInfo == null){
-                continue;
-            }
             loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
         }
 //            对焊点的进行一个计算 并将最优的结果添加到loopdetails里面
@@ -395,9 +385,6 @@ public class ProjectCircuitInfoOutput {
         Set<String> nonfixMultiLoopInfosSet = nonfixedNotGroupLoopsMapMultiLoopInfos.keySet();
         for (String name : nonfixMultiLoopInfosSet) {
             Map<String, Object> groupInfo = findGroupInfo(name, nonfixedNotGroupLoopsMapMultiLoopInfos.get(name), adjacencyMatrixGraph, elecFixedLocationLibrary, projectInfo, false, bestInterFaceInfo, electricalSet, elecBusinessPrice);
-            if(groupInfo == null){
-                continue;
-            }
             int size = groupInfo.keySet().size();
             for (int i = 1; i < size; i++) {
                 Map<String, Object> groupDetailMap = (Map<String, Object>) groupInfo.get("到" + i + "用电器的信息");
@@ -567,7 +554,7 @@ public class ProjectCircuitInfoOutput {
             circuitInfo.add(objectMap);
         }
         //回路绕线长度计算
-         circuitCoilingLength(loopdetails,edges,adjacencyMatrixGraphConnector,projectInfo);
+        circuitCoilingLength(loopdetails,edges,adjacencyMatrixGraphConnector,projectInfo);
         //所有回路信息的总和
         Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails);
         //            对分支进行计算
@@ -797,15 +784,8 @@ public class ProjectCircuitInfoOutput {
                 Map<String, String> map1 = elecFixedLocationLibrary.get(loopWireway);
 //               找最短距离 起点-终点最短路径列表
 //                获取用电器所在位置
-                //判断 两点是否在图结构中
-                if(adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路起点用电器").toString(), app)) == -1 || adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路终点用电器").toString(), app)) == -1){
-                    continue;
-                }
                 //用电器起点和终点对应的索引列表；回路起点用电器和终点用电器在表头的索引位置
                 List<Integer> shortestPathBetweenTwoPoint = findShortestPath.findShortestPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路起点用电器").toString(),app)), adjacencyMatrixGraph.getAllPoint().indexOf(findNode(map.get("回路终点用电器").toString(),app)));
-                if(shortestPathBetweenTwoPoint == null){
-                    continue;
-                }
                 //获取最短路径每个点的用电器名称
                 List<String> listname = convertPathToNumbers(shortestPathBetweenTwoPoint, adjacencyMatrixGraph.getAllPoint());
 
@@ -976,7 +956,7 @@ public class ProjectCircuitInfoOutput {
                 totalCost.put("防水塞总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("防水塞总成本").toString()) + Double.parseDouble(objectMap.get("防水塞成本").toString()))));
                 totalCost.put("回路绕线长度总值", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路绕线长度总值").toString()) + Double.parseDouble(objectMap.get("回路绕线长度").toString()))));
                 lenght += Double.parseDouble(objectMap.get("回路理论直径").toString()) * Double.parseDouble(objectMap.get("回路理论直径").toString());
-                if (Double.parseDouble(objectMap.get("回路打断次数").toString()) > 0) {
+                if(Double.parseDouble(objectMap.get("回路打断次数").toString()) > 0){
                     circuitBreakNum++;
                 }
                 mapList.add(objectMap.get("回路id").toString());
@@ -990,38 +970,38 @@ public class ProjectCircuitInfoOutput {
             Map<String, Object> objectMap = (Map<String, Object>) pointList.get(id);
             int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
             double coilingNum = Double.parseDouble(objectMap.get("回路绕线长度").toString());
-            if (coilingNum > 0) {
+            if(coilingNum > 0){
                 coiling++;
             }
             i += 1;
             count += i;
         }
-        if (coiling > 0) {
-            totalCost.put("回路绕线长度均值", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路绕线长度总值").toString()) / coiling)));
+        if(coiling > 0){
+            totalCost.put("回路绕线长度均值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路绕线长度总值").toString()) / coiling)));
         }
-        if (mapList.size() > 0) {
-            double coilingPercent = (double) coiling / mapList.size() * 100;
+        if(mapList.size() > 0){
+            double coilingPercent = (double)coiling / mapList.size() * 100;
             double breakNumb = Double.parseDouble(totalCost.get("回路打断总次数").toString()) / mapList.size() * 100;
-            totalCost.put("回路打断成本代价均值", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路打断总成本").toString()) / mapList.size())));
-            totalCost.put("回路绕线数量占比", df.format(coilingPercent) + "%");
-            totalCost.put("回路打断数量占比", df.format(breakNumb) + "%");
-        } else {
-            totalCost.put("回路绕线数量占比", "0.00%");
+            totalCost.put("回路打断成本代价均值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路打断总成本").toString()) / mapList.size())));
+            totalCost.put("回路绕线数量占比",df.format(coilingPercent) + "%");
+            totalCost.put("回路打断数量占比",df.format(breakNumb) + "%");
+        }else {
+            totalCost.put("回路绕线数量占比","0.00%");
         }
-        totalCost.put("回路绕线数量", coiling);
+        totalCost.put("回路绕线数量",coiling);
         totalCost.put("回路数量(打断后)", count);
         //回路长度均值
         double avgLength = 0.00;
-        if (mapList.size() > 0) {
+        if(mapList.size() > 0){
             avgLength = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / mapList.size()));
         }
-        totalCost.put("回路长度均值(打断前)", avgLength);
+        totalCost.put("回路长度均值(打断前)",avgLength);
         //回路均值打断后
         double avgLength2 = 0.00;
-        if (count > 0) {
+        if(count > 0){
             avgLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
-        totalCost.put("回路长度均值(打断后)", avgLength2);
+        totalCost.put("回路长度均值(打断后)",avgLength2);
         totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * 1.3)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
         map.put("circuitInfoIntergation", totalCost);
@@ -1547,9 +1527,6 @@ public class ProjectCircuitInfoOutput {
                     List<List<Integer>> allPathBetweenTwoPoint = findAllPath.findAllPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(integer), adjacencyMatrixGraph.getAllPoint().indexOf(endName));
                     String startElectricalId = findIdByName(integer, pointList);
                     for (List<Integer> list : allPathBetweenTwoPoint) {
-                        if(list == null || list.size() == 0){
-                            continue;
-                        }
                         Map<String, Object> sinaglePath = new LinkedMap<>();
                         CalculateCircuitInfo acceptLoopInfo = new CalculateCircuitInfo();
                         List<String> listname = convertPathToNumbers(list, adjacencyMatrixGraph.getAllPoint());
@@ -1663,14 +1640,12 @@ public class ProjectCircuitInfoOutput {
                 } else {
                     if (electricalSet.contains(end)) {
                         Map<String, String> map1 = (Map<String, String>) objectMap.get(end);
-                        if(map1 != null) {
-                            if (port == null) {
-                                endName = map1.get("null");
-                            } else if (!map1.containsKey(port)) {
-                                endName = findNode(end, appPositions);
-                            } else {
-                                endName = map1.get(port);
-                            }
+                        if (port == null) {
+                            endName = map1.get("null");
+                        } else if (!map1.containsKey(port)) {
+                            endName = findNode(end, appPositions);
+                        } else {
+                            endName = map1.get(port);
                         }
                     } else {
                         endName = findNode(end, appPositions);
@@ -2032,9 +2007,6 @@ public class ProjectCircuitInfoOutput {
                     return null;
                 }
                 List<Integer> shortestPathBetweenTwoPoint = findShortestPath.findShortestPathBetweenTwoPoint(adj, start, endpoint);
-                if(shortestPathBetweenTwoPoint == null){
-                    continue;
-                }
                 for (Integer integers : shortestPathBetweenTwoPoint) {
                     set.add(integers);
                 }

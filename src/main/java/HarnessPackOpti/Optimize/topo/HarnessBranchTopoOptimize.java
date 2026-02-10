@@ -1209,7 +1209,7 @@ public class HarnessBranchTopoOptimize {
                     }
                     Map<String, Object> objectMap = handleList.get(0);
                     //变异后分支状态
-                    List<String> serviceableStatute = (List<String>)objectMap.get("serviceableStatute");
+                    List<String> serviceableStatute = (List<String>)objectMap.get("serviceableStatue");
                     synchronized (WareHouseAI) {
                         if (!containsList(serviceableStatute, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
                             WareHouseAI.add(serviceableStatute);
@@ -1852,7 +1852,7 @@ public class HarnessBranchTopoOptimize {
                     resultList.add(result);
                 }
             } catch (Exception e) {
-
+                e.printStackTrace();
             }
 
         }
