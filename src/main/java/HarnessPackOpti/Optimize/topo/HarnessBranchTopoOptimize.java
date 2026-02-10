@@ -428,14 +428,14 @@ public class HarnessBranchTopoOptimize {
         if (!singleBSCList.isEmpty()) {
             totalCombinations *= Math.pow(3, singleBSCList.size());
         }
-        if(totalCombinations < 1000){
+        if (totalCombinations < 1000) {
             //递归枚举优化
             System.out.println("递归开始");
             long algorithm = System.currentTimeMillis();
             String s = "";
             try {
-                 s = branchEnum(singleBCList, singleSCList, singleBSList, singleBSCList, edges, normList, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, initializeCaseResultMap, wearId, topoOptimizeResult);
-            }finally {
+                s = branchEnum(singleBCList, singleSCList, singleBSList, singleBSCList, edges, normList, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, initializeCaseResultMap, wearId, topoOptimizeResult);
+            } finally {
                 threadPool.terminateNow();
             }
             System.out.println("递归结束，所用时间：" + (System.currentTimeMillis() - algorithm));
@@ -679,7 +679,7 @@ public class HarnessBranchTopoOptimize {
         GenerateAiCaseUtils generateAiCaseUtils = new GenerateAiCaseUtils();
         System.out.println("AI样本开始生成");
         long generateAiCase = System.currentTimeMillis();
-        generateAiCaseUtils.exportJson(normList, WareHouseAI, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap,ProjectCircuitInfoOutput.elecFixedLocationLibrary,togetherBCMap,chooseOneMap);
+        generateAiCaseUtils.exportJson(normList, WareHouseAI, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap);
         System.out.println("AI样本生成结束，耗时：" + (System.currentTimeMillis() - generateAiCase));
         initializeCaseResultMap.put("finishStatue", "normal");
         mapList.add(initializeCaseResultMap);
@@ -692,26 +692,27 @@ public class HarnessBranchTopoOptimize {
 
     /**
      * 分支枚举
+     *
      * @param singleBCList
      * @param singleSCList
      * @param singleBSList
      * @param singleBSCList
-     * @param edges     原方案分支详情
-     * @param normList 原方案分支顺序
+     * @param edges         原方案分支详情
+     * @param normList      原方案分支顺序
      */
-    public String branchEnum(List<String> singleBCList,List<String> singleSCList,List<String> singleBSList,List<String> singleBSCList,
-                           List<Map<String, Object>> edges,List<String> normList,List<Map<String, String>> appPositions,
-                           Map<String, String> eleclection,Map<String, Map<String, List<String>>> mutexMap,List<Map<String, List<String>>> chooseOneList,
-                           List<List<String>> togetherBCList,Map<String, Object> jsonMap,Map<String, Object> initializeCaseResultMap,List<String> wearId,List<Map<String, String>> topoOptimizeResultStatute) throws Exception{
+    public String branchEnum(List<String> singleBCList, List<String> singleSCList, List<String> singleBSList, List<String> singleBSCList,
+                             List<Map<String, Object>> edges, List<String> normList, List<Map<String, String>> appPositions,
+                             Map<String, String> eleclection, Map<String, Map<String, List<String>>> mutexMap, List<Map<String, List<String>>> chooseOneList,
+                             List<List<String>> togetherBCList, Map<String, Object> jsonMap, Map<String, Object> initializeCaseResultMap, List<String> wearId, List<Map<String, String>> topoOptimizeResultStatute) throws Exception {
         //合并分支
         //分支id-分支可选状态
         long startTime = System.currentTimeMillis();
-        List<Map<String,List<String>>> branchList = new ArrayList<>();
+        List<Map<String, List<String>>> branchList = new ArrayList<>();
         //需要排序的分支id
         List<String> idsList = new ArrayList<>();
         List<List<String>> branchTypeList = new ArrayList<>();
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
-        if(singleBSCList.size()>0) {
+        if (singleBSCList.size() > 0) {
             for (String s : singleBSCList) {
                 Map<String, List<String>> branchType = new LinkedHashMap<>();
                 branchType.put(s, Arrays.asList("B", "C", "S"));
@@ -720,7 +721,7 @@ public class HarnessBranchTopoOptimize {
                 idsList.add(s);
             }
         }
-        if(singleSCList.size()>0) {
+        if (singleSCList.size() > 0) {
             for (String s : singleSCList) {
                 Map<String, List<String>> branchType = new LinkedHashMap<>();
                 branchType.put(s, Arrays.asList("S", "C"));
@@ -729,7 +730,7 @@ public class HarnessBranchTopoOptimize {
                 idsList.add(s);
             }
         }
-        if(singleBSList.size() > 0) {
+        if (singleBSList.size() > 0) {
             for (String s : singleBSList) {
                 Map<String, List<String>> branchType = new LinkedHashMap<>();
                 branchType.put(s, Arrays.asList("B", "S"));
@@ -738,7 +739,7 @@ public class HarnessBranchTopoOptimize {
                 idsList.add(s);
             }
         }
-        if(singleBCList.size() > 0) {
+        if (singleBCList.size() > 0) {
             for (String s : singleBCList) {
                 Map<String, List<String>> branchType = new LinkedHashMap<>();
                 branchType.put(s, Arrays.asList("B", "C"));
@@ -759,10 +760,10 @@ public class HarnessBranchTopoOptimize {
                 List<String> branchType = branchTypeInfo.get(idsList.get(0));
                 //每个线程分支初始化状态
                 String s = branchType.get(index);
-                List<Map<String,String>> optimizeList = new ArrayList<>();
-                Map<String,String> cases = new LinkedHashMap<>();
-                cases.put(idsList.get(0),s);
-                List<Map<String,String>> result = new ArrayList<>();
+                List<Map<String, String>> optimizeList = new ArrayList<>();
+                Map<String, String> cases = new LinkedHashMap<>();
+                cases.put(idsList.get(0), s);
+                List<Map<String, String>> result = new ArrayList<>();
 
                 //递归
                 int branchIndex = 0;
@@ -779,7 +780,7 @@ public class HarnessBranchTopoOptimize {
         for (Callable<List<Map<String, String>>> task : tasks) {
             futures.add(threadPool.submit(task));
         }
-        List<Map<String,String>> result = new ArrayList<>();
+        List<Map<String, String>> result = new ArrayList<>();
         for (Future<List<Map<String, String>>> future : futures) {
             try {
                 List<Map<String, String>> maps = future.get();
@@ -791,64 +792,64 @@ public class HarnessBranchTopoOptimize {
         }
         System.out.println("递归结束耗时：" + (System.currentTimeMillis() - startTime));
         //分支状态替换
-        List<Map<String,Object>> totalCase = Collections.synchronizedList(new ArrayList<>());
+        List<Map<String, Object>> totalCase = Collections.synchronizedList(new ArrayList<>());
         Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
         Map<String, Object> projectInfo = (Map<String, Object>) jsonMap.get("projectInfo");
         long costTime = System.currentTimeMillis();
         List<Callable<Map<String, Object>>> tasksResult = new ArrayList<>();
-        List<List< String>> total = new ArrayList<>();
+        List<List<String>> total = new ArrayList<>();
         for (Map<String, String> types : result) {
             tasksResult.add(() -> {
-            List<Map<String, Object>> edgesCopy = edges.stream().collect(Collectors.toList());
+                List<Map<String, Object>> edgesCopy = edges.stream().collect(Collectors.toList());
 
-            List<String> collect = new ArrayList<>();
-            topoOptimizeResultStatute.forEach(map -> {
-                collect.add(map.get("statue"));
-            });
-            types.forEach((id, type) -> {
-                //分支id索引
-                int i = normList.indexOf(id);
-                collect.set(i, type);
-            });
-            if(containsList(collect, total)){
-                return null;
-            }else {
-                total.add(collect);
-            }
-            //每生成一个方案进行检查约束
-            List<Map<String, Object>> edgesDetail = createNewEdges(collect, edgesCopy, normList);
-            Boolean staute = checkFirstOption(normList, collect, edgesDetail, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
-            Map<String,Object> map = new LinkedHashMap<>();
-            if(staute) {
-                //计算成本
-                Map<String, Object> threadLocalJsonMap = new HashMap<>(jsonMap);
-                threadLocalJsonMap.put("edges", edgesDetail);
-
-                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
-                Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
-                Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
-
-                Map<String, Object> costResultData = new HashMap<>();
-                costResultData.put("总成本", projectCircuitInfo.get("总成本"));
-                costResultData.put("总长度", projectCircuitInfo.get("回路总长度"));
-                costResultData.put("总重量", projectCircuitInfo.get("回路总重量"));
-                List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
-                for (Map<String, Object> map1 : edgesDetail) {
-                    Map<String, String> temp = new HashMap<>();
-                    temp.put("edgeId", map1.get("id").toString());
-                    temp.put("statue", map1.get("topologyStatusCode").toString());
-                    topoOptimizeResult.add(temp);
+                List<String> collect = new ArrayList<>();
+                topoOptimizeResultStatute.forEach(map -> {
+                    collect.add(map.get("statue"));
+                });
+                types.forEach((id, type) -> {
+                    //分支id索引
+                    int i = normList.indexOf(id);
+                    collect.set(i, type);
+                });
+                if (containsList(collect, total)) {
+                    return null;
+                } else {
+                    total.add(collect);
                 }
+                //每生成一个方案进行检查约束
+                List<Map<String, Object>> edgesDetail = createNewEdges(collect, edgesCopy, normList);
+                Boolean staute = checkFirstOption(normList, collect, edgesDetail, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
+                Map<String, Object> map = new LinkedHashMap<>();
+                if (staute) {
+                    //计算成本
+                    Map<String, Object> threadLocalJsonMap = new HashMap<>(jsonMap);
+                    threadLocalJsonMap.put("edges", edgesDetail);
 
-                map.put("成本", costResultData);
-                map.put("topoId",topoInfoMap.get("id").toString());
-                map.put("caseId",projectInfo.get("caseId").toString());
-                map.put("topoOptimizeResult", topoOptimizeResult);
-                map.put("finishStatue", "normal");
-                map.put("initializationScheme", false);
-                map.putAll(objectMap);
-            }
-            return map;
+                    String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
+                    Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
+                    Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
+
+                    Map<String, Object> costResultData = new HashMap<>();
+                    costResultData.put("总成本", projectCircuitInfo.get("总成本"));
+                    costResultData.put("总长度", projectCircuitInfo.get("回路总长度"));
+                    costResultData.put("总重量", projectCircuitInfo.get("回路总重量"));
+                    List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
+                    for (Map<String, Object> map1 : edgesDetail) {
+                        Map<String, String> temp = new HashMap<>();
+                        temp.put("edgeId", map1.get("id").toString());
+                        temp.put("statue", map1.get("topologyStatusCode").toString());
+                        topoOptimizeResult.add(temp);
+                    }
+
+                    map.put("成本", costResultData);
+                    map.put("topoId", topoInfoMap.get("id").toString());
+                    map.put("caseId", projectInfo.get("caseId").toString());
+                    map.put("topoOptimizeResult", topoOptimizeResult);
+                    map.put("finishStatue", "normal");
+                    map.put("initializationScheme", false);
+                    map.putAll(objectMap);
+                }
+                return map;
             });
         }
         List<Future<Map<String, Object>>> futuresResult = new ArrayList<>();
@@ -858,7 +859,7 @@ public class HarnessBranchTopoOptimize {
         for (Future<Map<String, Object>> future : futuresResult) {
             try {
                 Map<String, Object> map = future.get();
-                if(map.size() != 0 && map != null && "normal".equals(map.get("finishStatue"))){
+                if (map.size() != 0 && map != null && "normal".equals(map.get("finishStatue"))) {
                     synchronized (totalCase) {
                         totalCase.add(map);
                     }
@@ -870,7 +871,7 @@ public class HarnessBranchTopoOptimize {
         System.out.println("方案成本与约束检查总耗时：" + (System.currentTimeMillis() - costTime));
         FindBest findBest = new FindBest();
         ObjectMapper objectMapper = new ObjectMapper();
-        totalCase = findBest.findBest(totalCase, "成本",TopNumber);
+        totalCase = findBest.findBest(totalCase, "成本", TopNumber);
         for (Map<String, Object> map : totalCase) {
             map.remove("成本");
         }
@@ -882,11 +883,12 @@ public class HarnessBranchTopoOptimize {
 
     /**
      * 递归枚举
-     * @param branchTypeList    分支可选类型集合
-     * @param branchIndex   当前处理的分支索引
-     * @param cases     生成的方案
+     *
+     * @param branchTypeList 分支可选类型集合
+     * @param branchIndex    当前处理的分支索引
+     * @param cases          生成的方案
      */
-    public List<Map<String,String>> recursionEnum(List<List<String>> branchTypeList,int branchIndex,Map<String,String> cases,List<Map<String,String>> result,List<String> idsList){
+    public List<Map<String, String>> recursionEnum(List<List<String>> branchTypeList, int branchIndex, Map<String, String> cases, List<Map<String, String>> result, List<String> idsList) {
         //终止条件,如果到达最后一层
         if (branchIndex > branchTypeList.size() - 1) {
             //对生成的组合进行约束检查,这里一定不要对原始的方案进行影响
@@ -897,11 +899,11 @@ public class HarnessBranchTopoOptimize {
         String branchId = idsList.get(branchIndex);
         for (String type : types) {
             //分支选择状态
-            cases.put(branchId,type);
+            cases.put(branchId, type);
             //递归
-            recursionEnum(branchTypeList,branchIndex + 1,cases,result,idsList);
+            recursionEnum(branchTypeList, branchIndex + 1, cases, result, idsList);
             //回溯
-            if(types.indexOf(type) == types.size() - 1){
+            if (types.indexOf(type) == types.size() - 1) {
                 break;
             }
             cases.remove(branchId);
@@ -1059,10 +1061,11 @@ public class HarnessBranchTopoOptimize {
                             statueList.set(normList.indexOf(s), "S");
                             break;
                         }
-                    } else {
-                        //如果对存在闭环的分支都进行打断还是没有符合约束规则的优化方案，则不需要一直while了
-                        break;
                     }
+//                    else {
+//                        //如果对存在闭环的分支都进行打断还是没有符合约束规则的优化方案，则不需要一直while了
+//                        break;
+//                    }
                 }
             }
             List<Map<String, Object>> EdgesDetail = createNewEdges(statueList, edges, normList);
@@ -1209,18 +1212,32 @@ public class HarnessBranchTopoOptimize {
                     }
                     Map<String, Object> objectMap = handleList.get(0);
                     //变异后分支状态
-                    List<String> serviceableStatute = (List<String>)objectMap.get("serviceableStatue");
+                    List<String> serviceableStatute = (List<String>) objectMap.get("serviceableStatue");
                     synchronized (WareHouseAI) {
-                        if (!containsList(serviceableStatute, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+//                        if (!containsList(serviceableStatute, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                        if ( WareHouseAI.size() < AutoCompleteNumberLimit) {
+                            List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
+                            List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
+                            List<Map<String, Object>> edgesDetail = createNewEdges(serviceableStatute, edges, normList);
+                            Boolean flag = checkFirstOption(normList, serviceableStatute, edgesDetail, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
+                            if (!flag) {
+                                System.out.println("不符合约束");
+                            }
+                            List<List<String>> lists = recognizeLoopNew(edgesDetail);
+                            if (lists.size() != 0) {
+                                System.out.println("存在回路");
+                            }
                             WareHouseAI.add(serviceableStatute);
                         }
                     }
                     Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
                     if (costDeail.contains(cost)) {
+                        System.out.println("成本重复");
                         return null;
                     }
                     synchronized (costDeail) {
                         if (costDeail.contains(cost)) {
+                            System.out.println("成本重复");
                             return null;
                         }
                         // 保持线程安全
@@ -1597,7 +1614,7 @@ public class HarnessBranchTopoOptimize {
                     String s = list.get(number);
                     coppyedge.put("topologyStatusCode", s);
                 }
-                if(!containsList(list,WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                if (!containsList(list, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
                     WareHouseAI.add(list);
                 }
                 Boolean sonSate = checkFirstOption(normList, list, coppysonedges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
@@ -1647,7 +1664,7 @@ public class HarnessBranchTopoOptimize {
             if (simpleList != null && simpleList.size() > 0) {
                 for (List<String> list : simpleList) {
                     if (!containsList(list, WareHouse) && !containsList(list, simple)) {
-                        if(!containsList(list,WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                        if (!containsList(list, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
                             WareHouseAI.add(list);
                         }
                         simple.add(list);
@@ -1852,7 +1869,7 @@ public class HarnessBranchTopoOptimize {
                     resultList.add(result);
                 }
             } catch (Exception e) {
-                e.printStackTrace();
+//                e.printStackTrace();
             }
 
         }
@@ -2081,7 +2098,7 @@ public class HarnessBranchTopoOptimize {
                             }
                         }
                         //样本仓库添加
-                        synchronized (WareHouseAI){
+                        synchronized (WareHouseAI) {
                             if (!containsList(changeList, WareHouseAI)) {
                                 WareHouseAI.add(changeList);
                             }
