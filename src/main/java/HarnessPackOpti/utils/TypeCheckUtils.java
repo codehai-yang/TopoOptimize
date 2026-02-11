@@ -3,6 +3,7 @@ package HarnessPackOpti.utils;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 类型检查
@@ -10,7 +11,7 @@ import java.util.Map;
 public class TypeCheckUtils {
     private static final Map<Integer, String> TYPE_MAP = new HashMap<>();
     //计数器
-    private static final Map<String, Integer> TYPE_COUNT_MAP = new HashMap<>();
+    private static final Map<String, Integer> TYPE_COUNT_MAP = new ConcurrentHashMap<>();
 
     static {
         //类型说明：互斥，组团，多选一，连通，用电器周围至少存在一个分支，不符合约束，存在闭环，成本，重量，长度
@@ -61,10 +62,10 @@ public class TypeCheckUtils {
             }
         }
         String type = TYPE_MAP.getOrDefault(mask, "UNKNOWN_TYPE");
-        if(type.equals("UNKNOWN_TYPE")){
-            System.out.println("未知类型：" + flags + "mask:" + mask);
+        if (type.equals("UNKNOWN_TYPE")) {
+            System.out.println("未知类型：" + flags + " mask:" + mask);
         }
-        // 更新计数器
+        // 线程安全更新计数器
         TYPE_COUNT_MAP.merge(type, 1, Integer::sum);
         return type;
     }

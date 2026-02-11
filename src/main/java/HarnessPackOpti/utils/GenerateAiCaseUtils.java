@@ -14,6 +14,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 /**
  * 负责AI训练的样本生成
@@ -66,6 +67,7 @@ public class GenerateAiCaseUtils {
                     return null;
                 }
                 List<Map<String, Object>> newEdges = harnessBranchTopoOptimize.createNewEdges(list, edges, normList);
+                List<List<String>> lists = harnessBranchTopoOptimize.recognizeLoopNew(newEdges);
                 Map<String ,Object> jsonMapCopy = new HashMap<>(jsonMap);
                 jsonMapCopy.put("edges",newEdges);
                 //TODO 这里有可能需要重新启方法，只需要成本等字段，会有其他逻辑拦截
@@ -186,7 +188,7 @@ public class GenerateAiCaseUtils {
                 //分支约束检测Label
                 Map<String, Boolean> stringBooleanMap = checkFirstOption(normList, list, newEdges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
                 //方案闭环检测
-                List<List<String>> lists = harnessBranchTopoOptimize.recognizeLoopNew(newEdges);
+
                 AtomicBoolean whetherComply = new AtomicBoolean(true);
                 List<Boolean> flags = new ArrayList<>();
                 //检查是否符合约束
@@ -198,6 +200,9 @@ public class GenerateAiCaseUtils {
                 });
                 flags.add(whetherComply.get());
                 flags.add(lists.size() == 0);
+                if(whetherComply.get() && lists.size() == 0){
+                    System.out.println("符合约束，并且不存在闭环数量+1");
+                }
                 typeCheckUtils.getType(flags);
 
 
@@ -238,7 +243,7 @@ public class GenerateAiCaseUtils {
         }
         for (Future<Map<String, Object>> future : futures) {
             try {
-                Map<String, Object> result = future.get( 240, TimeUnit.SECONDS);
+                Map<String, Object> result = future.get( 600, TimeUnit.SECONDS);
                 if(result != null) {
                     allResult.add(result);
                 }
