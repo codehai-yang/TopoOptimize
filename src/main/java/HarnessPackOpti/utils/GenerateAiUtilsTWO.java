@@ -3,6 +3,7 @@ package HarnessPackOpti.utils;
 import HarnessPackOpti.Algorithm.FindTopoBreak;
 import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
 import HarnessPackOpti.JsonToMap;
+import HarnessPackOpti.Optimize.elec.ElecPositionVariantCalculation;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,9 +19,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 /**
- * 负责AI训练的样本生成
+ * 负责AI训练的样本生成,方案二，值判断是否连通以及周围存在分支
  */
-public class GenerateAiCaseUtils {
+public class GenerateAiUtilsTWO {
+    public static ElecPositionVariantCalculation elecPositionVariantCalculation = new ElecPositionVariantCalculation();
 
     /**
      * @Description: 对传进来的样本进行判断
@@ -32,13 +34,13 @@ public class GenerateAiCaseUtils {
      * @input: mutexMap   互斥的情况集合
      * @Return: 根据给定的方案检查，归类样本，生成训练数，导出json文件
      */
-    public void exportJson(List<String> normList, List<List<String>> changeList, List<Map<String, Object>> edges,
+    public void exportJsonTwo(List<String> normList, List<List<String>> changeList, List<Map<String, Object>> edges,
                            List<Map<String, String>> appPositions, Map<String, String> eleclection,
                            Map<String, Map<String, List<String>>> mutexMap,
                            List<Map<String, List<String>>> chooseOneList,
                            List<List<String>> togetherBCList,Map<String, Object> jsonMap,Map<String, Map<String, String>> elecFixedLocationLibrary,
                            Map<String,List<String>> togetherBCMap,Map<String, Map<String, List<String>>> chooseOneMap) throws Exception{
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\aiOutput.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\caseTwo.txt");
         String json = projectCalculate(normList, changeList, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList,jsonMap,elecFixedLocationLibrary,togetherBCMap,chooseOneMap);
         Files.write(file.toPath(),json.getBytes());
         System.out.println("json文件已生成");
@@ -73,8 +75,11 @@ public class GenerateAiCaseUtils {
                 jsonMapCopy.put("edges",newEdges);
                 //TODO 这里有可能需要重新启方法，只需要成本等字段，会有其他逻辑拦截
                 String projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMapCopy));
+                if(projectInfo == null || "".equals(projectInfo)){
+                    return null;
+                }
                 Map<String, Object> stringObjectMap = jsonToMap.TransJsonToMap(projectInfo);
-                Map<String,Object> projectCircuitlnfo = (Map<String,Object>)stringObjectMap.get("projectCircuitInfo");
+                Map<String,Object>  projectCircuitlnfo = (Map<String,Object>)stringObjectMap.get("projectCircuitInfo");
                 double baseCost = (Double) projectCircuitlnfo.get("总成本");
                 double baseWeight = (Double) projectCircuitlnfo.get("回路总重量");
                 double baseLength = (Double) projectCircuitlnfo.get("回路总长度");
@@ -148,59 +153,33 @@ public class GenerateAiCaseUtils {
                 //分支长度集合
                 List<Double> branchLengthList = getBranchLength(normList, newEdges);
                 //分支点之间的连接关系,回路连接表达
-                List<List<Double>> circuitCostList = calculateConnect(stringObjectMap, branchPointNameList, elecFixedLocationLibrary);
-                //互斥特征
-                Map<String,String> mutex = new LinkedHashMap<>();
-                Set<String> strings = mutexMap.keySet();
-                for (String s : strings) {
-                    Map<String, List<String>> stringListMap = mutexMap.get(s);
-                    //分支id-互斥编号
-                    mutex.put( stringListMap.values().iterator().next().get(0),stringListMap.keySet().iterator().next());
-                }
-                String[] branchMutexArray = new String[normList.size()];
-                mutex.forEach((k,v)->{
-                    int i = normList.indexOf(k);
-                    if(i >= 0) {
-                        branchMutexArray[i] = v;
-                    }
-                });
-                //多选一
-                String[] branchChooseOneArray = new String[normList.size()];
-                chooseOneMap.forEach((k,v)->{
-                    v.forEach((k1,v1) -> {
-                        for (String s : v1) {
-                            int i = normList.indexOf(s);
-                            if(i >= 0) {
-                                branchChooseOneArray[i] = k1;
-                            }
-                        }
-                    });
-                });
-                //组团一起
-                String[] branchTogetherBCArray = new String[normList.size()];
-                togetherBCMap.forEach((k,v)->{
-                    for (String s : v) {
-                        int i = normList.indexOf(s);
-                        if(i >= 0) {
-                            branchTogetherBCArray[i] = k;
-                        }
-                    }
-                });
+                Map<String,Object> circuitCostList = calculateConnect(stringObjectMap, branchPointNameList, elecFixedLocationLibrary,jsonMapCopy);
                 //分支约束检测Label
                 Map<String, Boolean> stringBooleanMap = checkFirstOption(normList, list, newEdges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
-                //方案闭环检测
-
-                AtomicBoolean whetherComply = new AtomicBoolean(true);
                 List<Boolean> flags = new ArrayList<>();
-                //检查是否符合约束
-                stringBooleanMap.forEach((k,v)->{
-                    flags.add(v);
-                    if(!v){
-                        whetherComply.set( false);
+                //TODO 用电器特征,分支点表示，这个分支点位置有用电器则用1，没有用0
+                //用电器列表特征
+                int[] elecList = new int[branchIdPointLiST.size()];
+                List<Map<String,Object>> circuitInfo = (List<Map<String,Object>>)stringObjectMap.get("circuitInfo");
+                for (Map<String, Object> objectMap : circuitInfo) {
+                    //获取回路起点和终点位置，焊点也算用电器
+                    Object circuitStartPointName = objectMap.get("起点位置名称") != null? objectMap.get("起点位置名称") : objectMap.get("焊点位置名称");
+                    Object circuitEndPointName = objectMap.get("终点位置名称") != null? objectMap.get("终点位置名称") : objectMap.get("焊点位置名称");
+                    //回路起点和终点对应的分支点编号
+                    if(circuitStartPointName == null){
+                        System.out.println("null");
                     }
-                });
-                flags.add(whetherComply.get());
-                flags.add(lists.size() == 0);
+                    String startStr = branchPointIdMap.get(circuitStartPointName.toString());
+
+                    String endStr = branchPointIdMap.get(circuitEndPointName.toString());
+                    List<String> list1 = new ArrayList<>(branchIdPointLiST);
+                    int i = list1.indexOf(startStr);
+                    int k = list1.indexOf(endStr);
+                    elecList[i] = 1;
+                    elecList[k] = 1;
+                }
+                flags.add(stringBooleanMap.get("breakRec"));        //回路是否打通
+                flags.add(stringBooleanMap.get("existEdge"));       //用电器周围是否存在分支
                 typeCheckUtils.getType(flags);
 
 
@@ -210,22 +189,16 @@ public class GenerateAiCaseUtils {
                 result.put("branchStartList",branchStartPointList);     //分支起点
                 result.put("branchEndList",branchEndPointList);         //分支终点
                 result.put("branchIdList",branchIdList);                //分支id列表
-                result.put("branchFeatureList",branchFeatureList);      //分支特征参数
+                result.put("branchFeatureList",branchFeatureList);      //分支特征参数(通，断)
                 result.put("branchLength",branchLengthList);            //分支特征参数2(长度)
                 result.put("branchIdPointList",branchIdPointLiST);      //分支点id列表
-                result.put("circuitCostList",circuitCostList);          //分支点特征(连通的显示为导线商务单价，元/米)
-                result.put("branchMutexList",Arrays.asList(branchMutexArray));          //互斥特征
-                result.put("branchChooseOneList",Arrays.asList(branchChooseOneArray));  //多选一特征
-                result.put("branchTogetherBCList",Arrays.asList(branchTogetherBCArray));    //组团特征
+                result.put("circuitCostList",circuitCostList.get("circuitCost"));          //分支点特征(连通的显示为导线商务单价，元/米),有单价的表示两点之间有回路
+                result.put("circuitDryWet",circuitCostList.get("circuitDryWet"));           //回路干湿(两端全为w为湿，否则为干)
+                result.put("elecList",Arrays.asList(elecList));             //用电器特征(分支点有用电器表示为1)
 
                 // Label标签
-                result.put("mutexMap", stringBooleanMap.get("mutexMap")? 1 : 0);        //方案是否互斥
-                result.put("togetherBCList", stringBooleanMap.get("togetherBCList")? 1 : 0);    //组团一起变
-                result.put("chooseOneList", stringBooleanMap.get("chooseOneList")? 1 : 0);      //多选一
                 result.put("breakRec", stringBooleanMap.get("breakRec")? 1 : 0);                //拓扑连通
                 result.put("existEdge", stringBooleanMap.get("existEdge")? 1 : 0);              //用电器周围至少存在一个分支
-                result.put("whetherComply",whetherComply.get());                                //是否符合约束
-                result.put("closeLoop",lists.size() == 0? 1 : 0);                               //是否存在闭环
                 result.put("totalCost", baseCost);                                              //总成本
                 result.put("baseWeight",baseWeight);                                            //总重量
                 result.put("baseLength", baseLength);                                           //总长度
@@ -246,7 +219,7 @@ public class GenerateAiCaseUtils {
                     allResult.add(result);
                 }
             }catch (Exception e){
-
+                e.printStackTrace();
             }
 
         }
@@ -304,32 +277,50 @@ public class GenerateAiCaseUtils {
      * @param stringObjectMap
      * @return
      */
-    public List<List<Double>> calculateConnect(Map<String, Object> stringObjectMap,Set<String> branchPointNameList,Map<String, Map<String, String>> elecFixedLocationLibrary){
+    public Map<String,Object> calculateConnect(Map<String, Object> stringObjectMap,Set<String> branchPointNameList,Map<String, Map<String, String>> elecFixedLocationLibrary,Map<String ,Object> jsonMapCopy){
         //获取回路信息
         List<Map<String, Object>> circuitList = (List<Map<String, Object>>) stringObjectMap.get("circuitInfo");
         //各回路导线价格元/米
         List<List<Double>> circuitCost = new ArrayList<>();
+        List<Map<String,String>> points = (List<Map<String,String>>)jsonMapCopy.get("points");
+        //各回路干湿
+        List<List<Integer>> circuitDryWet = new ArrayList<>();
+        Map<String,Object> result = new HashMap<>();;
         //查找两个位置点之间的回路
         for (String startPointName : branchPointNameList) {
             List<Double> circuitPrice = new ArrayList<>();
+            List<Integer> circuitDryWetList = new ArrayList<>();
             for (String endPointName : branchPointNameList) {
                 //元/米 没有相关联的回路，默认为0
                 double perPrice = 0.0;
+                int statue = 0;
                 for (Map<String, Object> objectMap : circuitList) {
                     //获取起点位置名称和终点位置名称
+                    //回路两端都是湿才为湿
+                    Object circuitStartPointName = objectMap.get("起点位置名称") != null? objectMap.get("起点位置名称") : objectMap.get("焊点位置名称");
+                    Object circuitEndPointName = objectMap.get("终点位置名称") != null? objectMap.get("终点位置名称") : objectMap.get("焊点位置名称");
                     if((startPointName.equals(objectMap.get("起点位置名称") != null? objectMap.get("起点位置名称") : objectMap.get("焊点位置名称")) && endPointName.equals(objectMap.get("终点位置名称") != null? objectMap.get("终点位置名称") : objectMap.get("焊点位置名称")))){
                         String wireType = objectMap.get("导线选型").toString();
                         Map<String, String> map = elecFixedLocationLibrary.get(wireType);
                         perPrice = Double.parseDouble(map.get("导线单位商务价（元/米）"));
+                        String waterStatNameParam = elecPositionVariantCalculation.getWaterParam(circuitStartPointName.toString(), points);
+                        String waterEndNameParam = elecPositionVariantCalculation.getWaterParam(circuitEndPointName.toString(), points);
+                        if("w".toUpperCase().equals(waterStatNameParam) && "w".toUpperCase().equals(waterEndNameParam)){
+                            statue = 1;
+                        }
                         break;
                     }
                 }
                 circuitPrice.add(perPrice);
+                circuitDryWetList.add(statue);
             }
             //一对回路单价完成
             circuitCost.add(circuitPrice);
+            circuitDryWet.add(circuitDryWetList);
         }
-        return circuitCost;
+        result.put("circuitCost",circuitCost);
+        result.put("circuitDryWet",circuitDryWet);
+        return result;
     }
 
     /**
@@ -343,113 +334,12 @@ public class GenerateAiCaseUtils {
      * @Return: 根据给定的方案检查   返回是否符合的状态
      */
     public Map<String,Boolean> checkFirstOption(List<String> normList, List<String> changeList, List<Map<String, Object>> edges,
-                                    List<Map<String, String>> appPositions, Map<String, String> eleclection,
-                                    Map<String, Map<String, List<String>>> mutexMap,
-                                    List<Map<String, List<String>>> chooseOneList,
-                                    List<List<String>> togetherBCList) {
+                                                List<Map<String, String>> appPositions, Map<String, String> eleclection,
+                                                Map<String, Map<String, List<String>>> mutexMap,
+                                                List<Map<String, List<String>>> chooseOneList,
+                                                List<List<String>> togetherBCList) {
         Map<String,Boolean> result = new LinkedHashMap<>();
         Map<String,Boolean> returnResult = new LinkedHashMap<>();
-//        组团的检查
-        for (List<String> list : togetherBCList) {
-            String statue = changeList.get(normList.indexOf(list.get(0)));
-            for (String s : list) {
-                if (!statue.equals(changeList.get(normList.indexOf(s)))) {
-                    result.put("togetherBCList", false);
-                    break;
-                }
-            }
-            if (result.get("togetherBCList") != null && !result.get("togetherBCList")) {
-                break;
-            }
-        }
-        if(result.get("togetherBCList") == null){
-            result.put("togetherBCList", true);
-        }
-
-//        对多选一的情况进行一个检查   首先检查分支状态是否符合要求   其次再检查C的数量
-        for (Map<String, List<String>> map : chooseOneList) {
-            int numberC = 0;
-            Set<String> set = map.keySet();
-            for (String s : set) {
-                int i = normList.indexOf(s);
-                String s1 = changeList.get(i);
-                List<String> list = map.get(s);
-                if (!list.contains(s1)) {
-                    result.put("chooseOneList", false);
-                    break;
-                }
-                if (s1.equals("C")) {
-                    numberC++;
-                }
-
-            }
-            if (result.get("chooseOneList") != null && !result.get("chooseOneList")) {
-                break;
-            }
-            if (numberC > 1) {
-                result.put("chooseOneList", false);
-            }
-        }
-        if(result.get("chooseOneList") == null){
-            result.put("chooseOneList", true);
-        }
-
-
-        //       对互斥的情况进行一个检查
-        Set<String> mutexName = mutexMap.keySet();
-        for (String s : mutexName) {
-            Map<String, List<String>> listMap = mutexMap.get(s);
-            Set<String> sonset = listMap.keySet();
-            int cycleNumber = 1;
-            String statue = null;
-            for (String edgeId : sonset) {
-                List<String> list = listMap.get(edgeId);
-                if (cycleNumber == 1) {
-                    statue = changeList.get(normList.indexOf(list.get(0)));
-                    if (statue.equals("B")) {
-                        for (String topologyStatusCode : list) {
-                            if (!changeList.get(normList.indexOf(topologyStatusCode)).equals("B")) {
-                                result.put("mutexMap", false);
-                                break;
-                            }
-                        }
-                    } else {
-                        for (String topologyStatusCode : list) {
-                            if (!(changeList.get(normList.indexOf(topologyStatusCode)).equals("C") || changeList.get(normList.indexOf(topologyStatusCode)).equals("S"))) {
-                                result.put("mutexMap", false);
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    if (statue.equals("B")) {
-                        for (String topologyStatusCode : list) {
-                            if (!(changeList.get(normList.indexOf(topologyStatusCode)).equals("C") || changeList.get(normList.indexOf(topologyStatusCode)).equals("S") || changeList.get(normList.indexOf(topologyStatusCode)).equals("B"))) {
-                                result.put("mutexMap", false);
-                                break;
-                            }
-                        }
-                    } else {
-                        for (String topologyStatusCode : list) {
-                            if (!changeList.get(normList.indexOf(topologyStatusCode)).equals("B")) {
-                                result.put("mutexMap", false);
-                                break;
-                            }
-                        }
-                    }
-                }
-                cycleNumber++;
-                if(result.get("mutexMap") != null && !result.get("mutexMap")){
-                    break;
-                }
-            }
-            if (result.get("mutexMap") != null && !result.get("mutexMap")) {
-                break;
-            }
-        }
-        if(result.get("mutexMap") == null){
-            result.put("mutexMap", true);
-        }
 
 
         List<String> strPointNameList = new ArrayList<>();
@@ -500,9 +390,6 @@ public class GenerateAiCaseUtils {
         if ( existEdge) {
             result.put("existEdge", true);
         }
-        returnResult.put("mutexMap", result.get("mutexMap"));
-        returnResult.put("togetherBCList", result.get("togetherBCList"));
-        returnResult.put("chooseOneList", result.get("chooseOneList"));
         returnResult.put("breakRec", result.get("breakRec"));
         returnResult.put("existEdge", result.get("existEdge"));
         return returnResult;

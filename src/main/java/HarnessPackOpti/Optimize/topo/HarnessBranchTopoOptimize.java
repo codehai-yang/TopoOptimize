@@ -9,6 +9,7 @@ import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import HarnessPackOpti.utils.GenerateAiCaseUtils;
+import HarnessPackOpti.utils.GenerateAiUtilsTWO;
 import HarnessPackOpti.utils.ThreadPool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -36,8 +37,6 @@ public class HarnessBranchTopoOptimize {
     public static Integer IterationRestrictNumber = 30;
     //    定义一个仓库
     public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
-    //好的样本仓库
-    public static List<List<String>> goodHouse = new CopyOnWriteArrayList<>();
     //定义仓库(所有裂变生成的方案，用于AI)
     public static List<List<String>> WareHouseAI = new CopyOnWriteArrayList<>();
     //AI仓库存放的样本数量限制
@@ -589,33 +588,6 @@ public class HarnessBranchTopoOptimize {
         //对上面生成的闭环方案进行计算，计算他们的成本，按价格排序 ，返回成本最优的20条方案
         System.out.println("裂变前AI仓库样本数量:" + WareHouseAI.size());
         List<Map<String, Object>> findBest = changeAndFindBest(simpleList, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS);
-        findBest.forEach(map -> {
-            List<String> list1 = (List<String>) map.get("serviceableStatue");
-            List<Map<String, Object>> edgesDetail = createNewEdges(list1, edges, normList);
-            Boolean flag = checkFirstOption(normList, list1, edgesDetail, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
-            if (!flag) {
-                System.out.println("不符合约束");
-            }
-            List<List<String>> lists = recognizeLoopNew(edgesDetail);
-            if (lists.size() != 0) {
-                System.out.println("存在回路");
-            }
-            if (!containsList(list1, WareHouseAI)) {
-                WareHouseAI.add(list1);
-            }
-            try {
-                jsonMap.put("edges", edgesDetail);
-
-                String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
-                if(s != null && flag && lists.size() == 0){
-                    System.out.println("符合约束，不存在闭环方案数量+1");
-                    goodHouse.add(list1);
-                }
-            }catch (Exception e){
-                e.printStackTrace();
-            }
-
-        });
         System.out.println("裂变后AI仓库样本数量:" + WareHouseAI.size());
         TopDetail = findBest;
         if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
@@ -704,40 +676,17 @@ public class HarnessBranchTopoOptimize {
         System.out.println("遗传算法总迭代耗时：" + (functionendTime - functionStartTime));
         System.out.println("遗传算法后WarehouseAi样本数量：" + WareHouseAI.size());
         TopDetail = findBest;
-        goodHouse.forEach(list1 -> {
-            List<Map<String, Object>> edgesDetail = createNewEdges(list1, edges, normList);
-            Boolean flag = checkFirstOption(normList, list1, edgesDetail, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
-            if (!flag) {
-                System.out.println("不符合约束");
-            }
-            List<List<String>> lists = recognizeLoopNew(edgesDetail);
-            if (lists.size() != 0) {
-                System.out.println("存在回路");
-            }
-            if (!containsList(list1, WareHouseAI)) {
-                WareHouseAI.add(list1);
-            }
-            try {
-                jsonMap.put("edges", edgesDetail);
-
-                String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
-                if(s != null && flag && lists.size() == 0){
-                    System.out.println("符合约束，不存在闭环方案数量+1");
-//                    goodHouse.add( list1);
-                }
-            }catch (Exception e){
-                e.printStackTrace();
-            }
-
-        });
         List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "normal", singleBCList, singleSCList, singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
 
         System.out.println("方案再优化后，WarehouseAi样本数量:" + WareHouseAI.size());
         //AI样本生成
         GenerateAiCaseUtils generateAiCaseUtils = new GenerateAiCaseUtils();
+        GenerateAiUtilsTWO generateAiUtilsTWO = new GenerateAiUtilsTWO();
         System.out.println("AI样本开始生成");
         long generateAiCase = System.currentTimeMillis();
-        generateAiCaseUtils.exportJson(normList, goodHouse, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap);
+//        generateAiCaseUtils.exportJson(normList, WareHouseAI, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap);
+        generateAiUtilsTWO.exportJsonTwo(normList, WareHouseAI, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap);
+
         System.out.println("AI样本生成结束，耗时：" + (System.currentTimeMillis() - generateAiCase));
         initializeCaseResultMap.put("finishStatue", "normal");
         mapList.add(initializeCaseResultMap);
@@ -1707,9 +1656,9 @@ public class HarnessBranchTopoOptimize {
                     String s = list.get(number);
                     coppyedge.put("topologyStatusCode", s);
                 }
-//                if(!containsList(list,WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
-//                    WareHouseAI.add(list);
-//                }
+                if(!containsList(list,WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                    WareHouseAI.add(list);
+                }
                 Boolean sonSate = checkFirstOption(normList, list, coppysonedges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
                 if (sonSate) {
                     simple.add(list);
@@ -1762,34 +1711,6 @@ public class HarnessBranchTopoOptimize {
 //        接下来就是对simple 进行一个分支闭环的检查
         System.out.println("裂变前AI仓库数量：" + WareHouseAI.size());
         List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS);
-        mapList.forEach(map -> {
-            List<String> list = (List<String>) map.get("serviceableStatue");
-            List<Map<String, Object>> edgesDetail = createNewEdges(list, edges, normList);
-            Boolean flag = checkFirstOption(normList, list, edgesDetail, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
-            if (!flag) {
-                System.out.println("不符合约束");
-            }
-            List<List<String>> lists = recognizeLoopNew(edgesDetail);
-            if (lists.size() != 0) {
-                System.out.println("存在回路");
-            }
-            if (!containsList(list, WareHouseAI)) {
-                WareHouseAI.add(list);
-            }
-            try {
-                ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
-                jsonMap.put("edges", edgesDetail);
-
-                String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
-                if(s != null && flag && lists.size() == 0){
-                    System.out.println("符合约束，不存在闭环方案数量+1");
-                    goodHouse.add( list);
-                }
-            }catch (Exception e){
-                e.printStackTrace();
-            }
-
-        });
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
         System.out.println("查找每一代最优结果耗时：" + (System.currentTimeMillis() - topTenStartTime));
         return mapList;
@@ -1968,7 +1889,7 @@ public class HarnessBranchTopoOptimize {
         //获取线程池结果
         for (Future<Map<String, Object>> future : futures) {
             try {
-                Map<String, Object> result = future.get(300, java.util.concurrent.TimeUnit.SECONDS);
+                Map<String, Object> result = future.get(600, java.util.concurrent.TimeUnit.SECONDS);
                 if (result != null) {
                     resultList.add(result);
                 }
@@ -2205,7 +2126,7 @@ public class HarnessBranchTopoOptimize {
                         }
                         //样本仓库添加
                         synchronized (WareHouseAI) {
-                            if (!containsList(changeList, WareHouseAI)) {
+                            if (!containsList(changeList, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumber) {
                                 WareHouseAI.add(changeList);
                             }
                         }
