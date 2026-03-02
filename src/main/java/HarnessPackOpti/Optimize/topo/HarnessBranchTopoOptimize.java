@@ -11,6 +11,7 @@ import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import HarnessPackOpti.utils.GenerateAiCaseUtils;
 import HarnessPackOpti.utils.GenerateAiUtilsTWO;
 import HarnessPackOpti.utils.ThreadPool;
+import HarnessPackOpti.utils.TypeCheckUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.beans.PropertyEditorSupport;
@@ -24,7 +25,7 @@ import java.util.stream.Collectors;
 
 public class HarnessBranchTopoOptimize {
     //    随机变换样本数量
-    public static Integer LessRandomSamleNumber = 20;
+    public static Integer LessRandomSamleNumber = 30;
     //   迭代最少样本数量
     public static Integer HybridizationLessRandomSamleNumber = 100;
     //    top几的数量规定
@@ -42,7 +43,7 @@ public class HarnessBranchTopoOptimize {
     //暂存的仓库
     public static List<List<String>> WareHouseTemp = new CopyOnWriteArrayList<>();
     //AI仓库存放的样本数量限制
-    public static Integer AutoCompleteNumberLimit = 500;
+    public static Integer AutoCompleteNumberLimit = 10000;
     //    变异的次数
     public static Integer VariationNumber = 1;
     //每次迭代得到的top20
@@ -575,6 +576,7 @@ public class HarnessBranchTopoOptimize {
         simpleList.add(primeList);
         List<String> newList = new ArrayList<>(primeList);
         WareHouseAI.add(newList);
+        WareHouseTemp.add(newList);
         if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
             initializeCaseResultMap.put("finishStatue", "abnormal");
             List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "abnormal", singleBCList, singleSCList, singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
@@ -615,6 +617,7 @@ public class HarnessBranchTopoOptimize {
         findBest.add(addtoMap);
         long functionStartTime = System.currentTimeMillis();
         System.out.println("遗传算法前WarehouseAi仓库样本数量：" + WareHouseAI.size());
+        GenerateAiUtilsTWO generateAiUtilsTWO = new GenerateAiUtilsTWO();
         //遗传算法
         while (true) {
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
@@ -640,41 +643,48 @@ public class HarnessBranchTopoOptimize {
             }
             TopDetail = findBest;
             System.out.println("第" + hybridizationNumber + "代迭代结束，耗时：" + (System.currentTimeMillis() - startTime));
-            if (hybridizationNumber == 1) {
-                double costTotal = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总成本").toString());
-                double costLenth = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总长度").toString());
-                double costWeight = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总重量").toString());
-                BestCost.put("总成本", costTotal);
-                BestCost.put("总长度", costLenth);
-                BestCost.put("总重量", costWeight);
-            } else {
-                //获取当前最优解的各项指标
-                double costTotal = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总成本").toString());
-                double costLenth = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总长度").toString());
-                double costWeight = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总重量").toString());
-//            当前最优解中的长度判断当前的成本、长度、重量是都一样
-                //判断是否与历史最优解基本相同（允许微小误差)
-                if (Math.abs(BestCost.get("总成本") - costTotal) < 0.000001
-                        && Math.abs(BestCost.get("总长度") - costLenth) < 0.000001
-                        && Math.abs(BestCost.get("总重量") - costWeight) < 0.000001) {
-                    BestRepetitionNumber = BestRepetitionNumber + 1;        //相同则计数器加1
-                } else {
-                    BestRepetitionNumber = 0;           //不同则重置计数器
-                    //更新历史最优解
-                    BestCost.put("总成本", costTotal);
-                    BestCost.put("总长度", costLenth);
-                    BestCost.put("总重量", costWeight);
-                }
-            }
+//            if (hybridizationNumber == 1) {
+//                double costTotal = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总成本").toString());
+//                double costLenth = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总长度").toString());
+//                double costWeight = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总重量").toString());
+//                BestCost.put("总成本", costTotal);
+//                BestCost.put("总长度", costLenth);
+//                BestCost.put("总重量", costWeight);
+//            } else {
+//                //获取当前最优解的各项指标
+//                double costTotal = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总成本").toString());
+//                double costLenth = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总长度").toString());
+//                double costWeight = Double.parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总重量").toString());
+////            当前最优解中的长度判断当前的成本、长度、重量是都一样
+//                //判断是否与历史最优解基本相同（允许微小误差)
+//                if (Math.abs(BestCost.get("总成本") - costTotal) < 0.000001
+//                        && Math.abs(BestCost.get("总长度") - costLenth) < 0.000001
+//                        && Math.abs(BestCost.get("总重量") - costWeight) < 0.000001) {
+//                    BestRepetitionNumber = BestRepetitionNumber + 1;        //相同则计数器加1
+//                } else {
+//                    BestRepetitionNumber = 0;           //不同则重置计数器
+//                    //更新历史最优解
+//                    BestCost.put("总成本", costTotal);
+//                    BestCost.put("总长度", costLenth);
+//                    BestCost.put("总重量", costWeight);
+//                }
+//            }
             //TODO 迭代次数过多，多余的迭代次数会增加耗时
-            if (BestRepetitionNumber == IterationRestrictNumber) {
-                System.out.println("迭代结束原因：迭代次数达到限制，后续与上一代结果相同达到30次");
-                break;
-            }
+//            if (BestRepetitionNumber == IterationRestrictNumber) {
+//                System.out.println("迭代结束原因：迭代次数达到限制，后续与上一代结果相同达到30次");
+//                break;
+//            }
             hybridizationNumber++;
-            if (hybridizationNumber > IterationNumber) {
+//            if (hybridizationNumber > IterationNumber) {
+//                break;
+//            }
+
+            //当好样本和坏样本都达到10000次跳出循环
+            if(TypeCheckUtils.getTypeCount("TYPE_36") == 10000 && TypeCheckUtils.getTypeCount("TYPE_37") == 10000){
                 break;
             }
+            System.out.println("连通样本数量：" + TypeCheckUtils.getTypeCount("TYPE_36"));
+            System.out.println("不连通样本数量：" + TypeCheckUtils.getTypeCount("TYPE_37"));
         }
         System.out.println("遗传算法后WarehouseAi仓库样本数量：" + WareHouseAI.size());
         long functionendTime = System.currentTimeMillis();
@@ -686,12 +696,13 @@ public class HarnessBranchTopoOptimize {
         System.out.println("方案再优化后，WarehouseAi样本数量:" + WareHouseAI.size());
         //AI样本生成
         GenerateAiCaseUtils generateAiCaseUtils = new GenerateAiCaseUtils();
-        GenerateAiUtilsTWO generateAiUtilsTWO = new GenerateAiUtilsTWO();
+
         System.out.println("AI样本开始生成");
         long generateAiCase = System.currentTimeMillis();
 //        generateAiCaseUtils.exportJson(normList, WareHouseAI, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap);
-        generateAiUtilsTWO.exportJsonTwo(normList, WareHouseAI, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap);
-
+        generateAiUtilsTWO.projectCalculate(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap);
+        //写入文件
+        generateAiUtilsTWO.exportJsonTwo();
         System.out.println("AI样本生成结束，耗时：" + (System.currentTimeMillis() - generateAiCase));
         initializeCaseResultMap.put("finishStatue", "normal");
         mapList.add(initializeCaseResultMap);
@@ -1243,9 +1254,10 @@ public class HarnessBranchTopoOptimize {
                     //变异后分支状态
                     List<String> serviceableStatute = (List<String>) objectMap.get("serviceableStatue");
                     synchronized (WareHouseAI) {
-                        if (!containsList(serviceableStatute, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                        if (!containsList(serviceableStatute, WareHouseAI) && (TypeCheckUtils.getTypeCount("TYPE_36") < AutoCompleteNumberLimit || TypeCheckUtils.getTypeCount("TYPE_37") < AutoCompleteNumberLimit)) {
                             List<String> serviceableStatuteTemp = new ArrayList<>(serviceableStatute);
                             WareHouseAI.add(serviceableStatuteTemp);
+                            WareHouseTemp.add(serviceableStatuteTemp);
                         }
                     }
                     Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
@@ -1633,14 +1645,16 @@ public class HarnessBranchTopoOptimize {
                     String s = list.get(number);
                     coppyedge.put("topologyStatusCode", s);
                 }
-                if (!containsList(list, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                if (!containsList(list, WareHouseAI) && (TypeCheckUtils.getTypeCount("TYPE_36") < AutoCompleteNumberLimit || TypeCheckUtils.getTypeCount("TYPE_37") < AutoCompleteNumberLimit)) {
                     List<String> newList = new ArrayList<>( list);
                     WareHouseAI.add(newList);
+                    WareHouseTemp.add(newList);
                     List<String> changeCase = new ArrayList<>(newList);
                     int i1 = random.nextInt(changeCase.size());
                     changeCase.set(i1, "B");
                     if (!containsList(changeCase, WareHouseAI)) {
                         WareHouseAI.add(changeCase);
+                        WareHouseTemp.add(changeCase);
                     }
                 }
                 Boolean sonSate = checkFirstOption(normList, list, coppysonedges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
@@ -1659,14 +1673,16 @@ public class HarnessBranchTopoOptimize {
                     String s = list.get(number);
                     coppyedge.put("topologyStatusCode", s);
                 }
-                if(!containsList(list,WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                if (!containsList(list, WareHouseAI) && (TypeCheckUtils.getTypeCount("TYPE_36") < AutoCompleteNumberLimit || TypeCheckUtils.getTypeCount("TYPE_37") < AutoCompleteNumberLimit)) {
                     List<String> newList = new ArrayList<>( list);
                     WareHouseAI.add(newList);
+                    WareHouseTemp.add(newList);
                     List<String> changeCase = new ArrayList<>(newList);
                     int i1 = random.nextInt(changeCase.size());
                     changeCase.set(i1, "B");
                     if (!containsList(changeCase, WareHouseAI)) {
                         WareHouseAI.add(changeCase);
+                        WareHouseTemp.add(changeCase);
                     }
                 }
                 Boolean sonSate = checkFirstOption(normList, list, coppysonedges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
@@ -1682,14 +1698,16 @@ public class HarnessBranchTopoOptimize {
         for (List<String> list : simple) {
             if (!containsList(list, topTenList)) {
                 WareHouse.add(list);
-                if(!containsList(list,WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                if (!containsList(list, WareHouseAI) && (TypeCheckUtils.getTypeCount("TYPE_36") < AutoCompleteNumberLimit || TypeCheckUtils.getTypeCount("TYPE_37") < AutoCompleteNumberLimit)) {
                     List<String> newList = new ArrayList<>( list);
                     WareHouseAI.add(newList);
+                    WareHouseTemp.add(newList);
                     List<String> changeCase = new ArrayList<>(newList);
                     int i1 = random.nextInt(changeCase.size());
                     changeCase.set(i1, "B");
                     if (!containsList(changeCase, WareHouseAI)) {
                         WareHouseAI.add(changeCase);
+                        WareHouseTemp.add(changeCase);
                     }
                 }
             }
@@ -1707,14 +1725,16 @@ public class HarnessBranchTopoOptimize {
             if (simpleList != null && simpleList.size() > 0) {
                 for (List<String> list : simpleList) {
                     if (!containsList(list, WareHouse) && !containsList(list, simple)) {
-                        if (!containsList(list, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                        if (!containsList(list, WareHouseAI) && (TypeCheckUtils.getTypeCount("TYPE_36") < AutoCompleteNumberLimit || TypeCheckUtils.getTypeCount("TYPE_37") < AutoCompleteNumberLimit)) {
                             List<String> newList = new ArrayList<>( list);
                             WareHouseAI.add(newList);
+                            WareHouseTemp.add(newList);
                             List<String> changeCase = new ArrayList<>(newList);
                             int i1 = random.nextInt(changeCase.size());
                             changeCase.set(i1, "B");
                             if (!containsList(changeCase, WareHouseAI)) {
                                 WareHouseAI.add(changeCase);
+                                WareHouseTemp.add(changeCase);
                             }
                         }
                         simple.add(list);
@@ -1740,8 +1760,9 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS);
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
         System.out.println("查找每一代最优结果耗时：" + (System.currentTimeMillis() - topTenStartTime));
-        generateAiUtilsTWO.exportJsonTwo(normList, WareHouseAI, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap);
-
+        generateAiUtilsTWO.projectCalculate(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap);
+        //清楚仓库
+        WareHouseTemp.clear();
         return mapList;
     }
 
@@ -1939,14 +1960,16 @@ public class HarnessBranchTopoOptimize {
                 TopCostDetail.add(map);
             }
             synchronized (WareHouseAI) {
-                if (!containsList(list, WareHouseAI) && WareHouseAI.size() < AutoCompleteNumberLimit) {
+                if (!containsList(list, WareHouseAI) && (TypeCheckUtils.getTypeCount("TYPE_36") < AutoCompleteNumberLimit || TypeCheckUtils.getTypeCount("TYPE_37") < AutoCompleteNumberLimit)) {
                     List<String> newList = new ArrayList<>( list);
                     WareHouseAI.add(newList);
+                    WareHouseTemp.add(newList);
                     List<String> changeCase = new ArrayList<>(newList);
                     int i1 = random.nextInt(changeCase.size());
                     changeCase.set(i1, "B");
                     if (!containsList(changeCase, WareHouseAI)) {
                         WareHouseAI.add(changeCase);
+                        WareHouseTemp.add(changeCase);
                     }
                 } else if (containsList(list, WareHouseAI)) {
                     System.out.println("找对最优结果后，方案重复");
@@ -2172,6 +2195,7 @@ public class HarnessBranchTopoOptimize {
                                 changeCase.set(i1, "B");
                                 if (!containsList(changeCase, WareHouseAI)) {
                                     WareHouseAI.add(changeCase);
+                                    WareHouseTemp.add(changeCase);
                                 }
                             }
                         }

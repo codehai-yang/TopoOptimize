@@ -34,19 +34,14 @@ public class GenerateAiUtilsTWO {
      * @input: mutexMap   互斥的情况集合
      * @Return: 根据给定的方案检查，归类样本，生成训练数，导出json文件
      */
-    public void exportJsonTwo(List<String> normList, List<List<String>> changeList, List<Map<String, Object>> edges,
-                           List<Map<String, String>> appPositions, Map<String, String> eleclection,
-                           Map<String, Map<String, List<String>>> mutexMap,
-                           List<Map<String, List<String>>> chooseOneList,
-                           List<List<String>> togetherBCList,Map<String, Object> jsonMap,Map<String, Map<String, String>> elecFixedLocationLibrary,
-                           Map<String,List<String>> togetherBCMap,Map<String, Map<String, List<String>>> chooseOneMap) throws Exception{
+    public void exportJsonTwo() throws Exception{
         File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\caseTwo.txt");
-        String json = projectCalculate(normList, changeList, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList,jsonMap,elecFixedLocationLibrary,togetherBCMap,chooseOneMap);
-        Files.write(file.toPath(),json.getBytes());
+        String allTypeData = TypeCheckUtils.getAllTypeData();
+        Files.write(file.toPath(),allTypeData.getBytes());
         System.out.println("json文件已生成");
     }
 
-    public String projectCalculate(List<String> normList, List<List<String>> changeList, List<Map<String, Object>> edges,
+    public void projectCalculate(List<String> normList, List<List<String>> changeList, List<Map<String, Object>> edges,
                                    List<Map<String, String>> appPositions, Map<String, String> eleclection,
                                    Map<String, Map<String, List<String>>> mutexMap,
                                    List<Map<String, List<String>>> chooseOneList,
@@ -60,7 +55,7 @@ public class GenerateAiUtilsTWO {
         TypeCheckUtils typeCheckUtils = new TypeCheckUtils();
         List<String> edgesTemp = changeList.get(0);
         List<Map<String, Object>> edgeFirst = harnessBranchTopoOptimize.createNewEdges(edgesTemp, edges, normList);
-        List<Map<String,Object>> allResult = new ArrayList<>();
+//        List<Map<String,Object>> allResult = new ArrayList<>();
         //分支id分配编号
         Map<String, String> branchIdMap = new HashMap<>();
         //分支起点和终点对应的编号
@@ -123,15 +118,15 @@ public class GenerateAiUtilsTWO {
                 List<List<String>> lists = harnessBranchTopoOptimize.recognizeLoopNew(newEdges);
                 Map<String ,Object> jsonMapCopy = new HashMap<>(jsonMap);
                 jsonMapCopy.put("edges",newEdges);
-                String projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMapCopy));
-                if(projectInfo == null || "".equals(projectInfo)){
-                    return null;
-                }
-                Map<String, Object> stringObjectMap = jsonToMap.TransJsonToMap(projectInfo);
-                Map<String,Object>  projectCircuitlnfo = (Map<String,Object>)stringObjectMap.get("projectCircuitInfo");
-                double baseCost = (Double) projectCircuitlnfo.get("总成本");
-                double baseWeight = (Double) projectCircuitlnfo.get("回路总重量");
-                double baseLength = (Double) projectCircuitlnfo.get("回路总长度");
+//                String projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMapCopy));
+//                if(projectInfo == null || "".equals(projectInfo)){
+//                    return null;
+//                }
+//                Map<String, Object> stringObjectMap = jsonToMap.TransJsonToMap(projectInfo);
+//                Map<String,Object>  projectCircuitlnfo = (Map<String,Object>)stringObjectMap.get("projectCircuitInfo");
+//                double baseCost = (Double) projectCircuitlnfo.get("总成本");
+//                double baseWeight = (Double) projectCircuitlnfo.get("回路总重量");
+//                double baseLength = (Double) projectCircuitlnfo.get("回路总长度");
 
                 //分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1]
                 List<List<Integer>> branchFeatureList = new ArrayList<>();
@@ -158,7 +153,7 @@ public class GenerateAiUtilsTWO {
 
                 //分支点之间的连接关系,回路连接表达,这是预测成本需要用到的数据
 //                Map<String,Object> circuitCostList = calculateConnect(stringObjectMap, branchPointNameList, elecFixedLocationLibrary,jsonMapCopy);
-                int[][] circuitMatrix = calculateCircuit(stringObjectMap, branchPointNameList, elecFixedLocationLibrary, jsonMapCopy);
+//                int[][] circuitMatrix = calculateCircuit(stringObjectMap, branchPointNameList, elecFixedLocationLibrary, jsonMapCopy);
                 //分支约束检测Label
                 Map<String, Boolean> stringBooleanMap = checkFirstOption(normList, list, newEdges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
                 List<Boolean> flags = new ArrayList<>();
@@ -188,7 +183,6 @@ public class GenerateAiUtilsTWO {
 //                }
                 flags.add(stringBooleanMap.get("breakRec"));        //回路是否打通
 //                flags.add(stringBooleanMap.get("existEdge"));       //用电器周围是否存在分支
-                typeCheckUtils.getType(flags);
 
 
 
@@ -200,7 +194,7 @@ public class GenerateAiUtilsTWO {
                 result.put("branchFeatureList",branchFeatureList);      //分支特征参数(通，断)
 //                result.put("branchLength",branchLengthList);            //分支特征参数2(长度)
                 result.put("branchIdPointList",branchIdPointLiST);      //分支点id列表
-                result.put("circuitMatrix",circuitMatrix);              //回路矩阵信息，用于节点对取GINE模型节点训练MLP
+//                result.put("circuitMatrix",circuitMatrix);              //回路矩阵信息，用于节点对取GINE模型节点训练MLP
 //                result.put("circuitCostList",circuitCostList.get("circuitCost"));          //分支点特征(连通的显示为导线商务单价，元/米),有单价的表示两点之间有回路
 //                result.put("circuitDryWet",circuitCostList.get("circuitDryWet"));           //回路干湿(回路为湿显示湿区成本)
                 //TODO 这里先用一维向量表示用电器特征，看是否为每个分支点分配向量
@@ -212,6 +206,8 @@ public class GenerateAiUtilsTWO {
 //                result.put("totalCost", baseCost);                                              //总成本
 //                result.put("baseWeight",baseWeight);                                            //总重量
 //                result.put("baseLength", baseLength);                                           //总长度
+                typeCheckUtils.getType(flags,result);
+
                 return result;
             });
         }
@@ -225,17 +221,17 @@ public class GenerateAiUtilsTWO {
         for (Future<Map<String, Object>> future : futures) {
             try {
                 Map<String, Object> result = future.get( 600, TimeUnit.SECONDS);
-                if(result != null) {
-                    allResult.add(result);
-                }
+//                if(result != null) {
+////                    allResult.add(result);
+//                }
             }catch (Exception e){
 //                e.printStackTrace();
             }
 
         }
-        String s = objectMapper.writeValueAsString(allResult);
-        System.out.println("生成的各类型方案数量:" + TypeCheckUtils.getAllTypeCounts());
-        return s;
+//        String s = objectMapper.writeValueAsString(allResult);
+//        System.out.println("生成的各类型方案数量:" + TypeCheckUtils.getAllTypeCounts());
+//        return s;
     }
 
     /**
