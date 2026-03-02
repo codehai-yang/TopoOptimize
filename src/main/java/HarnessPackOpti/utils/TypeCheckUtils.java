@@ -51,9 +51,9 @@ public class TypeCheckUtils {
         TYPE_MAP.put(0b1101000, "TYPE_33");
         TYPE_MAP.put(0b1111000, "TYPE_34");
         TYPE_MAP.put(0b1111001, "TYPE_35");
-        TYPE_MAP.put(0b11, "TYPE_36");
-        TYPE_MAP.put(0b01, "TYPE_37");
-        TYPE_MAP.put(0b00, "TYPE_38");
+        TYPE_MAP.put(0b1, "TYPE_36");
+        TYPE_MAP.put(0b0, "TYPE_37");
+//        TYPE_MAP.put(0b00, "TYPE_38");
         TYPE_MAP.put(0b10, "TYPE_39");
 
     }

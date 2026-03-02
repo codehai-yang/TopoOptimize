@@ -53,7 +53,7 @@ public class GenerateTopoMatrix {
         endPoint.addAll(startPointName);//终点列表加入：分支终点+分支起点
        Set<Integer> localAddress=new HashSet<>();
 
-       //拿到断点分支的起点和终点在起点列表和终点列表的索引
+//       拿到断点分支的起点和终点在起点列表和终点列表的索引
         for (List<String> list : branchBreakList) {
             List<Integer> startPositions = findPositions(startPoint, list.get(0));
             for (Integer position : startPositions) {
@@ -71,7 +71,7 @@ public class GenerateTopoMatrix {
             }
 
         }
-        //删除断点分支的起点和终点
+//        删除断点分支的起点和终点
         removeElementsAtPositions(startPoint,localAddress.stream().collect(Collectors.toList()));
         removeElementsAtPositions(endPoint,localAddress.stream().collect(Collectors.toList()));
         this.startPoint = startPoint;
