@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 public class HarnessBranchTopoOptiErrorOutPut {
 
     public static void main(String[] args) throws Exception {
-        File file = new File("data/DataCoopWithEB/拓扑检查问题1.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\线束拓扑优化TXT.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
         HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut = new HarnessBranchTopoOptiErrorOutPut();
         harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);

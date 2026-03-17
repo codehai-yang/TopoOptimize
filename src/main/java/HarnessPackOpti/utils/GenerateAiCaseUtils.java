@@ -191,17 +191,17 @@ public class GenerateAiCaseUtils {
                 //方案闭环检测
 
                 AtomicBoolean whetherComply = new AtomicBoolean(true);
-                List<Boolean> flags = new ArrayList<>();
+//                List<Boolean> flags = new ArrayList<>();
                 //检查是否符合约束
-                stringBooleanMap.forEach((k,v)->{
-                    flags.add(v);
-                    if(!v){
-                        whetherComply.set( false);
-                    }
-                });
-                flags.add(whetherComply.get());
-                flags.add(lists.size() == 0);
-                typeCheckUtils.getType(flags);
+//                stringBooleanMap.forEach((k,v)->{
+//                    flags.add(v);
+//                    if(!v){
+//                        whetherComply.set( false);
+//                    }
+//                });
+//                flags.add(whetherComply.get());
+//                flags.add(lists.size() == 0);
+                typeCheckUtils.getType("type1");
 
 
 
