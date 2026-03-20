@@ -143,7 +143,7 @@ public class HarnessBranchTopoOptimize {
                 edgeChooseBS.add(edge.get("id").toString());
             }
 //            找出那些可变S的情况，可以变为s状态的分支
-            if (edge.get("oneC") == null) {
+            if (edge.get("oneC") == null || "".equals(edge.get("oneC"))) {
                 if ((edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")) || (edge.get("statusC").toString().equals("C") && edge.get("statusS").toString().equals("S"))
                         || (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S") && edge.get("statusC").toString().equals("C"))) {
                     canChangeS.add(edge.get("id").toString());
@@ -191,7 +191,7 @@ public class HarnessBranchTopoOptimize {
 
 
 //            对多选的一个情况进行一个记录，具有相同onec值的分支属于同一组
-            if (edge.get("oneC") != null) {
+            if (edge.get("oneC") != null && !"".equals(edge.get("oneC"))) {
                 String chooseName = edge.get("oneC").toString();
                 List<String> chooselist = new ArrayList<>();
                 if (edge.get("statusB").toString().equals("B")) {
