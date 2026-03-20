@@ -951,7 +951,7 @@ public class ProjectCircuitInfoOutput {
             int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
             double coilingNum = Double.parseDouble(objectMap.get("回路绕线长度").toString());
             if(coilingNum > 0){
-                coiling ++;
+                coiling++;
             }
             i += 1;
             count += i;

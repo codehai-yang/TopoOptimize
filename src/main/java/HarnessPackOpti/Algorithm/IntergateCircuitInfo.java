@@ -40,6 +40,10 @@ public class IntergateCircuitInfo {
         int count = 0;
         for (String s : pathId) {
             Map<String, Object> objectMap = (Map<String, Object>) pointList.get(s);
+            //排除分支信息为空的
+            if(objectMap == null){
+                continue;
+            }
             totalCost.put("总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("总成本").toString()) + Double.parseDouble(objectMap.get("回路总成本").toString()))));
             totalCost.put("回路湿区成本总加成",Double.parseDouble( df.format(Double.parseDouble( totalCost.get("回路湿区成本总加成").toString()) + Double.parseDouble(objectMap.get("回路湿区成本加成").toString()))));
             totalCost.put("回路打断总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路打断总成本").toString()) + Double.parseDouble(objectMap.get("回路打断成本").toString()))));
@@ -79,12 +83,14 @@ public class IntergateCircuitInfo {
             totalCost.put("回路绕线数量占比","0.00%");
             totalCost.put("回路打断数量占比","0.00%");
         }
+        totalCost.put("回路重量均值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / pathId.size())));
         totalCost.put("回路数量(打断前)", pathId.size());
         totalCost.put("回路数量(打断后)", count);
+        totalCost.put("回路成本均值",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("总成本").toString()) / pathId.size())));
         //回路均值打断前
         double avgLength = 0.00;
         if(pathId.size() > 0){
-             avgLength = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / pathId.size()));
+            avgLength = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / pathId.size()));
         }
         totalCost.put("回路长度均值(打断前)",avgLength);
         //回路均值打断后
