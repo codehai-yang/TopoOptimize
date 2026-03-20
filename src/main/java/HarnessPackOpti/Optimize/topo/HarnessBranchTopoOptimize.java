@@ -675,12 +675,11 @@ public class HarnessBranchTopoOptimize {
 //            }
 
             //当好样本和坏样本都达到10000次跳出循环
-            Map<String, Integer> allTypeCounts = TypeCheckUtils.getAllTypeCounts();
-            //所有类型样本总数
-            int totalSamples = allTypeCounts.values().stream().mapToInt(Integer::intValue).sum();
-            System.out.println("生成样本数量：：" + totalSamples);
-            System.out.println("各类型样本数量:" + allTypeCounts);
-            if(totalSamples >= AutoCompleteNumberLimit ){
+            int allCounts = TypeCheckUtils.getAllCounts();
+            System.out.println("遗传算法迭代一共生成AI样本数：" + allCounts);
+            String jsonString = TypeCheckUtils.toJsonString();
+            System.out.println("各类型样本数量:" + jsonString);
+            if(allCounts >= AutoCompleteNumberLimit ){
                 break;
             }
 
@@ -710,7 +709,7 @@ public class HarnessBranchTopoOptimize {
         String s = objectMapper.writeValueAsString(mapList);
         long end = System.currentTimeMillis();
         System.out.println("算法总耗时长：" + (end - start));
-        System.out.println("最后生成的样本数量:" + TypeCheckUtils.getTypeCount("TYPE_36"));
+        System.out.println("最后生成的AI样本数量:" + TypeCheckUtils.toJsonString());
         threadPool.terminateNow();
         return objectMapper.writeValueAsString(mapList);
     }
@@ -1704,7 +1703,7 @@ public class HarnessBranchTopoOptimize {
         for (List<String> list : simple) {
             if (!containsList(list, topTenList)) {
                 WareHouse.add(list);
-                if (!containsList(list, WareHouseAI)) {
+                if (!containsList(list, WareHouseAI) ) {
                     List<String> newList = new ArrayList<>( list);
                     WareHouseAI.add(newList);
                     WareHouseTemp.add(newList);
@@ -1738,7 +1737,7 @@ public class HarnessBranchTopoOptimize {
                             List<String> changeCase = new ArrayList<>(newList);
                             int i1 = random.nextInt(changeCase.size());
                             changeCase.set(i1, "B");
-                            if (!containsList(changeCase, WareHouseAI)) {
+                            if (!containsList(changeCase, WareHouseAI) ) {
                                 WareHouseAI.add(changeCase);
                                 WareHouseTemp.add(changeCase);
                             }
@@ -1771,15 +1770,25 @@ public class HarnessBranchTopoOptimize {
         String fileName = "Samples_" + timestamp;
         String filePath = "F:\\office\\pythonProjects\\GINEModel\\Samples\\" + fileName;
         //样本生成及写入,分支通断扰动
+        long breakStartTime = System.currentTimeMillis();
         generateBreakNoise.projectCalculate(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap,filePath);
+        System.out.println("分支通断扰动耗时：" + (System.currentTimeMillis() - breakStartTime));
         //分支长度扰动
+        long lengthStartTime = System.currentTimeMillis();
         generateLengthNoise.generateLengthNoise(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap,filePath);
+        System.out.println("分支长度扰动耗时：" + (System.currentTimeMillis() - lengthStartTime));
         //用电器位置扰动
+        long locationStartTime = System.currentTimeMillis();
         generateLocationNoise.generateLocationNoise(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap,filePath);
+        System.out.println("用电器位置扰动耗时：" + (System.currentTimeMillis() - locationStartTime));
         //回路单价扰动
+        long priceStartTime = System.currentTimeMillis();
         generatePriceNoise.generatePriceNoise(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap,filePath);
+        System.out.println("回路单价扰动耗时：" + (System.currentTimeMillis() - priceStartTime));
         //回路连接关系扰动
+        long connectStartTime = System.currentTimeMillis();
         generateConnectNoise.generateConnectNoise(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap,filePath);
+        System.out.println("回路连接关系扰动耗时：" + (System.currentTimeMillis() - connectStartTime));
         //清楚仓库
         WareHouseTemp.clear();
         return mapList;

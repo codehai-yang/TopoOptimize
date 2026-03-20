@@ -201,7 +201,7 @@ public class GenerateAiCaseUtils {
 //                });
 //                flags.add(whetherComply.get());
 //                flags.add(lists.size() == 0);
-                typeCheckUtils.getType("type1");
+                typeCheckUtils.countType("type1");
 
 
 
@@ -251,7 +251,7 @@ public class GenerateAiCaseUtils {
 
         }
         String s = objectMapper.writeValueAsString(allResult);
-        System.out.println("生成的各类型方案数量:" + TypeCheckUtils.getAllTypeCounts());
+        System.out.println("生成的各类型方案数量:" + TypeCheckUtils.toJsonString());
         return s;
     }
 

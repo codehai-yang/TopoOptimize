@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedOutputStream;
 import java.io.DataOutputStream;
 import java.io.FileOutputStream;
+import java.lang.reflect.Type;
 import java.text.DecimalFormat;
 import java.util.*;
 import java.util.concurrent.*;
@@ -84,13 +85,6 @@ public class GenerateBreakNoise {
         JsonToMap jsonToMap = new JsonToMap();
         ObjectMapper objectMapper = new ObjectMapper();
         List<Callable<Map<String,Object>>> tasks = new ArrayList<>();
-        TypeCheckUtils typeCheckUtils = new TypeCheckUtils();
-        //记录所有特征字段的最大最小值，方便统计归一化
-        List<Float> perPriceCompare = new ArrayList<>();
-        elecFixedLocationLibrary.forEach((key,value)->{
-            String s = value.get("导线单位商务价（元/米）");
-            perPriceCompare.add(Float.parseFloat(s));
-        });
         List<String> edgesTemp = changeList.get(0);
         List<Map<String, Object>> edgeFirst = harnessBranchTopoOptimize.createNewEdges(edgesTemp, edges, normList);
         List<Map<String,Object>> allResult = new ArrayList<>();
@@ -301,7 +295,7 @@ public class GenerateBreakNoise {
                 result.put("baseWeight",baseWeight);                                            //总重量
                 result.put("baseLength", baseLength);                                           //总长度
 //                flags.add(true);
-                typeCheckUtils.getType("type1");
+                TypeCheckUtils.countType("type1");
 
                 return result;
             });

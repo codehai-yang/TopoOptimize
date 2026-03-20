@@ -84,13 +84,6 @@ public class GenerateLengthNoise {
         JsonToMap jsonToMap = new JsonToMap();
         ObjectMapper objectMapper = new ObjectMapper();
         List<Callable<Map<String,Object>>> tasks = new ArrayList<>();
-        TypeCheckUtils typeCheckUtils = new TypeCheckUtils();
-        //记录所有特征字段的最大最小值，方便统计归一化
-        List<Float> perPriceCompare = new ArrayList<>();
-        elecFixedLocationLibrary.forEach((key,value)->{
-            String s = value.get("导线单位商务价（元/米）");
-            perPriceCompare.add(Float.parseFloat(s));
-        });
         List<String> edgesTemp = changeList.get(0);
         List<Map<String, Object>> edgeFirst = harnessBranchTopoOptimize.createNewEdges(edgesTemp, edges, normList);
 
@@ -198,7 +191,7 @@ public class GenerateLengthNoise {
                 result.put("totalCost", baseCost);                                              //总成本
                 result.put("baseWeight",baseWeight);                                            //总重量
                 result.put("baseLength", baseLength);                                           //总长度
-                typeCheckUtils.getType("type2");
+                TypeCheckUtils.countType("type2");
                 return result;
             });
         }
@@ -238,11 +231,11 @@ public class GenerateLengthNoise {
             //随机扰动
             //参考长度
             if (newEdge.get("referenceLength") != null) {
-                newEdge.put("referenceLength", perturbLength((Float) newEdge.get("referenceLength")));
+                newEdge.put("referenceLength", perturbLength(Float.parseFloat(newEdge.get("referenceLength").toString())));
             }
             //用户确认的分支长度
             if (newEdge.get("length") != null) {
-                newEdge.put("length", perturbLength((Float) newEdge.get("length")));
+                newEdge.put("length", perturbLength(Float.parseFloat(newEdge.get("length").toString())));
             }
         }
         return newEdges;

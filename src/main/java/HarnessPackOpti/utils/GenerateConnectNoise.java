@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedOutputStream;
 import java.io.DataOutputStream;
 import java.io.FileOutputStream;
+import java.lang.reflect.Type;
 import java.text.DecimalFormat;
 import java.util.*;
 import java.util.concurrent.Callable;
@@ -82,13 +83,6 @@ public class GenerateConnectNoise {
         JsonToMap jsonToMap = new JsonToMap();
         ObjectMapper objectMapper = new ObjectMapper();
         List<Callable<Map<String,Object>>> tasks = new ArrayList<>();
-        TypeCheckUtils typeCheckUtils = new TypeCheckUtils();
-        //记录所有特征字段的最大最小值，方便统计归一化
-        List<Float> perPriceCompare = new ArrayList<>();
-        elecFixedLocationLibrary.forEach((key,value)->{
-            String s = value.get("导线单位商务价（元/米）");
-            perPriceCompare.add(Float.parseFloat(s));
-        });
         List<String> edgesTemp = changeList.get(0);
         List<Map<String, Object>> edgeFirst = harnessBranchTopoOptimize.createNewEdges(edgesTemp, edges, normList);
 
@@ -102,13 +96,7 @@ public class GenerateConnectNoise {
             startNameList.add(branch.get("startPointName").toString());
             endNameList.add(branch.get("endPointName").toString());
         }
-        //收集所用用电器名称
-        List<String> appNameList = new ArrayList<>();
-        List<Map<String, Object>> topoInfoMap = (List< Map<String, Object>>) jsonMap.get("loopInfos");
-        for (Map<String, Object> stringObjectMap : topoInfoMap) {
-            appNameList.add(stringObjectMap.get("startApp").toString());
-            appNameList.add(stringObjectMap.get("endApp").toString());
-        }
+
         System.out.println("一共需要生成的样本数量：" + changeList.size());
         //有顺序的分支点名称列表
         Set<String> branchPointNameList = new LinkedHashSet<>();
@@ -138,7 +126,11 @@ public class GenerateConnectNoise {
         }
         edgeAttr.add(startIndex);
         edgeAttr.add(endIndex);
-
+        //获取所有用电器名称
+        List<String> allAppName = new ArrayList<>();
+        for (Map<String, String> appPosition : appPositions) {
+            allAppName.add(appPosition.get("appName"));
+        }
 
         //对所有方案进行计算
         for (List<String> list : changeList) {
@@ -156,8 +148,13 @@ public class GenerateConnectNoise {
                 List<Float> branchLengthList = (List<Float>)lengthMap.get("branchLength");
                 Map<String ,Object> jsonMapCopy = new HashMap<>(jsonMap);
                 jsonMapCopy.put("edges",newEdges);
+                List<Map<String,Object>> topoCopy = new ArrayList<>();
+                List< Map<String, Object>> topo = (List< Map<String, Object>>) jsonMapCopy.get("loopInfos");
+                for (Map<String, Object> stringObjectMap : topo) {
+                    topoCopy.add(new HashMap<>(stringObjectMap));
+                }
                 //回路链接关系扰动
-                int size = topoInfoMap.size();
+                int size = topoCopy.size();
                 List<Integer> indexes = new ArrayList<>();
                 for (int i = 0; i < size; i++) {
                     indexes.add(i);
@@ -166,15 +163,15 @@ public class GenerateConnectNoise {
                 int countToModify = (int) Math.ceil(size * 0.25);
                 // 获取前 25% 的索引
                 List<Integer> selectedIndices = indexes.subList(0, Math.min(countToModify, size));
-                List< Map<String, Object>> topoCopy = (List< Map<String, Object>>) jsonMapCopy.get("topoInfo");
+
                 for (Integer selectedIndex : selectedIndices) {
                     Map<String, Object> stringObjectMap = topoCopy.get(selectedIndex);
                     String startApp = stringObjectMap.get("startApp").toString();
-                    String s = appNameList.get(random.nextInt(appNameList.size()));
-                    while (startApp.equals(s)){
-                        s = appNameList.get(random.nextInt(appNameList.size()));
+                    String endApp = stringObjectMap.get("endApp").toString();
+                    String s = allAppName.get(random.nextInt(allAppName.size()));
+                    if(!startApp.equals(s)){
+                        stringObjectMap.put("endApp",s);
                     }
-                    stringObjectMap.put("endApp",s);
                 }
                 String projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMapCopy));
                 if(projectInfo == null || "".equals(projectInfo)){
@@ -222,7 +219,7 @@ public class GenerateConnectNoise {
                 result.put("totalCost", baseCost);                                              //总成本
                 result.put("baseWeight",baseWeight);                                            //总重量
                 result.put("baseLength", baseLength);                                           //总长度
-                typeCheckUtils.getType("type5");
+                TypeCheckUtils.countType("type5");
                 return result;
             });
         }
@@ -262,11 +259,11 @@ public class GenerateConnectNoise {
             //随机扰动
             //参考长度
             if (newEdge.get("referenceLength") != null) {
-                newEdge.put("referenceLength", perturbLength((Float) newEdge.get("referenceLength")));
+                newEdge.put("referenceLength", perturbLength(Float.parseFloat(newEdge.get("referenceLength").toString())));
             }
             //用户确认的分支长度
             if (newEdge.get("length") != null) {
-                newEdge.put("length", perturbLength((Float) newEdge.get("length")));
+                newEdge.put("length", perturbLength(Float.parseFloat(newEdge.get("length").toString())));
             }
         }
         return newEdges;
@@ -314,10 +311,10 @@ public class GenerateConnectNoise {
                     break;
                 }
             }
-            float v = Float.parseFloat(df.format(length));
-            double v1 = perturbLength(v);
-            Float resultV = (float) v1;
-            branchLengthList.add(resultV);
+//            float v = Float.parseFloat(df.format(length));
+//            double v1 = perturbLength(v);
+//            Float resultV = (float) v1;
+            branchLengthList.add(length);
         }
         result.put("branchLength",branchLengthList);
         return result;

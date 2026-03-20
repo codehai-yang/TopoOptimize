@@ -1,58 +1,48 @@
 package HarnessPackOpti.utils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 类型检查
+ * 类型计数器统计工具
  */
 public class TypeCheckUtils {
-    private static final Map<String, Integer> TYPE_MAP = new HashMap<>();
-    private static final Map<String, Integer> TYPE_DATA_MAP = new ConcurrentHashMap<>();
+    private static final Map<String, Integer> TYPE_COUNT_MAP = new ConcurrentHashMap<>();
 
-    static {
-        TYPE_MAP.put("type1", 0);       //分支通断样本数量
-        TYPE_MAP.put("type2", 0);
-        TYPE_MAP.put("type3", 0);
-        TYPE_MAP.put("type4", 0);
-        TYPE_MAP.put("type5", 0);
+    /**
+     * 对指定类型进行计数并返回类型标识
+     */
+    public static String countType(String typeKey) {
+        TYPE_COUNT_MAP.merge(typeKey, 1, Integer::sum);
+        return typeKey;
     }
 
-    public static String getType(String typeKey) {
-
-
-        synchronized (TYPE_DATA_MAP) {
-            int count = TYPE_DATA_MAP.getOrDefault(typeKey, 0);
-            TYPE_DATA_MAP.put(typeKey, count + 1);
-            return typeKey;
-        }
+    /**
+     * 获取指定类型的计数值
+     */
+    public static int getCount(String type) {
+        return TYPE_COUNT_MAP.getOrDefault(type, 0);
     }
 
-    public static String addLittleCase(String typeKey) {
-        return getType(typeKey);
+    /**
+     * 获取所有类型的统计结果
+     */
+    public static int getAllCounts() {
+        return TYPE_COUNT_MAP.values().stream().mapToInt(Integer::intValue).sum();
     }
 
-    public static List<Object> getTypeData(String type) {
-        throw new UnsupportedOperationException("已改为只统计数量，不存储具体数据");
-    }
-
-    public static int getTypeCount(String type) {
-        return TYPE_DATA_MAP.getOrDefault(type, 0);
-    }
-
-    public static Map<String, Integer> getAllTypeCounts() {
-        return new HashMap<>(TYPE_DATA_MAP);
-    }
-
-    public static String getAllTypeData() {
+    /**
+     * 以 JSON 格式输出所有类型统计数据
+     */
+    public static String toJsonString() {
         try {
             ObjectMapper objectMapper = new ObjectMapper();
-            return objectMapper.writeValueAsString(TYPE_DATA_MAP);
+            return objectMapper.writeValueAsString(TYPE_COUNT_MAP);
         } catch (Exception e) {
             e.printStackTrace();
             return "{}";
         }
     }
+
 }

@@ -82,13 +82,6 @@ public class GenerateLocationNoise {
         JsonToMap jsonToMap = new JsonToMap();
         ObjectMapper objectMapper = new ObjectMapper();
         List<Callable<Map<String,Object>>> tasks = new ArrayList<>();
-        TypeCheckUtils typeCheckUtils = new TypeCheckUtils();
-        //记录所有特征字段的最大最小值，方便统计归一化
-        List<Float> perPriceCompare = new ArrayList<>();
-        elecFixedLocationLibrary.forEach((key,value)->{
-            String s = value.get("导线单位商务价（元/米）");
-            perPriceCompare.add(Float.parseFloat(s));
-        });
         List<String> edgesTemp = changeList.get(0);
         List<Map<String, Object>> edgeFirst = harnessBranchTopoOptimize.createNewEdges(edgesTemp, edges, normList);
 
@@ -132,8 +125,10 @@ public class GenerateLocationNoise {
         }
         edgeAttr.add(startIndex);
         edgeAttr.add(endIndex);
-        //拿到用电器所有位置
+        //拿到用电器所有位置 name-id
         List<Map<String,String>>  eleclection1 = getEleclection(appPositions);
+        //拿到points点
+        List<Map<String,String>> pointsCopy =  (List<Map<String,String>>)jsonMap.get("points");
 
         //对所有方案进行计算
         for (List<String> list : changeList) {
@@ -152,7 +147,11 @@ public class GenerateLocationNoise {
                 Map<String ,Object> jsonMapCopy = new HashMap<>(jsonMap);
                 jsonMapCopy.put("edges",newEdges);
                 //用电器位置改变
-                List<Map<String, String>> appPositionsCopy = (List<Map<String, String>>)jsonMapCopy.get("appPositions");
+                List<Map<String, String>> appPositionsCopy = new ArrayList<>();
+                List<Map<String, String>> originalAppPositions = (List<Map<String, String>>)jsonMapCopy.get("appPositions");
+                for (Map<String, String> map : originalAppPositions) {
+                    appPositionsCopy.add(new HashMap<>(map));
+                }
                 int size = appPositionsCopy.size();
                 int countToModify = (int) Math.ceil(size * 0.25);
                 // 创建索引列表并打乱顺序
@@ -165,13 +164,22 @@ public class GenerateLocationNoise {
                 List<Integer> selectedIndices = indices.subList(0, Math.min(countToModify, size));
                 for (Integer selectedIndex : selectedIndices) {
                     Map<String, String> map = appPositionsCopy.get(selectedIndex);
-                    Map<String, String> randomMap = eleclection1.get(random.nextInt(eleclection1.size()));
-                    String key = randomMap.keySet().iterator().next();
-                    map.put("unregularPointId",randomMap.get(key));
-                    map.put("unregularPointName",key);
+                    Map<String, Object> randomMap = newEdges.get(random.nextInt(newEdges.size()));
+                    String statusCode = randomMap.get("topologyStatusCode").toString();
+                    if(!"c".toUpperCase().equals(statusCode)){
+                        continue;
+                    }
+                    String startPointName = randomMap.get("startPointName").toString();
+                    if(startPointName != null && startPointName.startsWith("[")){
+                        continue;
+                    }
+                    map.put("unregularPointName",randomMap.get("startPointName").toString());
+                    map.put("unregularPointId",randomMap.get("startPointId").toString());
                 }
                 jsonMapCopy.put("appPositions",appPositionsCopy);
+                //整车信息计算，获取成本
                 String projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMapCopy));
+
                 if(projectInfo == null || "".equals(projectInfo)){
                     return null;
                 }
@@ -217,7 +225,7 @@ public class GenerateLocationNoise {
                 result.put("totalCost", baseCost);                                              //总成本
                 result.put("baseWeight",baseWeight);                                            //总重量
                 result.put("baseLength", baseLength);                                           //总长度
-                typeCheckUtils.getType("type3");
+                TypeCheckUtils.countType("type3");
                 return result;
             });
         }
@@ -257,11 +265,11 @@ public class GenerateLocationNoise {
             //高斯扰动
             //参考长度
             if (newEdge.get("referenceLength") != null) {
-                newEdge.put("referenceLength", perturbLengthGaussian((Float) newEdge.get("referenceLength")));
+                newEdge.put("referenceLength", perturbLengthGaussian(Float.parseFloat(newEdge.get("referenceLength").toString())));
             }
             //用户确认的分支长度
             if (newEdge.get("length") != null) {
-                newEdge.put("length", perturbLengthGaussian((Float) newEdge.get("length")));
+                newEdge.put("length", perturbLengthGaussian(Float.parseFloat(newEdge.get("length").toString())));
             }
         }
         return newEdges;
@@ -328,10 +336,10 @@ public class GenerateLocationNoise {
                     break;
                 }
             }
-            float v = Float.parseFloat(df.format(length));
-            double v1 = perturbLengthGaussian(v);
-            Float resultV = (float) v1;
-            branchLengthList.add(resultV);
+//            float v = Float.parseFloat(df.format(length));
+//            double v1 = perturbLengthGaussian(v);
+//            Float resultV = (float) v1;
+            branchLengthList.add(length);
         }
         result.put("branchLength",branchLengthList);
         return result;
