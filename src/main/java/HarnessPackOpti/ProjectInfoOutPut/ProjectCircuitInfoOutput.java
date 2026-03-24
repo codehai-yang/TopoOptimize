@@ -21,6 +21,16 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class ProjectCircuitInfoOutput {
+
+    public static Map<String, Map<String, String>> elecFixedLocationLibrary = null;
+    public static Map<String, Double> elecBusinessPrice = null;
+
+    // 构造函数中读取Excel
+    public ProjectCircuitInfoOutput()  {
+        ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
+        this.elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
+        this.elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
+    }
     public static void main(String[] args) throws Exception {
         File file = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\20250630.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串

@@ -4,6 +4,7 @@ import HarnessPackOpti.ErrorOutput.CircuitErrorOutput;
 import HarnessPackOpti.ErrorOutput.HarnessBranchTopoOptiErrorOutPut;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoTest;
+import HarnessPackOpti.utils.GINEInferenceEngine;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -13,6 +14,7 @@ public class main {
 
         File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
+        GINEInferenceEngine.getInstance("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\cost_model.onnx");
         HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
         harnessBranchTopoOptimize.topoOptimize(jsonContent);
         HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
