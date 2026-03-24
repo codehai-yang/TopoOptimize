@@ -85,9 +85,14 @@ public class ProjectCircuitInfoOutput {
 
         //      读取线径excel文件
         ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
-        Map<String, Map<String, String>> elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
+        if(elecFixedLocationLibrary == null) {
+            elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
+        }
         //获取导线无聊单价   商务成本
-        Map<String, Double> elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
+        if(elecBusinessPrice == null) {
+            elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
+        }
+
 
 //       在points 找出所有可能发生变化点   并且将同一组的放在一起
         Map<String, List<String>> interfaceCodegroup = new HashMap<>();
