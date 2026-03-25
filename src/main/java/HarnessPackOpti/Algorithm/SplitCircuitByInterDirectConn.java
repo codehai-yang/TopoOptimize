@@ -43,6 +43,7 @@ public class SplitCircuitByInterDirectConn {
             }
             if (searchList.size()==0){
                 familyList.add(group);
+                //不固定回路集合得移除这个固定回路
                 remainingcircuitList.remove(loopInfo);
                 continue;
             }

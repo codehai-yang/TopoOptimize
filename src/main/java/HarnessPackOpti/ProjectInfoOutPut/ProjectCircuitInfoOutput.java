@@ -32,11 +32,13 @@ public class ProjectCircuitInfoOutput {
         this.elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
     }
     public static void main(String[] args) throws Exception {
-        File file = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\20250630.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\20250630.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
+        long start = System.currentTimeMillis();
         String json = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
-        File outputFile = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\output.txt");
+        System.out.println("耗时：" + (System.currentTimeMillis() - start));
+        File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\output.txt");
         Files.write(outputFile.toPath(), json.getBytes());
         System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
 
@@ -127,7 +129,7 @@ public class ProjectCircuitInfoOutput {
                 }
             }
         }
-//        找出用电器存在可变点的集合
+//        找出用电器存在可变点的集合，直连接口对应的所有可变用电器名称
         List<String> electricalSet = new ArrayList<>();
         FindElecLocation findElecLocation = new FindElecLocation();
         //用电器名称-用电器固化后位置/用户更改后用电器位置
@@ -148,13 +150,14 @@ public class ProjectCircuitInfoOutput {
         }
 
         ClassifyCircuit classifyCircuit = new ClassifyCircuit();
+        //根据直连接口找出所有可变位置点对所有回路进行分类，固定回路，可变回路，成本低于5块的回路不进行分组
         Map<String, Object> group = group(projectInfo, electricalSet, elecFixedLocationLibrary, functionPointSet,
                 adjacencyMatrixGraph, appposition,edges,  projectInfo);
-        //固定回路
+        //固定回路，这里包含焊点回路
         List<Map<String, Object>> fixedLoops = (List<Map<String, Object>>) group.get("fixedLoops");
-        //不固定回路进行分组
+        //不固定回路进行分组，根据可变用电器(可变位置点和焊点)分好组的回路
         List<List<Map<String, Object>>> grouplists = (List<List<Map<String, Object>>>) group.get("groupLoops");
-        //不固定回路不参与分组
+        //不固定回路不参与分组(成本小于5的回路)
         List<Map<String, Object>> nonfixedNotGroupLoops = (List<Map<String, Object>>) group.get("nonfixedNotGroupLoops");
 
 //       接下来就是对所有的回路进行一个计算并且返回回路的最终计算结果
@@ -736,7 +739,7 @@ public class ProjectCircuitInfoOutput {
         Set<String> multiLoopInfosSet = multiLoopInfos.keySet();
 //        所有不固定回路
         List<Map<String, Object>> allNonfixedLoops = new ArrayList<>();
-//
+        //起点和终点都是可变用电器的回路
         Map<String, Object> circuitProjectInfo = new HashMap<>();
 //        筛选出当中需要进行分组分的回路 1、起点用电器和终点电器 以及接口编号都一样的 的所有回路  单位价格总和大于三块   2、焊点的单条回路单位价格大于三块  也进行保留
         for (Map<String, Object> objectMap : twoPointMaps) {
@@ -850,7 +853,7 @@ public class ProjectCircuitInfoOutput {
         allElecSet.addAll(functionPointSet);
         //可变用电器集合名称
         allElecSet.addAll(electricalSet);
-        //对不固定回路进行分组
+        //对不固定回路且成本大于5的回路进行分组
         List<List<Map<String, Object>>> grouplists = splitCircuitByInterDirectConn.groupLoops(nonfixedLoops, new ArrayList<>(allElecSet));
 
         resultMap.put("groupLoops", grouplists);
@@ -1401,7 +1404,7 @@ public class ProjectCircuitInfoOutput {
         FindAllPath findAllPath = new FindAllPath();
 //        是族群
 //       首先找出中心点
-//       找出当中用电电器名称
+//       找出当中用电电器名称，焊点相关回路所有用电器名称
         List<String> appName = new ArrayList<>();
         for (Map<String, String> stringMap : multiLoopinfoMap) {
             if (!stringMap.get("回路起点用电器").startsWith("[")) {
@@ -1991,6 +1994,7 @@ public class ProjectCircuitInfoOutput {
      * @Return 返回中心点的名称   [仪表线左中点, 前顶横梁左中点, 前舱右纵梁中点, 前舱中部右点, 空调箱中点, 仪表线左侧inline点, 仪表线左侧顶棚inline点, 仪表线右侧inline点, 前舱线左后inline点, 前挡右出点, 前舱中后部左点, 前舱左纵梁后点, 车身线右前inline点, 仪表右侧点, 前舱中后部中点, 前舱中后部右点, 空调箱左点, 前舱左纵梁后中点, 前围板内右点, 前顶横梁右中点, 顶棚右前点, 前围板内中点, 仪表线右中点, 顶棚右前inline点, 仪表线右侧顶棚inline点, 前顶横梁左点, 空调箱右点, 前舱右纵梁后点, 车身线左前inline点, 顶棚左前点, 前舱线右后inline点]
      */
     public List<String> findCenterPoint(List<List<Integer>> adj, List<String> allPoint, List<String> terminal) {
+        //焊点相关回路所有用电器之间最短路径的为支点
         Set<Integer> set = new HashSet<>();
         FindAllPath findAllPath = new FindAllPath();
         FindShortestPath findShortestPath = new FindShortestPath();
