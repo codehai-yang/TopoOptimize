@@ -15,6 +15,8 @@ import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtSession;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.commons.codec.binary.StringUtils;
+import org.apache.commons.collections4.map.LinkedMap;
 
 import java.awt.*;
 import java.util.*;
@@ -82,7 +84,8 @@ public class HarnessBranchTopoOptimize {
         Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
         Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
         Map<String, Object> optimizeRecord = (Map<String, Object>) jsonMap.get("optimizeRecord");
-        List<Map<String, Object>> topoInfos = (List<Map<String, Object>>) jsonMap.get("loopInfos");
+        List<Map<String, String>> loopInfos = (List<Map<String, String>>) jsonMap.get("loopInfos");
+        List<Map<String, String>> points = (List<Map<String, String>>) jsonMap.get("points");
         CaseId = caseInfo.get("id").toString();
         optimizeRecordId = optimizeRecord.get("id").toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
@@ -380,7 +383,6 @@ public class HarnessBranchTopoOptimize {
         String detail = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
         Map<String, Object> objectMap = jsonToMap.TransJsonToMap(detail);
         //提取经过各个分支的所有回路信息
-        //TODO 待优化项，剔除不必要的字段以节省时间
         Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) objectMap.get("bundeleRelatedCircuitInfo");
         //所有回路详细信息（最优方案）
         List<Map<String, Object>> circuitInfoList = (List<Map<String, Object>>) objectMap.get("circuitInfo");
@@ -412,18 +414,62 @@ public class HarnessBranchTopoOptimize {
             if("N".equals(positionRegular)){
                 String appId = appPosition.get("unregularPointId");
                 String positionName = appPosition.get("unregularPointName");
-                appPositionMap.put(appId,positionName);
+                if(appId != null && !"null".equals(appId)) {
+                    appPositionMap.put(appId, positionName);
+                }
             }else {
                 String appId = appPosition.get("regularPointId");
                 String positionName = appPosition.get("regularPointName");
-                appPositionMap.put(appId,positionName);
+                if(appId != null && !"null".equals(appId)) {
+                    appPositionMap.put(appId, positionName);
+                }
             }
-            elecPosition.put(appName,appPositionMap);
+            if(elecPosition != null) {
+                elecPosition.put(appName, appPositionMap);
+            }
         }
         //分支长度归一化
         Map<String, Object> branchLength = getBranchLength(normList, edges);
         //连接关系索引构建
         List<List<Integer>> connection = connection(edges,normList);
+        //焊点-对应回路位置点名称
+        Map<String, List<String>> multiLoopInfos = new LinkedMap<>();
+        //位置点-位置点id
+        Map<String,String> pointMap = new HashMap<>();
+        for (Map<String, String> loopInfoTemp : loopInfos) {
+            if (loopInfoTemp.get("startApp").startsWith("[") || loopInfoTemp.get("endApp").startsWith("[")) {
+                if (loopInfoTemp.get("startApp").startsWith("[")) {
+                    //获取终点用电器名称(非焊点we)
+                    String endApp = loopInfoTemp.get("endApp");
+                    //查找终点位置名称
+                    String node = findNode(endApp, appPositions);
+                    if (multiLoopInfos.containsKey(loopInfoTemp.get("startApp"))) {
+                        multiLoopInfos.get(loopInfoTemp.get("startApp")).add(node);
+                    } else {
+                        List<String> list=new ArrayList<>();
+                        list.add(node);
+                        multiLoopInfos.put(loopInfoTemp.get("startApp"), list);
+                    }
+                }
+                if (loopInfoTemp.get("endApp").startsWith("[")) {
+                    //获取终点用电器名称
+                    String startApp = loopInfoTemp.get("startApp");
+                    //查找终点位置名称
+                    String node = findNode(startApp, appPositions);
+                    if (multiLoopInfos.containsKey(loopInfoTemp.get("endApp"))) {
+                        multiLoopInfos.get(loopInfoTemp.get("endApp")).add(node);
+                    } else {
+                        List<String> list=new ArrayList<>();
+                        list.add(node);
+                        multiLoopInfos.put(loopInfoTemp.get("endApp"), list);
+                    }
+                }
+            }
+        }
+        //位置点-位置点id
+        for (Map<String, String> point : points) {
+            pointMap.put(point.get("pointName").toString(),point.get("id").toString());
+        }
 //        每个B对应的的平均闭环数量
         System.out.println("结束分类以及初始方案检查，所用时间：" + (System.currentTimeMillis() - l));
         l = System.currentTimeMillis();
@@ -570,7 +616,7 @@ public class HarnessBranchTopoOptimize {
 
         //对初始生成的方案进行处理和优化，找出最佳方案，通过将闭环中可更改分支状态为s来消除闭环
         //对上面生成的闭环方案进行计算，计算他们的成本，按价格排序 ，返回成本最优的20条方案
-        List<Map<String, Object>> findBest = changeAndFindBest(simpleList, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS,elecPosition,branchLength,connection);
+        List<Map<String, Object>> findBest = changeAndFindBest(simpleList, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS,elecPosition,branchLength,connection,multiLoopInfos, pointMap);
         TopDetail = findBest;
         if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
             initializeCaseResultMap.put("finishStatue", "abnormal");
@@ -604,7 +650,7 @@ public class HarnessBranchTopoOptimize {
             long startTime = System.currentTimeMillis();
 //            只有当迭代的结果top10都是同一个值的时候    才结束迭代
             findBest = hybridization(findBest, onlyNameS, normList, conformList, togetherBCList, canChangeS, edges, appPositions, eleclection,
-                    mutexMap, minLoopNumber, maxLoopNumber, initialScheme, wearId, jsonMap, edgeChooseBS, chooseOneList, mutexGroupList, sortedMapExcel, sortedMap, circuitInfoList,elecPosition,branchLength,connection);
+                    mutexMap, minLoopNumber, maxLoopNumber, initialScheme, wearId, jsonMap, edgeChooseBS, chooseOneList, mutexGroupList, sortedMapExcel, sortedMap, circuitInfoList,elecPosition,branchLength,connection, multiLoopInfos, pointMap);
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 initializeCaseResultMap.put("finishStatue", "abnormal");
                 List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "abnormal", singleBCList, singleSCList, singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
@@ -1222,7 +1268,9 @@ public class HarnessBranchTopoOptimize {
                                                    List<Map<String, Object>> circuitInfoList,
                                                    Map<String,Map<String,String>> elecPosition,
                                                    Map<String,Object> branchLength,
-                                                   List<List<Integer>> connection) throws Exception {
+                                                   List<List<Integer>> connection,
+                                                   Map<String, List<String>> multiLoopInfos,
+                                                   Map<String,String> pointMap) throws Exception {
         //利用约束变异开始时间
         long constraintStartTime = System.currentTimeMillis();
         List<List<String>> simple = new ArrayList<>();
@@ -1520,7 +1568,7 @@ public class HarnessBranchTopoOptimize {
         long topTenStartTime = System.currentTimeMillis();
 //        接下来就是对simple 进行一个分支闭环的检查
         System.out.println("裂变前AI仓库数量：" + WareHouseAI.size());
-        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS,elecPosition,branchLength,connection);
+        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS,elecPosition,branchLength,connection, multiLoopInfos, pointMap);
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
         System.out.println("查找每一代最优结果耗时：" + (System.currentTimeMillis() - topTenStartTime));
         return mapList;
@@ -1565,7 +1613,9 @@ public class HarnessBranchTopoOptimize {
                                                        List<String> edgeChooseBS,
                                                        Map<String,Map<String,String>> elecPosition,
                                                        Map<String,Object> branchLength,
-                                                       List<List<Integer>>  connection) throws Exception {
+                                                       List<List<Integer>>  connection,
+                                                       Map<String, List<String>> multiLoopInfos,
+                                                       Map<String,String> pointMap) throws Exception {
         GINEInferenceEngine gine = GINEInferenceEngine.getInstance("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\cost_model.onnx");
         Random random = new Random();
         FindBest findBest = new FindBest();
@@ -1598,8 +1648,13 @@ public class HarnessBranchTopoOptimize {
                 }
 
                 List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
-                Map<String, Object> threadLocalJsonMap = new HashMap<>(jsonMap);
+                //深拷贝
+                Map<String, Object> threadLocalJsonMap = mapper.readValue(
+                        mapper.writeValueAsString(jsonMap),
+                        Map.class
+                );
                 threadLocalJsonMap.put("edges", serviceableEdge);
+                long predictTime = System.currentTimeMillis();
                 //分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1],211*4
                 List<List<Float>> branchFeatureList = new ArrayList<>();
                 //状态转换
@@ -1627,7 +1682,7 @@ public class HarnessBranchTopoOptimize {
                 }
                 //TODO 用模型进行成本预测，与上一代方案比较，淘汰掉成本高的，先按照固定位置计算
                 //标准化175*176矩阵,x
-                float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, jsonMap, pointsList, normList);
+                float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap, pointsList, normList,multiLoopInfos,pointMap);
                 long[][] edgeIndex = new long[2][connection.get(0).size()];
                 for (int i = 0; i < 2; i++) {
                     for (int j = 0; j < connection.get(i).size(); j++) {
@@ -1640,8 +1695,11 @@ public class HarnessBranchTopoOptimize {
                         edgeAttr[i][j] = branchFeatureList.get(i).get(j);
                     }
                 }
+                System.out.println("模型数据准备时间" + (System.currentTimeMillis() - predictTime));
                 //模型预测
+                long start = System.currentTimeMillis();
                 float[][] predict = gine.predict(x, edgeIndex, edgeAttr);
+                System.out.println("模型预测耗时：" + (System.currentTimeMillis() - start));
                 System.out.println("模型预测值：" + predict[0][0]);
                 Map<String, Double> breakCostMap = new HashMap<>();
                 String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
@@ -1753,7 +1811,7 @@ public class HarnessBranchTopoOptimize {
                     resultList.add(result);
                 }
             } catch (Exception e) {
-                e.printStackTrace();
+//                e.printStackTrace();
             }
 
         }
@@ -2630,6 +2688,25 @@ public class HarnessBranchTopoOptimize {
         }
     }
 
-
+    /**
+     * @Description: 根据用电器名称获取对应的位置点名称
+     * @input: appName  用电器名称
+     * @input: appPositions  用电器位置信息
+     * @Return: 返回接收到用电器名称对应的位置
+     */
+    public String findNode(String appName, List<Map<String, String>> appPositions) {
+        for (Map<String, String> appPosition : appPositions) {
+            if (appPosition.get("appName").equalsIgnoreCase(appName)) {
+                if (appPosition.get("unregularPointName") != null) {
+                    return appPosition.get("unregularPointName");
+                } else if (appPosition.get("unregularPointName") == null && appPosition.get("regularPointName") != null) {
+                    return appPosition.get("regularPointName");
+                } else if (appPosition.get("unregularPointName") == null && appPosition.get("regularPointName") == null) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
 }
 
