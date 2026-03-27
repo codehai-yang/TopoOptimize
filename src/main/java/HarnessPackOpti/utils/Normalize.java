@@ -124,12 +124,12 @@ public class Normalize {
             matrix[allNameList.indexOf(startPosition)][allNameList.indexOf(endPosition)] = Float.parseFloat(materialsMsg.get("导线单位商务价（元/米）"));
             priceList.add(Float.parseFloat(materialsMsg.get("导线单位商务价（元/米）")));
         }
-        // 只收集非0且非对角线的值
+        // 只收集非0的值
         double[] nonZeroData = new double[matrix.length * matrix[0].length];
         int idx = 0;
         for (int i = 0; i < matrix.length; i++) {
             for (int j = 0; j < matrix[i].length; j++) {
-                if (i != j && matrix[i][j] != 0) {
+                if ( matrix[i][j] != 0) {
                     nonZeroData[idx++] = matrix[i][j];
                 }
             }
@@ -148,7 +148,7 @@ public class Normalize {
         // 只对非0且非对角线的值标准化，0保持不动
         for (int i = 0; i < matrix.length; i++) {
             for (int j = 0; j < matrix[i].length; j++) {
-                if (i != j && matrix[i][j] != 0) {
+                if ( matrix[i][j] != 0) {
                     matrix[i][j] = (float) ((matrix[i][j] - mean) / std);
                 }
             }
@@ -183,13 +183,17 @@ public class Normalize {
 
         double wetStd = Math.sqrt(
                 Arrays.stream(data)
-                        .map(v -> (v - mean) * (v - mean))
+                        .map(v -> (v - wetMean) * (v - wetMean))
                         .average()
                         .orElse(0.0)
         );
         result.replaceAll((k, v) -> {
             if (v != 0) {
-                return (float) ((v - wetMean) / wetStd);
+                if (wetStd > 0) {
+                    return (float) ((v - wetMean) / wetStd);
+                } else {
+                    return 1.0f;
+                }
             }
             return v;
         });
