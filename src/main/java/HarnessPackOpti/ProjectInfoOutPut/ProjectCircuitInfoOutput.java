@@ -46,6 +46,7 @@ public class ProjectCircuitInfoOutput {
 
 
     public String projectCircuitInfoOutput(String fileStringFormat) throws Exception {
+        long start = System.currentTimeMillis();
         JsonToMap jsonToMap = new JsonToMap();
         Map<String, Object> mapFile = jsonToMap.TransJsonToMap(fileStringFormat);
         ReadProjectInfo readProjectInfo = new ReadProjectInfo();
@@ -59,12 +60,10 @@ public class ProjectCircuitInfoOutput {
 
         List<String> strPointName = new ArrayList<>();
         List<String> endPointName = new ArrayList<>();
-        for (Map<String, String> k : edges) {
-            strPointName.add(k.get("分支起点名称"));
-            endPointName.add(k.get("分支终点名称"));
-        }
         List<List<String>> branchBreakList = new ArrayList<>();
         for (Map<String, String> edge : edges) {
+            strPointName.add(edge.get("分支起点名称"));
+            endPointName.add(edge.get("分支终点名称"));
             if (edge.get("分支打断").equals("B")) {
                 List<String> interruptedEdgelist = new ArrayList<>();
                 interruptedEdgelist.add(edge.get("分支起点名称").toString());
@@ -395,6 +394,7 @@ public class ProjectCircuitInfoOutput {
                 loopdetails.put(map.get("回路id").toString(), map);
             }
         }
+        System.out.println("用电器位置分配耗时:" + (System.currentTimeMillis() - start));
 
 //对所有回路进行分类统计
 //       对txt文件里面的回路进行一个分类
