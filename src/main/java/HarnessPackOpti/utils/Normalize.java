@@ -118,7 +118,7 @@ public class Normalize {
             }
 
             if(allNameList.indexOf(startPosition) == -1 || allNameList.indexOf(endPosition) == -1){
-                System.out.println("startApp:" + startApp + ":" + startPosition + ":" +  allNameList.indexOf(startPosition) + "  endApp:" + endPosition + ":" + allNameList.indexOf(endPosition));
+//                System.out.println("startApp:" + startApp + ":" + startPosition + ":" +  allNameList.indexOf(startPosition) + "  endApp:" + endPosition + ":" + allNameList.indexOf(endPosition));
                 continue;
             }
             matrix[allNameList.indexOf(startPosition)][allNameList.indexOf(endPosition)] = Float.parseFloat(materialsMsg.get("导线单位商务价（元/米）"));

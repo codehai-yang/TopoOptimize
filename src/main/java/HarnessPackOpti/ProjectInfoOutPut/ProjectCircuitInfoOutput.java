@@ -394,7 +394,7 @@ public class ProjectCircuitInfoOutput {
                 loopdetails.put(map.get("回路id").toString(), map);
             }
         }
-        System.out.println("用电器位置分配耗时:" + (System.currentTimeMillis() - start));
+
 
 //对所有回路进行分类统计
 //       对txt文件里面的回路进行一个分类
