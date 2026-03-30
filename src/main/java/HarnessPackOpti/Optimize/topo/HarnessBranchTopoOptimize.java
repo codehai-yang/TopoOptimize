@@ -10,6 +10,7 @@ import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import HarnessPackOpti.utils.GINEInferenceEngine;
 import HarnessPackOpti.utils.Normalize;
+import HarnessPackOpti.utils.SampleSave;
 import HarnessPackOpti.utils.ThreadPool;
 import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtEnvironment;
@@ -1620,11 +1621,12 @@ public class HarnessBranchTopoOptimize {
         Random random = new Random();
         FindBest findBest = new FindBest();
         Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
+        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         Boolean whetherOnLoop = caseInfo.get("loopcreate").toString().equals("true") ? true : false;
         List<Float> length = (List<Float>)branchLength.get("branchLength");
         System.out.println("一共需要计算方案：" + simpleList.size());
         JsonToMap jsonToMap = new JsonToMap();
-        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
+
         ObjectMapper mapper = new ObjectMapper();
         //获取所有用电器对应的位置
         List<Map<String,Object>> loopInfos =  (List<Map<String,Object>>)jsonMap.get("loopInfos");
@@ -1654,9 +1656,10 @@ public class HarnessBranchTopoOptimize {
                         Map.class
                 );
                 threadLocalJsonMap.put("edges", serviceableEdge);
-                long predictTime = System.currentTimeMillis();
+                long totalTime = System.currentTimeMillis();
                 //分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1],211*4
                 List<List<Float>> branchFeatureList = new ArrayList<>();
+                long oneHotTime = System.currentTimeMillis();
                 //状态转换
                 for (String s : serviceableStatue) {
                     //默认断开
@@ -1682,7 +1685,9 @@ public class HarnessBranchTopoOptimize {
                 }
                 //TODO 用模型进行成本预测，与上一代方案比较，淘汰掉成本高的，先按照固定位置计算
                 //标准化175*176矩阵,x
+                long xTime = System.currentTimeMillis();
                 float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap, pointsList, normList,multiLoopInfos,pointMap);
+                System.out.println("x矩阵构建以及标准化时间：" + (System.currentTimeMillis() - xTime));
                 long[][] edgeIndex = new long[2][connection.get(0).size()];
                 for (int i = 0; i < 2; i++) {
                     for (int j = 0; j < connection.get(i).size(); j++) {
@@ -1695,12 +1700,15 @@ public class HarnessBranchTopoOptimize {
                         edgeAttr[i][j] = branchFeatureList.get(i).get(j);
                     }
                 }
-                System.out.println("模型数据准备时间" + (System.currentTimeMillis() - predictTime));
+                //TODO 这里用python模型尝试
+//                SampleSave.saveSample(edgeIndex,edgeAttr,x);
+                System.out.println("模型数据准备总" + (System.currentTimeMillis() - totalTime));
                 //模型预测
                 long start = System.currentTimeMillis();
-                float[][] predict = gine.predict(x, edgeIndex, edgeAttr);
+                float predict = gine.predict(x, edgeIndex, edgeAttr);
                 System.out.println("模型预测耗时：" + (System.currentTimeMillis() - start));
-                System.out.println("模型预测值：" + predict[0][0]);
+                System.out.println("数据准备以及模型预测总耗时：" + (System.currentTimeMillis() - oneHotTime));
+                System.out.println("模型预测值：" + predict);
                 Map<String, Double> breakCostMap = new HashMap<>();
                 String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
                 Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
@@ -1708,6 +1716,7 @@ public class HarnessBranchTopoOptimize {
 
                 Map<String, Object> costResultData = new HashMap<>();
                 costResultData.put("总成本", projectCircuitInfo.get("总成本"));
+                System.out.println("【线程：" + Thread.currentThread().getName() + "】方案索引：" + simpleList.indexOf(strings) + ", 真实成本:" + projectCircuitInfo.get("总成本"));
                 costResultData.put("总长度", projectCircuitInfo.get("回路总长度"));
                 costResultData.put("总重量", projectCircuitInfo.get("回路总重量"));
 
