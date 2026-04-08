@@ -1660,7 +1660,6 @@ public class HarnessBranchTopoOptimize {
                 //分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1],211*4
                 List<List<Float>> branchFeatureList = new ArrayList<>();
                 long oneHotTime = System.currentTimeMillis();
-                System.out.println("任务起始时间:" + oneHotTime);
                 //状态转换
                 for (String s : serviceableStatue) {
                     //默认断开
@@ -1688,7 +1687,6 @@ public class HarnessBranchTopoOptimize {
                 //标准化175*176矩阵,x
                 long xTime = System.currentTimeMillis();
                 float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap, pointsList, normList,multiLoopInfos,pointMap);
-                System.out.println("x矩阵构建以及标准化时间：" + (System.currentTimeMillis() - xTime));
                 long[][] edgeIndex = new long[2][connection.get(0).size()];
                 for (int i = 0; i < 2; i++) {
                     for (int j = 0; j < connection.get(i).size(); j++) {
@@ -1703,7 +1701,6 @@ public class HarnessBranchTopoOptimize {
                 }
                 //TODO 这里用python模型尝试
 //                SampleSave.saveSample(edgeIndex,edgeAttr,x);
-                System.out.println("模型数据准备总" + (System.currentTimeMillis() - totalTime));
                 //模型预测
                 float predict = gine.predict(x, edgeIndex, edgeAttr);
                 System.out.println("数据准备以及模型预测总耗时：" + (System.currentTimeMillis() - oneHotTime));

@@ -41,6 +41,9 @@ public class Normalize {
         List<String> startName = new ArrayList<>();
         List<String> endPointName = new ArrayList<>();
         List<List<String>> branchBreakList = new ArrayList<>();
+        Map<String,String> positionNameMap = new HashMap<>();
+        Map<String,String> namePositionMap = new HashMap<>();
+        List<Point> coordinateList = new ArrayList<>();
         for (Map<String, Object> edge : serviceableEdge) {
             startName.add(edge.get("startPointName").toString());
             endPointName.add(edge.get("endPointName").toString());
@@ -49,6 +52,20 @@ public class Normalize {
                 interruptedEdgelist.add(edge.get("startPointName").toString());
                 interruptedEdgelist.add(edge.get("endPointName").toString());
                 branchBreakList.add(interruptedEdgelist);
+            }
+            if (edge.get("topologyStatusCode").equals("C")) {
+                //起点xy坐标
+                double startXCoordinate = Double.parseDouble(edge.get("startXCoordinate").toString());
+                double startYCoordinate = Double.parseDouble(edge.get("startYCoordinate").toString());
+                //终点xy坐标
+                double endXCoordinate = Double.parseDouble(edge.get("endXCoordinate").toString());
+                double endYCoordinate = Double.parseDouble(edge.get("endYCoordinate").toString());
+                coordinateList.add(new Point(startXCoordinate, startYCoordinate));
+                coordinateList.add(new Point(endXCoordinate, endYCoordinate));
+                positionNameMap.put(startXCoordinate + "&" + startYCoordinate, edge.get("startPointName").toString());
+                positionNameMap.put(endXCoordinate + "&" + endYCoordinate, edge.get("endPointName").toString());
+                namePositionMap.put(edge.get("startPointName").toString(), startXCoordinate + "&" + startYCoordinate);
+                namePositionMap.put(edge.get("endPointName").toString(), endXCoordinate + "&" + endYCoordinate);
             }
         }
         //获取有向图之间的索引，起点到终点之间的关系
@@ -61,9 +78,11 @@ public class Normalize {
         //焊点位置选择
         multiLoopInfos.forEach((k, v) -> {
             //寻找焊点最优位置
-            List<String> centerPoint = findCenterPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint(), v);
+//            List<String> centerPoint = findCenterPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint(), v);
+            Point centerPoint = findCenterPointTwo(v, namePositionMap, coordinateList);
+            String s = positionNameMap.get(centerPoint.x + "&" + centerPoint.y);
             if(centerPoint != null){
-                multiLocation.put(k,centerPoint.get(0));
+                multiLocation.put(k,s);
             }
         });
         //更改appposition焊点位置
@@ -368,12 +387,30 @@ public class Normalize {
     }
 
     /**
-     * @Description 将路径数字转为点
-     * @input numberPath 数字路径
-     * @inputExample [23, 17, 135]
-     * @input adjacencyMatrixGraph中的allPoint
-     * @Return 返回数字对应的点 [仪表线左中点, 前顶横梁左中点, 前舱右纵梁中点]
+     * @Description 寻找中心点位置
+     * @param v 与焊点关联的用电器
+     * @param namePositionMap 用电器名称位置
+     * @param coordinateList 所有位置点为C的
+     * @return
      */
+    public static Point findCenterPointTwo(List<String> v,Map<String,String> namePositionMap,List<Point> coordinateList) {
+        List<Point> tempPoint = new ArrayList<>();
+        for (String s : v) {
+            String position = namePositionMap.get(s);
+            String[] split = position.split("&");
+            tempPoint.add(new Point(Double.parseDouble(split[0]), Double.parseDouble(split[1])));
+        }
+        return Point.findMinSumDistancePoint(coordinateList, tempPoint);
+    }
+
+
+        /**
+         * @Description 将路径数字转为点
+         * @input numberPath 数字路径
+         * @inputExample [23, 17, 135]
+         * @input adjacencyMatrixGraph中的allPoint
+         * @Return 返回数字对应的点 [仪表线左中点, 前顶横梁左中点, 前舱右纵梁中点]
+         */
     public static List<String> convertPathToNumbers(List<Integer> numberPath, List<String> allPoint) {
         List<String> points = new ArrayList<>();
         for (Integer point : numberPath) {
