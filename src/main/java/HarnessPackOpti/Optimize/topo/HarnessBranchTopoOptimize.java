@@ -1617,7 +1617,7 @@ public class HarnessBranchTopoOptimize {
                                                        List<List<Integer>>  connection,
                                                        Map<String, List<String>> multiLoopInfos,
                                                        Map<String,String> pointMap) throws Exception {
-        GINEInferenceEngine gine = GINEInferenceEngine.getInstance("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\cost_model.onnx");
+        GINEInferenceEngine gine = new GINEInferenceEngine();
         Random random = new Random();
         FindBest findBest = new FindBest();
         Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
@@ -1660,6 +1660,7 @@ public class HarnessBranchTopoOptimize {
                 //分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1],211*4
                 List<List<Float>> branchFeatureList = new ArrayList<>();
                 long oneHotTime = System.currentTimeMillis();
+                System.out.println("任务起始时间:" + oneHotTime);
                 //状态转换
                 for (String s : serviceableStatue) {
                     //默认断开
@@ -1704,9 +1705,7 @@ public class HarnessBranchTopoOptimize {
 //                SampleSave.saveSample(edgeIndex,edgeAttr,x);
                 System.out.println("模型数据准备总" + (System.currentTimeMillis() - totalTime));
                 //模型预测
-                long start = System.currentTimeMillis();
                 float predict = gine.predict(x, edgeIndex, edgeAttr);
-                System.out.println("模型预测耗时：" + (System.currentTimeMillis() - start));
                 System.out.println("数据准备以及模型预测总耗时：" + (System.currentTimeMillis() - oneHotTime));
                 System.out.println("模型预测值：" + predict);
                 Map<String, Double> breakCostMap = new HashMap<>();
@@ -1716,7 +1715,6 @@ public class HarnessBranchTopoOptimize {
 
                 Map<String, Object> costResultData = new HashMap<>();
                 costResultData.put("总成本", projectCircuitInfo.get("总成本"));
-                System.out.println("【线程：" + Thread.currentThread().getName() + "】方案索引：" + simpleList.indexOf(strings) + ", 真实成本:" + projectCircuitInfo.get("总成本"));
                 costResultData.put("总长度", projectCircuitInfo.get("回路总长度"));
                 costResultData.put("总重量", projectCircuitInfo.get("回路总重量"));
 
