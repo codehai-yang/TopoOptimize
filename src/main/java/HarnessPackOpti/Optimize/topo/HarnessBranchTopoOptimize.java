@@ -29,9 +29,9 @@ import java.util.stream.Collectors;
 
 public class HarnessBranchTopoOptimize {
     //    随机变换样本数量
-    public static Integer LessRandomSamleNumber = 15;
+    public static Integer LessRandomSamleNumber = 200;
     //   迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 20;
+    public static Integer HybridizationLessRandomSamleNumber = 500;
     //    top几的数量规定
     public static final Integer TopNumber = 20;
     //    每次迭代最优的成本
@@ -41,7 +41,7 @@ public class HarnessBranchTopoOptimize {
     //    迭代重复的次数限值
     public static Integer IterationRestrictNumber = 30;
     //    定义一个仓库
-    public static List<List<String>>  WareHouse = new ArrayList<>();
+    public static List<List<String>>  WareHouse = new CopyOnWriteArrayList<>();
     //    变异的次数
     public static Integer VariationNumber = 1;
     //每次迭代得到的top20
@@ -696,6 +696,7 @@ public class HarnessBranchTopoOptimize {
         }
         long functionendTime = System.currentTimeMillis();
         System.out.println("遗传算法总迭代耗时：" + (functionendTime - functionStartTime));
+//        SampleSave.writePredictionsToExcel(SampleSave.modelPredictMap, "F:\\office\\idearProjects\\project20251009\\predict_output.xlsx");
         TopDetail = findBest;
         List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "normal", singleBCList, singleSCList, singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
         initializeCaseResultMap.put("finishStatue", "normal");
@@ -1656,6 +1657,8 @@ public class HarnessBranchTopoOptimize {
                         Map.class
                 );
                 threadLocalJsonMap.put("edges", serviceableEdge);
+                String jsonStr = mapper.writeValueAsString(threadLocalJsonMap);
+                Map<String, Object> copyThreadLocalMap = mapper.readValue(jsonStr, Map.class);
                 long totalTime = System.currentTimeMillis();
                 //分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1],211*4
                 List<List<Float>> branchFeatureList = new ArrayList<>();
@@ -1704,13 +1707,16 @@ public class HarnessBranchTopoOptimize {
                 //模型预测
                 float predict = gine.predict(x, edgeIndex, edgeAttr);
                 System.out.println("数据准备以及模型预测总耗时：" + (System.currentTimeMillis() - oneHotTime));
-                System.out.println("模型预测值：" + predict);
+//                System.out.println("[" + Thread.currentThread().getName() + "] 模型预测值：" + predict);
                 Map<String, Double> breakCostMap = new HashMap<>();
-                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
+                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(copyThreadLocalMap));
                 Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
                 Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
 
                 Map<String, Object> costResultData = new HashMap<>();
+                System.out.println("[" + Thread.currentThread().getName() + "] 真实成本：" + projectCircuitInfo.get("总成本") + "        模型预测值：" + predict);
+                //存入map
+                SampleSave.modelPredictMap.put( (double) predict, Double.parseDouble(projectCircuitInfo.get("总成本").toString()));
                 costResultData.put("总成本", projectCircuitInfo.get("总成本"));
                 costResultData.put("总长度", projectCircuitInfo.get("回路总长度"));
                 costResultData.put("总重量", projectCircuitInfo.get("回路总重量"));
