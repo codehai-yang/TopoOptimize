@@ -544,6 +544,14 @@ public class ProjectCircuitInfoOutput {
                 }
             }
         }
+        //统计所有导线选型单价
+        Map<String,Double> wirePriceMap = new HashMap<>();
+        for (Map.Entry<String, Map<String, String>> entry : elecFixedLocationLibrary.entrySet()) {
+            String wireType = entry.getKey();  // 导线选型名称
+            Map<String, String> wireTypeInfo = entry.getValue();  // 该导线的详细信息
+            String unitPrice = wireTypeInfo.get("导线单位商务价（元/米）");  // 单价
+            wirePriceMap.put(wireType, Double.parseDouble(unitPrice));
+        }
 
         Map<String, Object> systemCircuitInfo = new HashMap<>();
         Map<String, Object> elecRelatedCircuitInfo = new HashMap<>();
@@ -554,6 +562,12 @@ public class ProjectCircuitInfoOutput {
         List<Map<String, Object>> circuitInfo = new LinkedList<>();
         for (Map<String, Object> loopInfo : loopInfos) {
             Map<String, Object> objectMap = (Map<String, Object>) loopdetails.get(loopInfo.get("回路id").toString());
+            Double price = null;
+            Object wire = objectMap.get("导线选型");
+            if(wire != null){
+                price = wirePriceMap.get(wire.toString());
+            }
+            objectMap.put("导线单价", price);
             circuitInfo.add(objectMap);
         }
         //回路绕线长度计算
@@ -598,6 +612,7 @@ public class ProjectCircuitInfoOutput {
                 elecInterfaceRelatedCircuitInfo.put(name, objectMap2);
             }
         }
+
 //        分支
         for (Map<String, String> edge : edges) {
             String id = (String) edge.get("分支id编号");
@@ -635,7 +650,8 @@ public class ProjectCircuitInfoOutput {
             objectMap1.put("分支打断代价RGB坐标", colorMap.get("color"));
             objectMap1.put("分支打断代价", colorMap.get("cost"));
         }
-
+        //根据回路信息构建分支点对应的分支直径(颜色),放入分支集合里
+        Map<String, Map<String, String>> connectedEdgesByMatrix = findConnectedEdgesByMatrix(points, bundeleRelatedCircuitInfo, adjacencyMatrixGraph, edges);
 
         Map<String, Object> resultMap = new HashMap<>();
         resultMap.put("systemCircuitInfo", systemCircuitInfo);
@@ -644,11 +660,80 @@ public class ProjectCircuitInfoOutput {
         resultMap.put("bundeleRelatedCircuitInfo", bundeleRelatedCircuitInfo);
         resultMap.put("circuitInfo", circuitInfo);
         resultMap.put("projectCircuitInfo", projectCircuitInfo);
+        resultMap.put("edgeColorInfo", connectedEdgesByMatrix);
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
         String json = objectMapper.writeValueAsString(resultMap);// 将Map转换为JSON字符串
 //        System.out.println("信息汇总:\n" +json);
         return json;
     }
+
+    /**
+     * @Description: 使用邻接矩阵找到连接给定点的所有分支
+     * @input: pointName 分支点名称
+     * @input: generateTopoMatrix 已构建好的邻接矩阵对象
+     * @input: edges 所有分支信息（用于获取分支详情）
+     * @Return: 返回连接该点的所有分支信息
+     */
+    public Map<String, Map<String,String>> findConnectedEdgesByMatrix(
+            List<Map<String, Object>> points,
+            Map<String, Object> bundeleRelatedCircuitInfo,
+            GenerateTopoMatrix generateTopoMatrix,
+            List<Map<String, String>> edges) {
+        List<String> allPoint = generateTopoMatrix.getAllPoint();
+        List<List<Integer>> adj = generateTopoMatrix.getAdj();
+        //分支id-颜色
+        Map<String,String> branchColor = new HashMap<>();
+        Set<String> brandIdList = bundeleRelatedCircuitInfo.keySet();
+        for (String s : brandIdList) {
+            Map<String, Object> objectMap = (Map<String, Object>) bundeleRelatedCircuitInfo.get(s);
+            Map<String, Object> circuitInfoIntergation = (Map<String, Object>) objectMap.get("circuitInfoIntergation");
+            branchColor.put(s, (String) circuitInfoIntergation.get("分支直径RGB坐标"));
+        }
+        //分支点id对应的分支id集合
+        Map<String, Map<String,String>> result = new HashMap<>();
+        for (Map<String, Object> point : points) {
+            String pointName = point.get("端点名称").toString();
+            String id = point.get("端点id编号").toString();
+            List<String> edgeIdList = new ArrayList<>();
+
+
+            // 1. 找到该点在 allPoint 中的索引
+            Integer pointIndex = allPoint.indexOf(pointName);
+            if (pointIndex == -1) {
+                continue;
+            }
+
+            // 2. 从邻接列表中获取与该点相连的所有点的索引
+            List<Integer> connectedIndices = adj.get(pointIndex);
+
+            // 3. 将索引转换为点名称
+            List<String> connectedPoints = new ArrayList<>();
+            for (Integer index : connectedIndices) {
+                connectedPoints.add(allPoint.get(index));
+            }
+
+            // 4. 根据连接的点找到对应的分支
+            for (Map<String, String> edge : edges) {
+                String startPoint = edge.get("分支起点名称");
+                String endPoint = edge.get("分支终点名称");
+
+                // 判断该分支是否连接目标点
+                if ((pointName.equals(startPoint) && connectedPoints.contains(endPoint)) ||
+                        (pointName.equals(endPoint) && connectedPoints.contains(startPoint))) {
+                    edgeIdList.add(edge.get("分支id编号").toString());
+                }
+            }
+            Map<String,String> edgeColor = new HashMap<>();
+            for (String s : edgeIdList) {
+                String color = branchColor.get(s);
+                edgeColor.put(s,color);
+            }
+
+            result.put(id, edgeColor);
+        }
+        return result;
+    }
+
 
     public void circuitCoilingLength(Map<String, Object> loopdetails,List<Map<String, String>> edges,GenerateTopoMatrixConnector adjacencyMatrixGraphConnector,Map<String, Object> projectInfo) {
 
@@ -916,6 +1001,11 @@ public class ProjectCircuitInfoOutput {
         List<String> mapList = new ArrayList<>();
 //        返回的极值
         Map<String, Object> totalCost = new HashMap<>();
+        Map<String,Double> wirePriceMap = new HashMap<>();
+        //导线选型-数量
+        Map<String,Integer> wireTypeNum = new HashMap<>();
+        //系统-数量
+        Map<String,Integer> systemNum = new HashMap<>();
         totalCost.put("总成本", 0.0);
         totalCost.put("回路湿区成本总加成", 0.0);
         totalCost.put("回路打断总成本", 0.0);
@@ -936,12 +1026,14 @@ public class ProjectCircuitInfoOutput {
         int count = 0;
         int circuitBreakNum = 0;
         DecimalFormat df = new DecimalFormat("0.00");
+        DecimalFormat oneDf = new DecimalFormat("0.0");
 //        遍历查找分支所经过的回路
         Set<String> stringSet = pointList.keySet();
         for (String s : stringSet) {
             Map<String, Object> objectMap = (Map<String, Object>) pointList.get(s);
             List<String> list = (List<String>) objectMap.get("回路所有分支id");
             if (list.contains(edgeId)) {
+                wirePriceMap.put(objectMap.get("导线选型").toString(), Double.parseDouble(objectMap.get("导线单价").toString()));
                 totalCost.put("总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("总成本").toString()) + Double.parseDouble(objectMap.get("回路总成本").toString()))));
                 totalCost.put("回路湿区成本总加成", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路湿区成本总加成").toString()) + Double.parseDouble(objectMap.get("回路湿区成本加成").toString()))));
                 totalCost.put("回路打断总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路打断总成本").toString()) + Double.parseDouble(objectMap.get("回路打断成本").toString()))));
@@ -958,8 +1050,48 @@ public class ProjectCircuitInfoOutput {
                     circuitBreakNum++;
                 }
                 mapList.add(objectMap.get("回路id").toString());
+                //导线选型与系统统计
+                String wireType = objectMap.get("导线选型").toString();
+                String systemName = null;
+                Object system = objectMap.get("所属系统");
+                if(system == null){
+                    systemName = "其他";
+                }else {
+                    systemName = system.toString();
+                }
+                wireTypeNum.merge(wireType, 1, Integer::sum);
+                systemNum.merge(systemName, 1, Integer::sum);
             }
         }
+
+
+        // 根据单价对 wireTypeNum 进行降序排序
+        Map<String, Integer> sortedWireTypeNum = wireTypeNum.entrySet().stream()
+                .sorted(Comparator.comparing(
+                        entry -> wirePriceMap.getOrDefault(entry.getKey(), 0.0),
+                        Comparator.reverseOrder()
+                ))
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (e1, e2) -> e1,
+                        LinkedHashMap::new
+                ));
+        //导线选型与数量拼接
+        List<String> wireList = sortedWireTypeNum.entrySet().stream()
+                .map(entry -> entry.getKey() + " x" + entry.getValue())
+                .collect(Collectors.toList());
+        // 计算系统总数量
+        int totalSystemCount = systemNum.values().stream().mapToInt(Integer::intValue).sum();
+
+        // 根据数量对 systemNum 进行降序排序，并转换为百分比格式
+        List<String> systemList = systemNum.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByValue(Comparator.reverseOrder()))
+                .map(entry -> {
+                    double percentage = (double) entry.getValue() / totalSystemCount * 100;
+                    return entry.getKey() + " " + df.format(percentage) + "%";
+                })
+                .collect(Collectors.toList());
         totalCost.put("回路打断总次数", circuitBreakNum);
         totalCost.put("回路数量(打断前)", mapList.size());
         int coiling = 0;
@@ -999,9 +1131,16 @@ public class ProjectCircuitInfoOutput {
         if(count > 0){
             avgLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
+        //总理论直径
+        Double totalDiameter =  Math.sqrt(lenght) * 1.3;
+        //数模直径
+        Double mathematicalDiameter =  totalDiameter * 1.14;
         totalCost.put("回路长度均值(打断后)",avgLength2);
-        totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * 1.3)));
+        totalCost.put("总理论直径", Double.parseDouble(df.format(totalDiameter)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
+        totalCost.put("数模直径", Double.parseDouble(oneDf.format(mathematicalDiameter)));
+        totalCost.put("回路流向集合",wireList);
+        totalCost.put("回路系统列表",systemList);
         map.put("circuitInfoIntergation", totalCost);
         map.put("circuitList", mapList);
         return map;
