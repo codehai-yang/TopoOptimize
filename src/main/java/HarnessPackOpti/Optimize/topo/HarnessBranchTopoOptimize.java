@@ -55,7 +55,7 @@ public class HarnessBranchTopoOptimize {
     //暂存的仓库
     public static List<List<String>> WareHouseTemp = new CopyOnWriteArrayList<>();
     //线程池
-    public static ThreadPool threadPool = new ThreadPool(11, 11);
+    public static ThreadPool threadPool = new ThreadPool(13, 50);
 
 
     //    定义一个仓库
@@ -1576,6 +1576,128 @@ public class HarnessBranchTopoOptimize {
         return mapList;
     }
 
+    /**
+     * 预测样本的成本
+     * @param simpleList
+     * @param edges
+     * @param normList
+     * @param jsonMap
+     * @param edgeChooseBS
+     * @param elecPosition
+     * @param branchLength
+     * @param connection
+     * @param multiLoopInfos
+     * @param pointMap
+     */
+    public void predictModel(List<List<String>> simpleList,
+                             List<Map<String, Object>> edges,
+                             List<String> normList,
+                             Map<String, Object> jsonMap,
+                             List<String> edgeChooseBS,
+                             Map<String,Map<String,String>> elecPosition,
+                             Map<String,Object> branchLength,
+                             List<List<Integer>>  connection,
+                             Map<String, List<String>> multiLoopInfos,
+                             Map<String,String> pointMap) throws Exception{
+        GINEInferenceEngine gine = new GINEInferenceEngine();
+        List<Callable<List<String>>> tasks = new ArrayList<>();
+        ObjectMapper mapper = new ObjectMapper();
+        List<Float> length = (List<Float>)branchLength.get("branchLength");
+        List<Map<String,Object>> loopInfos =  (List<Map<String,Object>>)jsonMap.get("loopInfos");
+        List<Map<String,String>> pointsList =  (List<Map<String,String>>)jsonMap.get("points");
+        for (List<String> strings : simpleList) {
+            tasks.add(() -> {
+                List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
+                for (int i = 0; i < serviceableStatue.size(); i++) {
+                    if (serviceableStatue.get(i).equals("C") && edgeChooseBS.contains(normList.get(i))) {
+                        serviceableStatue.set(i, "S");
+                    }
+                }
+                List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+                //深拷贝
+                Map<String, Object> threadLocalJsonMap = mapper.readValue(
+                        mapper.writeValueAsString(jsonMap),
+                        Map.class
+                );
+                threadLocalJsonMap.put("edges", serviceableEdge);
+                //分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1],211*4
+                List<List<Float>> branchFeatureList = new ArrayList<>();
+                long oneHotTime = System.currentTimeMillis();
+                //状态转换
+                for (String s : serviceableStatue) {
+                    //默认断开
+                    List<Float> statue = new ArrayList<>();
+                    switch ( s){
+                        case "B":
+                            statue = new ArrayList<>(Arrays.asList(0.0f,0.0f,0.0f));
+                            break;
+                        case "C":
+                            statue = new ArrayList<>(Arrays.asList(0.0f,1.0f,0.0f));
+                            break;
+                        case "S":
+                            statue = new ArrayList<>(Arrays.asList(0.0f,0.0f,1.0f));
+                            break;
+                        default:
+                            break;
+                    }
+                    branchFeatureList.add(statue);
+                }
+                System.out.println("通断状态转one-hot耗时：" + (System.currentTimeMillis() - oneHotTime));
+                long addLengthTime = System.currentTimeMillis();
+                for (int i = 0; i < length.size(); i++) {
+                    List<Float> integers = branchFeatureList.get(i);
+                    integers.add(length.get(i));
+                }
+                System.out.println("one-hot后追加length耗时" + (System.currentTimeMillis() - addLengthTime));
+                //TODO 用模型进行成本预测，与上一代方案比较，淘汰掉成本高的，先按照固定位置计算
+                //标准化175*176矩阵,x
+                long xTime = System.currentTimeMillis();
+                float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap, pointsList, normList,multiLoopInfos,pointMap);
+                System.out.println("X特征矩阵构建时间耗时：" + (System.currentTimeMillis() - xTime));
+                long[][] edgeIndex = new long[2][connection.get(0).size()];
+                for (int i = 0; i < 2; i++) {
+                    for (int j = 0; j < connection.get(i).size(); j++) {
+                        edgeIndex[i][j] = connection.get(i).get(j);
+                    }
+                }
+                float[][] edgeAttr = new float[branchFeatureList.size()][branchFeatureList.get(0).size()];
+                for (int i = 0; i < branchFeatureList.size(); i++) {
+                    for (int j = 0; j < branchFeatureList.get(i).size(); j++) {
+                        edgeAttr[i][j] = branchFeatureList.get(i).get(j);
+                    }
+                }
+//                SampleSave.saveSample(edgeIndex,edgeAttr,x);
+                //模型预测
+                float predict = gine.predict(x, edgeIndex, edgeAttr);
+                System.out.println("数据准备以及模型预测总耗时：" + (System.currentTimeMillis() - oneHotTime));
+                Double v = BestCost.get("总成本");
+                //
+                if(v - (predict / 1.04) > 0){
+                    return strings;
+                }
+                return null;
+            });
+        }
+        //线程池提交任务
+        List<Future<Float>> futures = new ArrayList<>();
+        for (Callable<Float> task : tasks) {
+            Future<Float> submit = threadPool.submit(task);
+            futures.add(submit);
+        }
+        //获取线程池结果
+        for (Future<Float> future : futures) {
+            try {
+                Float result = future.get(600, java.util.concurrent.TimeUnit.SECONDS);
+                if (result != null) {
+                    resultList.add(result);
+                }
+            } catch (Exception e) {
+//                e.printStackTrace();
+            }
+
+        }
+    }
+
 
     /**
      * @Description: 根据传入的分支打断状况  返回一条新的分支详情
@@ -1682,14 +1804,18 @@ public class HarnessBranchTopoOptimize {
                     }
                     branchFeatureList.add(statue);
                 }
+                System.out.println("通断状态转one-hot耗时：" + (System.currentTimeMillis() - oneHotTime));
+                long addLengthTime = System.currentTimeMillis();
                 for (int i = 0; i < length.size(); i++) {
                     List<Float> integers = branchFeatureList.get(i);
                     integers.add(length.get(i));
                 }
+                System.out.println("one-hot后追加length耗时" + (System.currentTimeMillis() - addLengthTime));
                 //TODO 用模型进行成本预测，与上一代方案比较，淘汰掉成本高的，先按照固定位置计算
                 //标准化175*176矩阵,x
                 long xTime = System.currentTimeMillis();
                 float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap, pointsList, normList,multiLoopInfos,pointMap);
+                System.out.println("X特征矩阵构建时间耗时：" + (System.currentTimeMillis() - xTime));
                 long[][] edgeIndex = new long[2][connection.get(0).size()];
                 for (int i = 0; i < 2; i++) {
                     for (int j = 0; j < connection.get(i).size(); j++) {
@@ -1714,7 +1840,6 @@ public class HarnessBranchTopoOptimize {
                 Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
 
                 Map<String, Object> costResultData = new HashMap<>();
-                System.out.println("[" + Thread.currentThread().getName() + "] 真实成本：" + projectCircuitInfo.get("总成本") + "        模型预测值：" + predict);
                 //存入map
                 SampleSave.modelPredictMap.put( (double) predict, Double.parseDouble(projectCircuitInfo.get("总成本").toString()));
                 costResultData.put("总成本", projectCircuitInfo.get("总成本"));
