@@ -44,6 +44,7 @@ public class Normalize {
         Map<String,String> positionNameMap = new HashMap<>();
         Map<String,String> namePositionMap = new HashMap<>();
         List<Point> coordinateList = new ArrayList<>();
+        long prepareTime = System.currentTimeMillis();
         for (Map<String, Object> edge : serviceableEdge) {
             startName.add(edge.get("startPointName").toString());
             endPointName.add(edge.get("endPointName").toString());
@@ -74,7 +75,8 @@ public class Normalize {
         adjacencyMatrixGraph.addEdge();//为邻接矩阵添加”边“元素
         adjacencyMatrixGraph.getAdj();
         Map<String,String> multiLocation = new HashMap<>();
-
+        System.out.println("构建每个方案邻接矩阵以及确定焊点所需要的位置耗时：" + (System.currentTimeMillis() - prepareTime));
+        long mulltiTime = System.currentTimeMillis();
         //焊点位置选择
         multiLoopInfos.forEach((k, v) -> {
             //寻找焊点最优位置
@@ -93,7 +95,9 @@ public class Normalize {
                 k.put("unregularPointId",pointMap.get(s));
             }
         });
+        System.out.println("寻找焊点位置以及更新焊点位置耗时：" + (System.currentTimeMillis() - mulltiTime));
         //有顺序的分支点名称列表
+        long branchTime = System.currentTimeMillis();
         Set<String> branchPointNameList = new LinkedHashSet<>();
         for (int i = 0; i < normList.size(); i++) {
             for (Map<String, Object> k : serviceableEdge) {
@@ -107,7 +111,8 @@ public class Normalize {
                 }
             }
         }
-
+        System.out.println("构建有顺序的分支，用于构建175特征耗时：" + (System.currentTimeMillis() - branchTime));
+        long priceTime = System.currentTimeMillis();
         List<String> allNameList = new ArrayList<>(branchPointNameList);
         float[][] matrix = new float[branchPointNameList.size()][branchPointNameList.size()];
         List<Float> priceList = new ArrayList<>();
@@ -143,6 +148,8 @@ public class Normalize {
             matrix[allNameList.indexOf(startPosition)][allNameList.indexOf(endPosition)] = Float.parseFloat(materialsMsg.get("导线单位商务价（元/米）"));
             priceList.add(Float.parseFloat(materialsMsg.get("导线单位商务价（元/米）")));
         }
+        System.out.println("回路单价统计耗时：" + (System.currentTimeMillis() - priceTime));
+        long normalizationTime = System.currentTimeMillis();
         // 只收集非0的值
         double[] nonZeroData = new double[matrix.length * matrix[0].length];
         int idx = 0;
@@ -172,8 +179,9 @@ public class Normalize {
                 }
             }
         }
-
+        System.out.println("175*175特征标准化耗时：" + (System.currentTimeMillis() - normalizationTime));
         //计算每个分支点对应的湿区成本
+        long wetTime = System.currentTimeMillis();
         for (Map<String, Object> loopInfo : loopInfos) {
             String startApp = loopInfo.get("startApp").toString();
             String endApp = loopInfo.get("endApp").toString();
@@ -191,7 +199,9 @@ public class Normalize {
                 }
             }
         }
+        System.out.println("湿区成本计算耗时：" + (System.currentTimeMillis() - wetTime));
         List<Float> wetCostList = new ArrayList<>();
+        long normalizationTime1 = System.currentTimeMillis();
         result.forEach((k,v) -> wetCostList.add(v));
         //计算均值和标准差
         double[] data = wetCostList.stream()
@@ -225,6 +235,8 @@ public class Normalize {
                 wet.add(0f);
             }
         }
+        System.out.println("湿区成本标准化耗时：" + (System.currentTimeMillis() - normalizationTime1));
+        long projectCircuitInfoOutputTime = System.currentTimeMillis();
         //拼接175*176矩阵
         int newDim = matrix[0].length + 1;
         float[][] newMatrix = new float[matrix.length][newDim];
@@ -235,6 +247,7 @@ public class Normalize {
             // 添加湿区成本
             newMatrix[i][newDim - 1] = wet.get(i); // 每个节点对应的新特征值
         }
+        System.out.println("拼接矩阵耗时：" + (System.currentTimeMillis() - projectCircuitInfoOutputTime));
         return newMatrix;
     }
 
