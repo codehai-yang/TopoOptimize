@@ -1,9 +1,8 @@
 package HarnessPackOpti.utils;
 
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import org.apache.poi.ss.usermodel.*;
@@ -14,6 +13,11 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
  * 用于与python端模型调试，验证一致性(适用于ONNX)
  */
 public class SampleSave {
+    //文件名称
+    private static final String CSV_FILE = "branch_data.csv";
+    //表头字段，样本id，分支点id，总价，湿区成本
+    private static final String HEADER = "sample_id,point_id,sum_price,wet_cost";
+
     public static Map<Double,Double> modelPredictMap = new ConcurrentHashMap<>();
     public static void saveSample(long[][] edgeIndex,float[][] edgeAttr,float[][] x){
         try (
@@ -42,6 +46,55 @@ public class SampleSave {
             }
 
         } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 导出一个样本的分支点成本数据（追加写入 CSV）
+     *
+     * @param sampleId     样本编号（建议从1开始）
+     * @param circuitPrice 各分支点的回路单价总和列表
+     * @param wetPrice     各分支点的湿区成本列表
+     */
+    public static void exportCSV(int sampleId, List<Float> circuitPrice, List<Float> wetPrice) {
+        // 参数校验
+        if (circuitPrice == null || wetPrice == null || circuitPrice.size() != wetPrice.size()) {
+            throw new IllegalArgumentException("价格列表不能为空且长度必须一致");
+        }
+        int pointCount = circuitPrice.size();
+
+        File file = new File(CSV_FILE);
+        boolean needHeader = !file.exists() || file.length() == 0;
+
+        try (FileOutputStream fos = new FileOutputStream(file, true);
+             OutputStreamWriter osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
+             BufferedWriter bw = new BufferedWriter(osw);
+             PrintWriter out = new PrintWriter(bw)) {
+
+            // 若文件为空，写入表头
+            if (needHeader) {
+                out.println(HEADER);
+            }
+
+            // 逐行写入每个分支点数据
+            for (int i = 0; i < pointCount; i++) {
+                String pointId = "N" + (i + 1);
+                float sumPrice = circuitPrice.get(i);
+                float wetCost = wetPrice.get(i);
+
+                out.printf("%d,%s,%.4f,%.4f%n",
+                        sampleId,
+                        pointId,
+                        sumPrice,
+                        wetCost);
+            }
+
+            // 强制刷盘（保证数据及时写入磁盘）
+            out.flush();
+
+        } catch (IOException e) {
+            System.err.println("CSV 导出失败: " + e.getMessage());
             e.printStackTrace();
         }
     }

@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 
 public class HarnessBranchTopoOptimize {
     //    随机变换样本数量
-    public static Integer LessRandomSamleNumber = 200;
+    public static Integer LessRandomSamleNumber = 100;
     //   迭代最少样本数量
     public static Integer HybridizationLessRandomSamleNumber = 500;
     //    top几的数量规定
@@ -659,6 +659,9 @@ public class HarnessBranchTopoOptimize {
                 System.out.println(objectMapper.writeValueAsString(mapList));
                 String s = objectMapper.writeValueAsString(mapList);
                 return objectMapper.writeValueAsString(mapList);
+            }
+            if(findBest == null || findBest.size() == 0){
+                break;
             }
             TopDetail = findBest;
             System.out.println("第" + hybridizationNumber + "代迭代结束，耗时：" + (System.currentTimeMillis() - startTime));
@@ -1570,7 +1573,19 @@ public class HarnessBranchTopoOptimize {
         long topTenStartTime = System.currentTimeMillis();
 //        接下来就是对simple 进行一个分支闭环的检查
         System.out.println("裂变前AI仓库数量：" + WareHouseAI.size());
-        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS,elecPosition,branchLength,connection, multiLoopInfos, pointMap);
+        List<List<String>> lists;
+        //模型粗筛
+        if(BestCost.size() > 0) {
+            System.out.println("模型筛选前方案数量：" + simple.size());
+            lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap);
+        }else {
+            //第一次迭代不用粗筛
+            lists = simple;
+        }
+        if(lists.size() == 0 || lists == null){
+            return null;
+        }
+        List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS,elecPosition,branchLength,connection, multiLoopInfos, pointMap);
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
         System.out.println("查找每一代最优结果耗时：" + (System.currentTimeMillis() - topTenStartTime));
         return mapList;
@@ -1589,23 +1604,26 @@ public class HarnessBranchTopoOptimize {
      * @param multiLoopInfos
      * @param pointMap
      */
-    public void predictModel(List<List<String>> simpleList,
-                             List<Map<String, Object>> edges,
-                             List<String> normList,
-                             Map<String, Object> jsonMap,
-                             List<String> edgeChooseBS,
-                             Map<String,Map<String,String>> elecPosition,
-                             Map<String,Object> branchLength,
-                             List<List<Integer>>  connection,
-                             Map<String, List<String>> multiLoopInfos,
-                             Map<String,String> pointMap) throws Exception{
+    public List<List<String>> predictModel(List<List<String>> simpleList,
+                                           List<Map<String, Object>> edges,
+                                           List<String> normList,
+                                           Map<String, Object> jsonMap,
+                                           List<String> edgeChooseBS,
+                                           Map<String,Map<String,String>> elecPosition,
+                                           Map<String,Object> branchLength,
+                                           List<List<Integer>>  connection,
+                                           Map<String, List<String>> multiLoopInfos,
+                                           Map<String,String> pointMap) throws Exception{
         GINEInferenceEngine gine = new GINEInferenceEngine();
         List<Callable<List<String>>> tasks = new ArrayList<>();
         ObjectMapper mapper = new ObjectMapper();
+        List<List<String>> resultList = new ArrayList<>();
         List<Float> length = (List<Float>)branchLength.get("branchLength");
         List<Map<String,Object>> loopInfos =  (List<Map<String,Object>>)jsonMap.get("loopInfos");
         List<Map<String,String>> pointsList =  (List<Map<String,String>>)jsonMap.get("points");
+        int sampleId = 0;
         for (List<String> strings : simpleList) {
+            sampleId++;
             tasks.add(() -> {
                 List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
                 for (int i = 0; i < serviceableStatue.size(); i++) {
@@ -1642,17 +1660,15 @@ public class HarnessBranchTopoOptimize {
                     }
                     branchFeatureList.add(statue);
                 }
-                System.out.println("通断状态转one-hot耗时：" + (System.currentTimeMillis() - oneHotTime));
                 long addLengthTime = System.currentTimeMillis();
                 for (int i = 0; i < length.size(); i++) {
                     List<Float> integers = branchFeatureList.get(i);
                     integers.add(length.get(i));
                 }
-                System.out.println("one-hot后追加length耗时" + (System.currentTimeMillis() - addLengthTime));
                 //TODO 用模型进行成本预测，与上一代方案比较，淘汰掉成本高的，先按照固定位置计算
                 //标准化175*176矩阵,x
                 long xTime = System.currentTimeMillis();
-                float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap, pointsList, normList,multiLoopInfos,pointMap);
+                float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap, pointsList, normList,multiLoopInfos,pointMap,sampleId);
                 System.out.println("X特征矩阵构建时间耗时：" + (System.currentTimeMillis() - xTime));
                 long[][] edgeIndex = new long[2][connection.get(0).size()];
                 for (int i = 0; i < 2; i++) {
@@ -1670,6 +1686,7 @@ public class HarnessBranchTopoOptimize {
                 //模型预测
                 float predict = gine.predict(x, edgeIndex, edgeAttr);
                 System.out.println("数据准备以及模型预测总耗时：" + (System.currentTimeMillis() - oneHotTime));
+                System.out.println("模型预测成本：" + predict);
                 Double v = BestCost.get("总成本");
                 //
                 if(v - (predict / 1.04) > 0){
@@ -1679,23 +1696,24 @@ public class HarnessBranchTopoOptimize {
             });
         }
         //线程池提交任务
-        List<Future<Float>> futures = new ArrayList<>();
-        for (Callable<Float> task : tasks) {
-            Future<Float> submit = threadPool.submit(task);
+        List<Future<List<String>>> futures = new ArrayList<>();
+        for (Callable<List<String>> task : tasks) {
+            Future<List<String>> submit = threadPool.submit(task);
             futures.add(submit);
         }
         //获取线程池结果
-        for (Future<Float> future : futures) {
+        for (Future<List<String>> future : futures) {
             try {
-                Float result = future.get(600, java.util.concurrent.TimeUnit.SECONDS);
-                if (result != null) {
-                    resultList.add(result);
+                List<String> temp = future.get(600, java.util.concurrent.TimeUnit.SECONDS);
+                if (temp != null) {
+                    resultList.add(temp);
                 }
             } catch (Exception e) {
 //                e.printStackTrace();
             }
 
         }
+        return resultList;
     }
 
 
@@ -1779,69 +1797,14 @@ public class HarnessBranchTopoOptimize {
                         Map.class
                 );
                 threadLocalJsonMap.put("edges", serviceableEdge);
-                String jsonStr = mapper.writeValueAsString(threadLocalJsonMap);
-                Map<String, Object> copyThreadLocalMap = mapper.readValue(jsonStr, Map.class);
-                long totalTime = System.currentTimeMillis();
-                //分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1],211*4
-                List<List<Float>> branchFeatureList = new ArrayList<>();
-                long oneHotTime = System.currentTimeMillis();
-                //状态转换
-                for (String s : serviceableStatue) {
-                    //默认断开
-                    List<Float> statue = new ArrayList<>();
-                    switch ( s){
-                        case "B":
-                            statue = new ArrayList<>(Arrays.asList(0.0f,0.0f,0.0f));
-                            break;
-                        case "C":
-                            statue = new ArrayList<>(Arrays.asList(0.0f,1.0f,0.0f));
-                            break;
-                        case "S":
-                            statue = new ArrayList<>(Arrays.asList(0.0f,0.0f,1.0f));
-                            break;
-                        default:
-                            break;
-                    }
-                    branchFeatureList.add(statue);
-                }
-                System.out.println("通断状态转one-hot耗时：" + (System.currentTimeMillis() - oneHotTime));
-                long addLengthTime = System.currentTimeMillis();
-                for (int i = 0; i < length.size(); i++) {
-                    List<Float> integers = branchFeatureList.get(i);
-                    integers.add(length.get(i));
-                }
-                System.out.println("one-hot后追加length耗时" + (System.currentTimeMillis() - addLengthTime));
-                //TODO 用模型进行成本预测，与上一代方案比较，淘汰掉成本高的，先按照固定位置计算
-                //标准化175*176矩阵,x
-                long xTime = System.currentTimeMillis();
-                float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap, pointsList, normList,multiLoopInfos,pointMap);
-                System.out.println("X特征矩阵构建时间耗时：" + (System.currentTimeMillis() - xTime));
-                long[][] edgeIndex = new long[2][connection.get(0).size()];
-                for (int i = 0; i < 2; i++) {
-                    for (int j = 0; j < connection.get(i).size(); j++) {
-                        edgeIndex[i][j] = connection.get(i).get(j);
-                    }
-                }
-                float[][] edgeAttr = new float[branchFeatureList.size()][branchFeatureList.get(0).size()];
-                for (int i = 0; i < branchFeatureList.size(); i++) {
-                    for (int j = 0; j < branchFeatureList.get(i).size(); j++) {
-                        edgeAttr[i][j] = branchFeatureList.get(i).get(j);
-                    }
-                }
-                //TODO 这里用python模型尝试
-//                SampleSave.saveSample(edgeIndex,edgeAttr,x);
-                //模型预测
-                float predict = gine.predict(x, edgeIndex, edgeAttr);
-                System.out.println("数据准备以及模型预测总耗时：" + (System.currentTimeMillis() - oneHotTime));
-//                System.out.println("[" + Thread.currentThread().getName() + "] 模型预测值：" + predict);
+
                 Map<String, Double> breakCostMap = new HashMap<>();
-                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(copyThreadLocalMap));
+                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput.projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
                 Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
                 Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
 
                 Map<String, Object> costResultData = new HashMap<>();
                 //存入map
-                SampleSave.modelPredictMap.put( (double) predict, Double.parseDouble(projectCircuitInfo.get("总成本").toString()));
                 costResultData.put("总成本", projectCircuitInfo.get("总成本"));
                 costResultData.put("总长度", projectCircuitInfo.get("回路总长度"));
                 costResultData.put("总重量", projectCircuitInfo.get("回路总重量"));
