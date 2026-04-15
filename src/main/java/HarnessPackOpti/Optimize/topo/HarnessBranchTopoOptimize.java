@@ -1572,19 +1572,20 @@ public class HarnessBranchTopoOptimize {
         //查找每一代最优结果耗时
         long topTenStartTime = System.currentTimeMillis();
 //        接下来就是对simple 进行一个分支闭环的检查
-        System.out.println("裂变前AI仓库数量：" + WareHouseAI.size());
-        List<List<String>> lists;
+        System.out.println("要预测的样本数：" + simple.size());
+        List<List<String>> lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap);
+        System.out.println("预测" + simple.size() + "个样本耗时：" + (System.currentTimeMillis() - topTenStartTime));
         //模型粗筛
-        if(BestCost.size() > 0) {
-            System.out.println("模型筛选前方案数量：" + simple.size());
-            lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap);
-        }else {
-            //第一次迭代不用粗筛
-            lists = simple;
-        }
-        if(lists.size() == 0 || lists == null){
-            return null;
-        }
+//        if(BestCost.size() > 0) {
+//            System.out.println("模型筛选前方案数量：" + simple.size());
+//            lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap);
+//        }else {
+//            //第一次迭代不用粗筛
+//            lists = simple;
+//        }
+//        if(lists.size() == 0 || lists == null){
+//            return null;
+//        }
         List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS,elecPosition,branchLength,connection, multiLoopInfos, pointMap);
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
         System.out.println("查找每一代最优结果耗时：" + (System.currentTimeMillis() - topTenStartTime));
@@ -1621,9 +1622,9 @@ public class HarnessBranchTopoOptimize {
         List<Float> length = (List<Float>)branchLength.get("branchLength");
         List<Map<String,Object>> loopInfos =  (List<Map<String,Object>>)jsonMap.get("loopInfos");
         List<Map<String,String>> pointsList =  (List<Map<String,String>>)jsonMap.get("points");
-        int sampleId = 0;
+         int sampleId = 0;
         for (List<String> strings : simpleList) {
-            sampleId++;
+            final int currentSampleId = ++sampleId;
             tasks.add(() -> {
                 List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
                 for (int i = 0; i < serviceableStatue.size(); i++) {
@@ -1668,7 +1669,7 @@ public class HarnessBranchTopoOptimize {
                 //TODO 用模型进行成本预测，与上一代方案比较，淘汰掉成本高的，先按照固定位置计算
                 //标准化175*176矩阵,x
                 long xTime = System.currentTimeMillis();
-                float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap, pointsList, normList,multiLoopInfos,pointMap,sampleId);
+                float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap, pointsList, normList,multiLoopInfos,pointMap,currentSampleId);
                 System.out.println("X特征矩阵构建时间耗时：" + (System.currentTimeMillis() - xTime));
                 long[][] edgeIndex = new long[2][connection.get(0).size()];
                 for (int i = 0; i < 2; i++) {
@@ -1689,10 +1690,12 @@ public class HarnessBranchTopoOptimize {
                 System.out.println("模型预测成本：" + predict);
                 Double v = BestCost.get("总成本");
                 //
-                if(v - (predict / 1.04) > 0){
-                    return strings;
-                }
-                return null;
+//                if(v - (predict / 1.04) > 0){
+//                    return strings;
+//                }
+//                return null;
+                //测试
+                return strings;
             });
         }
         //线程池提交任务
@@ -1709,7 +1712,7 @@ public class HarnessBranchTopoOptimize {
                     resultList.add(temp);
                 }
             } catch (Exception e) {
-//                e.printStackTrace();
+                e.printStackTrace();
             }
 
         }

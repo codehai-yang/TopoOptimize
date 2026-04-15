@@ -877,7 +877,6 @@ public class ProjectCircuitInfoOutput {
                 //分支id与分支名称，一个回路上的所有分支
                 Map<String, Object> MapbranchByNode = findBranchByNode.findBranchByNode(listname, edges);
                 List<String> edgeIdList = (List<String>)MapbranchByNode.get("idList");
-                List<String> edgeNameList = (List<String>)MapbranchByNode.get("nameList");
 //        获取回路长度
                 CalculatePathLength calculatePathLength = new CalculatePathLength();
                 //分支长度
