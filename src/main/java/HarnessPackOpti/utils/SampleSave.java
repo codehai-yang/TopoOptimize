@@ -14,7 +14,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
  */
 public class SampleSave {
     //文件名称
-    private static final String CSV_FILE = "branch_data.csv";
+    private static final String CSV_FILE = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\branch_data.csv";
     //表头字段，样本id，分支点id，总价，湿区成本
     private static final String HEADER = "sample_id,point_id,sum_price,wet_cost";
 
