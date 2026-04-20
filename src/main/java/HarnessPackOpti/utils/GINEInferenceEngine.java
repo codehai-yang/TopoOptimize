@@ -27,10 +27,10 @@ public class GINEInferenceEngine {
 
 
         // 计算总字节数
-        // edge_index: 2×211×8字节(long) = 3376字节
+        // edge_index: 2×211×4字节(long) = 1688字节
         // edge_attr:  211×4×4字节(float) = 3376字节
         // x:          175×176×4字节(float) = 123200字节
-        int totalBytes = 3376 + 3376 + 123200;
+        int totalBytes = 1688 + 3376 + 123200;
         ByteBuffer buffer = ByteBuffer.allocate(totalBytes).order(ByteOrder.BIG_ENDIAN);
         // 写入edge_index
         for (long[] row : edgeIndex) {
