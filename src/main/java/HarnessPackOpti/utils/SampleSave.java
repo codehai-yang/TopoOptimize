@@ -159,4 +159,156 @@ public class SampleSave {
         }
     }
 
+    /**
+     * 导出excel
+     * @param name 位置点名称
+     * @param testi 回路数量
+     * @param wire  回路导线选型
+     * @param price 导线选型价格
+     * @param index 湿区回路数量
+     * @param wetWire 湿区导线选型
+     * @param wetPrice 湿区成本
+     */
+    public static void saveExcel(String name, int testi, List<String> wire, List<Float> price,
+                                 int index, List<String> wetWire, List<Float> wetPrice) {
+        if (name == null || name.isEmpty()) {
+            System.err.println("错误：位置点名称不能为空");
+            return;
+        }
+
+        // 生成文件名（使用时间戳避免覆盖）
+        String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss").format(new java.util.Date());
+        String fileName = "F:\\office\\idearProjects\\project20251009\\" + name + "_" + timestamp + ".xlsx";
+
+        // 创建工作簿
+        Workbook workbook = new XSSFWorkbook();
+        Sheet sheet = workbook.createSheet("成本分析");
+
+        try {
+            // 创建表头样式
+            CellStyle headerStyle = workbook.createCellStyle();
+            Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+            headerStyle.setFont(headerFont);
+            headerStyle.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
+            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            headerStyle.setBorderBottom(BorderStyle.THIN);
+            headerStyle.setBorderTop(BorderStyle.THIN);
+            headerStyle.setBorderLeft(BorderStyle.THIN);
+            headerStyle.setBorderRight(BorderStyle.THIN);
+            headerStyle.setAlignment(HorizontalAlignment.CENTER);
+
+            // 创建数据样式
+            CellStyle dataStyle = workbook.createCellStyle();
+            dataStyle.setBorderBottom(BorderStyle.THIN);
+            dataStyle.setBorderTop(BorderStyle.THIN);
+            dataStyle.setBorderLeft(BorderStyle.THIN);
+            dataStyle.setBorderRight(BorderStyle.THIN);
+
+            // 创建数字格式样式
+            CellStyle numberStyle = workbook.createCellStyle();
+            DataFormat format = workbook.createDataFormat();
+            numberStyle.setDataFormat(format.getFormat("#,##0.00"));
+            numberStyle.setBorderBottom(BorderStyle.THIN);
+            numberStyle.setBorderTop(BorderStyle.THIN);
+            numberStyle.setBorderLeft(BorderStyle.THIN);
+            numberStyle.setBorderRight(BorderStyle.THIN);
+
+            // 创建表头行
+            Row headerRow = sheet.createRow(0);
+            String[] headers = {"位置点名称", "回路数量", "回路导线选型", "导线选型价格",
+                    "湿区回路数量", "湿区导线选型", "湿区成本"};
+            for (int i = 0; i < headers.length; i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(headers[i]);
+                cell.setCellStyle(headerStyle);
+            }
+
+            // 计算最大行数（取所有List的最大长度）
+            int maxRows = 0;
+            if (wire != null) maxRows = Math.max(maxRows, wire.size());
+            if (price != null) maxRows = Math.max(maxRows, price.size());
+            if (wetWire != null) maxRows = Math.max(maxRows, wetWire.size());
+            if (wetPrice != null) maxRows = Math.max(maxRows, wetPrice.size());
+
+            // 填充数据行
+            for (int i = 0; i < maxRows; i++) {
+                Row row = sheet.createRow(i + 1);
+
+                // 位置点名称（只在第一行显示）
+                Cell nameCell = row.createCell(0);
+                if (i == 0) {
+                    nameCell.setCellValue(name != null ? name : "");
+                }
+                nameCell.setCellStyle(dataStyle);
+
+                // 回路数量（只在第一行显示）
+                Cell testiCell = row.createCell(1);
+                if (i == 0) {
+                    testiCell.setCellValue(testi);
+                }
+                testiCell.setCellStyle(dataStyle);
+
+                // 回路导线选型
+                Cell wireCell = row.createCell(2);
+                if (wire != null && i < wire.size() && wire.get(i) != null) {
+                    wireCell.setCellValue(wire.get(i));
+                }
+                wireCell.setCellStyle(dataStyle);
+
+                // 导线选型价格
+                Cell priceCell = row.createCell(3);
+                if (price != null && i < price.size() && price.get(i) != null) {
+                    priceCell.setCellValue(price.get(i));
+                    priceCell.setCellStyle(numberStyle);
+                } else {
+                    priceCell.setCellStyle(dataStyle);
+                }
+
+                // 湿区回路数量（只在第一行显示）
+                Cell indexCell = row.createCell(4);
+                if (i == 0) {
+                    indexCell.setCellValue(index);
+                }
+                indexCell.setCellStyle(dataStyle);
+
+                // 湿区导线选型
+                Cell wetWireCell = row.createCell(5);
+                if (wetWire != null && i < wetWire.size() && wetWire.get(i) != null) {
+                    wetWireCell.setCellValue(wetWire.get(i));
+                }
+                wetWireCell.setCellStyle(dataStyle);
+
+                // 湿区成本
+                Cell wetPriceCell = row.createCell(6);
+                if (wetPrice != null && i < wetPrice.size() && wetPrice.get(i) != null) {
+                    wetPriceCell.setCellValue(wetPrice.get(i));
+                    wetPriceCell.setCellStyle(numberStyle);
+                } else {
+                    wetPriceCell.setCellStyle(dataStyle);
+                }
+            }
+
+            // 自动调整列宽
+            for (int i = 0; i < headers.length; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            // 写入文件
+            try (FileOutputStream fileOut = new FileOutputStream(fileName)) {
+                workbook.write(fileOut);
+                System.out.println("Excel 文件已成功保存至: " + fileName);
+            }
+
+        } catch (IOException e) {
+            System.err.println("Excel 导出失败: " + e.getMessage());
+            e.printStackTrace();
+        } finally {
+            try {
+                workbook.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
 }
