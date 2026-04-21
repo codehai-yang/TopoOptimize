@@ -67,10 +67,10 @@ public class Normalize {
             positionNameMap.put(endXCoordinate + "&" + endYCoordinate, edge.get("endPointName").toString());
             namePositionMap.put(edge.get("startPointName").toString(), startXCoordinate + "&" + startYCoordinate);
             namePositionMap.put(edge.get("endPointName").toString(), endXCoordinate + "&" + endYCoordinate);
-            if (edge.get("分支打断").equals("B")) {
+            if (edge.get("topologyStatusCode").equals("B")) {
                 List<String> interruptedEdgelist = new ArrayList<>();
-                interruptedEdgelist.add(edge.get("分支起点名称").toString());
-                interruptedEdgelist.add(edge.get("分支终点名称").toString());
+                interruptedEdgelist.add(edge.get("startPointName").toString());
+                interruptedEdgelist.add(edge.get("endPointName").toString());
                 branchBreakList.add(interruptedEdgelist);
             }
         }
