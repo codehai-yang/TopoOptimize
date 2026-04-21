@@ -20,9 +20,9 @@ import java.util.stream.Collectors;
 
 public class HarnessBranchTopoOptimize {
     //    随机变换样本数量
-    public static Integer LessRandomSamleNumber = 100;
+    public static Integer LessRandomSamleNumber = 15;
     //   迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 200;
+    public static Integer HybridizationLessRandomSamleNumber = 20;
     //    top几的数量规定
     public static final Integer TopNumber = 20;
     //    每次迭代最优的成本
@@ -690,19 +690,15 @@ public class HarnessBranchTopoOptimize {
         System.out.println("遗传算法后WarehouseAi样本数量：" + WareHouseTemp.size());
         TopDetail = findBest;
         List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "normal", singleBCList, singleSCList, singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
-
         System.out.println("方案再优化后，WarehouseAi样本数量:" + WareHouseAI.size());
-        //AI样本生成
-        GenerateAiCaseUtils generateAiCaseUtils = new GenerateAiCaseUtils();
 
         System.out.println("AI样本开始生成");
         long generateAiCase = System.currentTimeMillis();
-//        generateAiCaseUtils.exportJson(normList, WareHouseAI, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap);
         //创建文件
         String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS").format(new java.util.Date());
         String fileName = "Samples_" + timestamp + ".dat";
         String filePath = "F:\\office\\pythonProjects\\GINEModel\\Samples\\" + fileName;
-        generateBreakNoise.projectCalculate(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap,filePath);
+        generateBreakNoise.projectCalculate(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath);
         System.out.println("AI样本生成结束，耗时：" + (System.currentTimeMillis() - generateAiCase));
         initializeCaseResultMap.put("finishStatue", "normal");
         mapList.add(initializeCaseResultMap);
@@ -1757,7 +1753,6 @@ public class HarnessBranchTopoOptimize {
         }
         long completeEndTime = System.currentTimeMillis();
         System.out.println("方案补充时间：" + (completeEndTime - completeStartTime));
-        ObjectMapper objectMapper = new ObjectMapper();
         //查找每一代最优结果耗时
         long topTenStartTime = System.currentTimeMillis();
 //        接下来就是对simple 进行一个分支闭环的检查
@@ -1771,23 +1766,23 @@ public class HarnessBranchTopoOptimize {
         String filePath = "F:\\office\\pythonProjects\\GINEModel\\Samples\\" + fileName;
         //样本生成及写入,分支通断扰动
         long breakStartTime = System.currentTimeMillis();
-        generateBreakNoise.projectCalculate(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap,filePath);
+        generateBreakNoise.projectCalculate(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath);
         System.out.println("分支通断扰动耗时：" + (System.currentTimeMillis() - breakStartTime));
         //分支长度扰动
         long lengthStartTime = System.currentTimeMillis();
-        generateLengthNoise.generateLengthNoise(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap,filePath);
+        generateLengthNoise.generateLengthNoise(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath);
         System.out.println("分支长度扰动耗时：" + (System.currentTimeMillis() - lengthStartTime));
         //用电器位置扰动
         long locationStartTime = System.currentTimeMillis();
-        generateLocationNoise.generateLocationNoise(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap,filePath);
+        generateLocationNoise.generateLocationNoise(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath);
         System.out.println("用电器位置扰动耗时：" + (System.currentTimeMillis() - locationStartTime));
         //回路单价扰动
         long priceStartTime = System.currentTimeMillis();
-        generatePriceNoise.generatePriceNoise(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap,filePath);
+        generatePriceNoise.generatePriceNoise(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath);
         System.out.println("回路单价扰动耗时：" + (System.currentTimeMillis() - priceStartTime));
         //回路连接关系扰动
         long connectStartTime = System.currentTimeMillis();
-        generateConnectNoise.generateConnectNoise(normList, WareHouseTemp, edges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary, togetherBCMap, chooseOneMap,filePath);
+        generateConnectNoise.generateConnectNoise(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath);
         System.out.println("回路连接关系扰动耗时：" + (System.currentTimeMillis() - connectStartTime));
         //清楚仓库
         WareHouseTemp.clear();
