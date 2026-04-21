@@ -1568,7 +1568,6 @@ public class HarnessBranchTopoOptimize {
         }
         long completeEndTime = System.currentTimeMillis();
         System.out.println("方案补充时间：" + (completeEndTime - completeStartTime));
-        ObjectMapper objectMapper = new ObjectMapper();
         //查找每一代最优结果耗时
         long topTenStartTime = System.currentTimeMillis();
 //        接下来就是对simple 进行一个分支闭环的检查
