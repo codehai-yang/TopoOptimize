@@ -210,7 +210,7 @@ public class GenerateBreakNoise {
                     SampleSave.saveSample(edgeIndex1, edgeAttr, x, filePath, totalPrice, totalLength, totalWeight);
                 }
             } catch (Exception e) {
-//                e.printStackTrace();
+                e.printStackTrace();
             }
         }
 
