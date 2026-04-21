@@ -49,6 +49,7 @@ public class Normalize {
         Map<String, String> positionNameMap = new HashMap<>();
         Map<String, String> namePositionMap = new HashMap<>();
         List<Point> coordinateList = new ArrayList<>();
+        List<List<String>> branchBreakList = new ArrayList<>();
         for (Map<String, Object> edge : serviceableEdge) {
             startName.add(edge.get("startPointName").toString());
             endPointName.add(edge.get("endPointName").toString());
@@ -66,9 +67,15 @@ public class Normalize {
             positionNameMap.put(endXCoordinate + "&" + endYCoordinate, edge.get("endPointName").toString());
             namePositionMap.put(edge.get("startPointName").toString(), startXCoordinate + "&" + startYCoordinate);
             namePositionMap.put(edge.get("endPointName").toString(), endXCoordinate + "&" + endYCoordinate);
+            if (edge.get("分支打断").equals("B")) {
+                List<String> interruptedEdgelist = new ArrayList<>();
+                interruptedEdgelist.add(edge.get("分支起点名称").toString());
+                interruptedEdgelist.add(edge.get("分支终点名称").toString());
+                branchBreakList.add(interruptedEdgelist);
+            }
         }
         //获取有向图之间的索引，起点到终点之间的关系
-        GenerateTopoMatrixConnector adjacencyMatrixGraph = new GenerateTopoMatrixConnector(startName, endPointName);//获取邻接矩阵基本信息
+        GenerateTopoMatrix adjacencyMatrixGraph = new GenerateTopoMatrix(startName, endPointName,branchBreakList);//获取邻接矩阵基本信息
         adjacencyMatrixGraph.adjacencyMatrix();//构建邻接矩阵列表及数组
         adjacencyMatrixGraph.addEdge();//为邻接矩阵添加”边“元素
         adjacencyMatrixGraph.getAdj();
