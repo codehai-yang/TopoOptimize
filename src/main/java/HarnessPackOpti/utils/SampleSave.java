@@ -17,7 +17,7 @@ public class SampleSave {
      * @param edgeAttr
      * @param x
      */
-    public static void saveSample(long[][] edgeIndex,float[][] edgeAttr,float[][] x,String filePath,Float totalPrice,Float totalLength,Float totalWeight){
+    public static void saveSample(int[][] edgeIndex,float[][] edgeAttr,float[][] x,String filePath,Float totalPrice,Float totalLength,Float totalWeight){
         try (
                 DataOutputStream dos = new DataOutputStream(
                         new BufferedOutputStream(new FileOutputStream(filePath,true)))) {

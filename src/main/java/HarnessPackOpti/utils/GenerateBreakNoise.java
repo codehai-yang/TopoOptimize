@@ -143,6 +143,9 @@ public class GenerateBreakNoise {
                     String startAppPosition = null;
                     String endAppPosition = null;
                     if (startName.startsWith("[")) {
+                        if(objectMap.get("焊点位置名称") == null){
+                            System.out.println();
+                        }
                         startAppPosition = objectMap.get("焊点位置名称").toString();
                     } else {
                         startAppPosition = objectMap.get("起点位置名称").toString();
@@ -155,10 +158,10 @@ public class GenerateBreakNoise {
                     if (allNameList.indexOf(startAppPosition) == -1 || allNameList.indexOf(endAppPosition) == -1) {
                         continue;
                     }
-                    if (circuitPrice.get(startName + ":" + endName) == 0 || circuitPrice.get(startName + ":" + endName) == null) {
-                        circuitPrice.put(startName + ":" + endName, Float.parseFloat(price));
+                    if (circuitPrice.get(startAppPosition + ":" + endAppPosition) == null) {
+                        circuitPrice.put(startAppPosition + ":" + endAppPosition, Float.parseFloat(price));
                     } else {
-                        circuitPrice.put(startName + ":" + endName, circuitPrice.get(startName + ":" + endName) + Float.parseFloat(price));
+                        circuitPrice.put(startAppPosition + ":" + endAppPosition, circuitPrice.get(startAppPosition + ":" + endAppPosition) + Float.parseFloat(price));
                     }
 
                     //湿区成本，用回路单价替代
@@ -201,7 +204,7 @@ public class GenerateBreakNoise {
                 Map<String, Object> result = future.get(600, TimeUnit.SECONDS);
                 if (result != null) {
                     float[][] x = (float[][]) result.get("x");
-                    long[][] edgeIndex1 = (long[][]) result.get("edgeIndex");
+                    int[][] edgeIndex1 = (int[][]) result.get("edgeIndex");
                     float[][] edgeAttr = (float[][]) result.get("edgeAttr");
                     Float totalPrice = Float.parseFloat(result.get("totalPrice").toString());
                     Float totalLength = Float.parseFloat(result.get("totalLength").toString());
@@ -210,7 +213,7 @@ public class GenerateBreakNoise {
                     SampleSave.saveSample(edgeIndex1, edgeAttr, x, filePath, totalPrice, totalLength, totalWeight);
                 }
             } catch (Exception e) {
-                e.printStackTrace();
+//                e.printStackTrace();
             }
         }
 

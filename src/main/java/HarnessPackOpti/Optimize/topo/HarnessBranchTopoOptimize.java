@@ -1633,7 +1633,6 @@ public class HarnessBranchTopoOptimize {
 
         //仓库中的方案检查看是否存在在仓库中时间
         long warehouseStartTime = System.currentTimeMillis();
-        //TODO 裂变出的所有方案必须去重
 
 //        变异的样本进行一个检查   如果不存在仓库或者容器当中  添加到容器当中
         for (List<String> list : changebTOc) {
@@ -1645,18 +1644,6 @@ public class HarnessBranchTopoOptimize {
                     int number = normList.indexOf(id);
                     String s = list.get(number);
                     coppyedge.put("topologyStatusCode", s);
-                }
-                if (!containsList(list, WareHouseAI)) {
-                    List<String> newList = new ArrayList<>( list);
-                    WareHouseAI.add(newList);
-                    WareHouseTemp.add(newList);
-                    List<String> changeCase = new ArrayList<>(newList);
-                    int i1 = random.nextInt(changeCase.size());
-                    changeCase.set(i1, "B");
-                    if (!containsList(changeCase, WareHouseAI)) {
-                        WareHouseAI.add(changeCase);
-                        WareHouseTemp.add(changeCase);
-                    }
                 }
                 Boolean sonSate = checkFirstOption(normList, list, coppysonedges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
                 if (sonSate) {
@@ -1673,18 +1660,6 @@ public class HarnessBranchTopoOptimize {
                     int number = normList.indexOf(id);
                     String s = list.get(number);
                     coppyedge.put("topologyStatusCode", s);
-                }
-                if (!containsList(list, WareHouseAI)) {
-                    List<String> newList = new ArrayList<>( list);
-                    WareHouseAI.add(newList);
-                    WareHouseTemp.add(newList);
-                    List<String> changeCase = new ArrayList<>(newList);
-                    int i1 = random.nextInt(changeCase.size());
-                    changeCase.set(i1, "B");
-                    if (!containsList(changeCase, WareHouseAI)) {
-                        WareHouseAI.add(changeCase);
-                        WareHouseTemp.add(changeCase);
-                    }
                 }
                 Boolean sonSate = checkFirstOption(normList, list, coppysonedges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
                 if (sonSate) {
@@ -1703,13 +1678,6 @@ public class HarnessBranchTopoOptimize {
                     List<String> newList = new ArrayList<>( list);
                     WareHouseAI.add(newList);
                     WareHouseTemp.add(newList);
-                    List<String> changeCase = new ArrayList<>(newList);
-                    int i1 = random.nextInt(changeCase.size());
-                    changeCase.set(i1, "B");
-                    if (!containsList(changeCase, WareHouseAI)) {
-                        WareHouseAI.add(changeCase);
-                        WareHouseTemp.add(changeCase);
-                    }
                 }
             }
         }
@@ -1730,13 +1698,6 @@ public class HarnessBranchTopoOptimize {
                             List<String> newList = new ArrayList<>( list);
                             WareHouseAI.add(newList);
                             WareHouseTemp.add(newList);
-                            List<String> changeCase = new ArrayList<>(newList);
-                            int i1 = random.nextInt(changeCase.size());
-                            changeCase.set(i1, "B");
-                            if (!containsList(changeCase, WareHouseAI) ) {
-                                WareHouseAI.add(changeCase);
-                                WareHouseTemp.add(changeCase);
-                            }
                         }
                         simple.add(list);
                         WareHouse.add(list);
@@ -1757,7 +1718,7 @@ public class HarnessBranchTopoOptimize {
         long topTenStartTime = System.currentTimeMillis();
 //        接下来就是对simple 进行一个分支闭环的检查
         System.out.println("裂变前AI仓库数量：" + WareHouseAI.size());
-        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS);
+//        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS);
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
         System.out.println("查找每一代最优结果耗时：" + (System.currentTimeMillis() - topTenStartTime));
         //创建文件
@@ -1786,7 +1747,8 @@ public class HarnessBranchTopoOptimize {
         System.out.println("回路连接关系扰动耗时：" + (System.currentTimeMillis() - connectStartTime));
         //清楚仓库
         WareHouseTemp.clear();
-        return mapList;
+        return null;
+//        return mapList;
     }
 
 
@@ -2213,13 +2175,7 @@ public class HarnessBranchTopoOptimize {
                             if (!containsList(changeList, WareHouseAI)) {
                                 List<String> newList = new ArrayList<>(changeList);
                                 WareHouseAI.add(newList);
-                                List<String> changeCase = new ArrayList<>(newList);
-                                int i1 = random.nextInt(changeCase.size());
-                                changeCase.set(i1, "B");
-                                if (!containsList(changeCase, WareHouseAI)) {
-                                    WareHouseAI.add(changeCase);
-                                    WareHouseTemp.add(changeCase);
-                                }
+                                WareHouseTemp.add(newList);
                             }
                         }
                     }
