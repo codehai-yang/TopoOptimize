@@ -182,6 +182,10 @@ public class ProjectCircuitInfoOutput {
         for (String name : set) {
             //焊点名称，拿到该焊点对应的所有回路,矩阵对象，导线价格信息，所有回路信息，是否固定，用电器可变位置点名称，导线物料单价商务成本
             Map<String, Object> groupInfo = findGroupInfo(name, fixMultiLoopInfos.get(name), adjacencyMatrixGraph, elecFixedLocationLibrary, projectInfo, true, null, electricalSet, elecBusinessPrice);
+            //特殊焊点回路直接跳过(一个焊点只关联一根回路，焊点和对应的用电器位置点位置一样，只计算一端位置价钱)
+            if(groupInfo == null){
+                continue;
+            }
 //            将所有的回路都添加到loopdetails里面
             int size = groupInfo.keySet().size();
             for (int i = 1; i < size; i++) {
