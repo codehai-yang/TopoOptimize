@@ -1601,10 +1601,6 @@ public class ProjectCircuitInfoOutput {
         //        获取中心点，这里会考虑所有用电器位置
         //起点与终点对应列表，邻接矩阵所有点的信息，
         List<String> centerPoint = findCenterPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint(), appNode.stream().collect(Collectors.toList()));
-        // 如果只有一个用电器，直接用该用电器位置作为中心点
-        if (centerPoint.size() == 0 && appNode.size() == 1) {
-            centerPoint = new ArrayList<>(appNode);
-        }
         if (centerPoint == null) {
             return null;
         }
