@@ -163,7 +163,9 @@ public class GenerateLocationNoise {
                     String wireType = objectMap.get("导线选型").toString();
                     Map<String, String> materialsMsg = elecFixedLocationLibrary.get(wireType);
                     String price = materialsMsg.get("导线单位商务价（元/米）");
-
+                    if((startName.startsWith("[") || endName.startsWith("[")) && objectMap.get("焊点位置名称") == null){
+                        continue;
+                    }
                     String startAppPosition = null;
                     String endAppPosition = null;
                     if (startName.startsWith("[")) {
