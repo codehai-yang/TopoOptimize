@@ -181,6 +181,9 @@ public class ProjectCircuitInfoOutput {
         for (String name : set) {
             //焊点名称，拿到该焊点对应的所有回路,矩阵对象，导线价格信息，所有回路信息，是否固定，用电器可变位置点名称，导线物料单价商务成本
             Map<String, Object> groupInfo = findGroupInfo(name, fixMultiLoopInfos.get(name), adjacencyMatrixGraph, elecFixedLocationLibrary, projectInfo, true, null, electricalSet, elecBusinessPrice);
+            if(groupInfo == null){
+                continue;
+            }
 //            将所有的回路都添加到loopdetails里面
             int size = groupInfo.keySet().size();
             for (int i = 1; i < size; i++) {
@@ -386,6 +389,9 @@ public class ProjectCircuitInfoOutput {
         Set<String> nonfixMultiLoopInfosSet = nonfixedNotGroupLoopsMapMultiLoopInfos.keySet();
         for (String name : nonfixMultiLoopInfosSet) {
             Map<String, Object> groupInfo = findGroupInfo(name, nonfixedNotGroupLoopsMapMultiLoopInfos.get(name), adjacencyMatrixGraph, elecFixedLocationLibrary, projectInfo, false, bestInterFaceInfo, electricalSet, elecBusinessPrice);
+            if(groupInfo == null){
+                continue;
+            }
             int size = groupInfo.keySet().size();
             for (int i = 1; i < size; i++) {
                 Map<String, Object> groupDetailMap = (Map<String, Object>) groupInfo.get("到" + i + "用电器的信息");
