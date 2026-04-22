@@ -391,6 +391,9 @@ public class ProjectCircuitInfoOutput {
         Set<String> nonfixMultiLoopInfosSet = nonfixedNotGroupLoopsMapMultiLoopInfos.keySet();
         for (String name : nonfixMultiLoopInfosSet) {
             Map<String, Object> groupInfo = findGroupInfo(name, nonfixedNotGroupLoopsMapMultiLoopInfos.get(name), adjacencyMatrixGraph, elecFixedLocationLibrary, projectInfo, false, bestInterFaceInfo, electricalSet, elecBusinessPrice);
+            if(groupInfo == null){
+                continue;
+            }
             int size = groupInfo.keySet().size();
             for (int i = 1; i < size; i++) {
                 Map<String, Object> groupDetailMap = (Map<String, Object>) groupInfo.get("到" + i + "用电器的信息");
