@@ -242,7 +242,7 @@ public class GenerateConnectNoise {
                     SampleSave.saveSample(edgeIndex1,edgeAttr,x,filePath,totalPrice,totalLength,totalWeight);
                 }
             }catch (Exception e){
-                e.printStackTrace();
+//                e.printStackTrace();
             }
         }
     }
