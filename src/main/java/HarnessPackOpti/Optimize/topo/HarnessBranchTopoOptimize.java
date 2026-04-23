@@ -38,7 +38,7 @@ public class HarnessBranchTopoOptimize {
     //暂存的仓库
     public static List<List<String>> WareHouseTemp = new CopyOnWriteArrayList<>();
     //AI仓库存放的样本数量限制
-    public static Integer AutoCompleteNumberLimit = 10000;
+    public static Integer AutoCompleteNumberLimit = 30000;
     //    变异的次数
     public static Integer VariationNumber = 1;
     //每次迭代得到的top20
@@ -1718,7 +1718,7 @@ public class HarnessBranchTopoOptimize {
         long topTenStartTime = System.currentTimeMillis();
 //        接下来就是对simple 进行一个分支闭环的检查
         System.out.println("裂变前AI仓库数量：" + WareHouseAI.size());
-//        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS);
+        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS);
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
         System.out.println("查找每一代最优结果耗时：" + (System.currentTimeMillis() - topTenStartTime));
         //创建文件
@@ -1747,8 +1747,7 @@ public class HarnessBranchTopoOptimize {
         System.out.println("回路连接关系扰动耗时：" + (System.currentTimeMillis() - connectStartTime));
         //清楚仓库
         WareHouseTemp.clear();
-        return null;
-//        return mapList;
+        return mapList;
     }
 
 

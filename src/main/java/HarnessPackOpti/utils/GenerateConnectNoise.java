@@ -206,7 +206,7 @@ public class GenerateConnectNoise {
                     x[allNameList.indexOf(k.split(":")[0])][allNameList.indexOf(k.split(":")[1])] = v;
                 });
                 wetCost.forEach((k, v) -> {
-                    x[allNameList.indexOf(k)][allNameList.size() - 1] = v;
+                    x[allNameList.indexOf(k)][allNameList.size()] = v;
                 });
 
                 result.put("x", x);
@@ -229,6 +229,7 @@ public class GenerateConnectNoise {
             try {
                 Map<String, Object> result = future.get( 600, TimeUnit.SECONDS);
                 if(result != null) {
+                    TypeCheckUtils.countType("connect");
                     float[][] x = (float[][])result.get("x");
                     int[][] edgeIndex1 = (int[][])result.get("edgeIndex");
                     float[][] edgeAttr = (float[][])result.get("edgeAttr");
