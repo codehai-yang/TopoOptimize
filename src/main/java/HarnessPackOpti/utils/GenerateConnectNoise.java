@@ -66,7 +66,9 @@ public class GenerateConnectNoise {
         //获取所有用电器名称
         List<String> allAppName = new ArrayList<>();
         for (Map<String, String> appPosition : appPositions) {
-            allAppName.add(appPosition.get("appName"));
+            if(!appPosition.get("appName").startsWith("[")) {
+                allAppName.add(appPosition.get("appName"));
+            }
         }
         for (List<String> list : changeList) {
             tasks.add(() -> {
@@ -240,7 +242,7 @@ public class GenerateConnectNoise {
                     SampleSave.saveSample(edgeIndex1,edgeAttr,x,filePath,totalPrice,totalLength,totalWeight);
                 }
             }catch (Exception e){
-//                e.printStackTrace();
+                e.printStackTrace();
             }
         }
     }

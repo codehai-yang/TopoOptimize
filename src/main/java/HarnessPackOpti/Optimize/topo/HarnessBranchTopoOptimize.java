@@ -1725,6 +1725,10 @@ public class HarnessBranchTopoOptimize {
         String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS").format(new java.util.Date());
         String fileName = "Samples_" + timestamp;
         String filePath = "F:\\office\\pythonProjects\\GINEModel\\Samples\\" + fileName;
+        //回路连接关系扰动
+        long connectStartTime = System.currentTimeMillis();
+        generateConnectNoise.generateConnectNoise(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath);
+        System.out.println("回路连接关系扰动耗时：" + (System.currentTimeMillis() - connectStartTime));
         //样本生成及写入,分支通断扰动
         long breakStartTime = System.currentTimeMillis();
         generateBreakNoise.projectCalculate(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath);
@@ -1741,10 +1745,7 @@ public class HarnessBranchTopoOptimize {
         long priceStartTime = System.currentTimeMillis();
         generatePriceNoise.generatePriceNoise(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath);
         System.out.println("回路单价扰动耗时：" + (System.currentTimeMillis() - priceStartTime));
-        //回路连接关系扰动
-        long connectStartTime = System.currentTimeMillis();
-        generateConnectNoise.generateConnectNoise(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath);
-        System.out.println("回路连接关系扰动耗时：" + (System.currentTimeMillis() - connectStartTime));
+
         //清楚仓库
         WareHouseTemp.clear();
         return mapList;
