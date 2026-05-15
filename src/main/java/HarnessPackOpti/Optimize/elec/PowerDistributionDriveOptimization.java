@@ -8,7 +8,6 @@ import HarnessPackOpti.ProjectInfoOutPut.PowerProjectCircuitInfoOutput;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.w3c.dom.ls.LSInput;
 
 import java.util.*;
 
@@ -24,11 +23,12 @@ public class PowerDistributionDriveOptimization {
     private final OptimizeStopStatusStore optimizeStopStatusStore;
 
     public PowerDistributionDriveOptimization() {
-        this.optimizeStopStatusStore = OptimizeStopStatusStore.getInstance(); // 使用Store的单例实例
+        this.optimizeStopStatusStore = OptimizeStopStatusStore.getInstance();
     }
-    public String powerDriverOptimize(String jsonContent) throws Exception{
+
+    public String powerDriverOptimize(String jsonContent) throws Exception {
         long categoryTime = System.currentTimeMillis();
-        ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
+        ObjectMapper objectMapper = new ObjectMapper();
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         PowerProjectCircuitInfoOutput powerProjectCircuitInfoOutput = new PowerProjectCircuitInfoOutput();
         JsonToMap jsonToMap = new JsonToMap();
@@ -45,24 +45,26 @@ public class PowerDistributionDriveOptimization {
         optimizeRecordId = optimizeRecord.get("id").toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
 
-        //整车信息计算(初始方案)
+        // 整车信息计算(初始方案)
         String initializeCaseResult = powerProjectCircuitInfoOutput.powerOptimize(jsonContent);
-        //判断是哪种类型优化
+        // 判断是哪种类型优化
         String optimizeType = projectInfo.get("optimizeType");
-        //是否开启直连接口
-        Boolean whetherToChange = projectInfo.get("whetherToChange") == null || projectInfo.get("whetherToChange").equals("false") ? false : true;
-        //主供电回路和配电回路
-        List<Map<String,String>> elecLoopList = new ArrayList<>();
-        //驱动回路
-        List<Map<String,String>> driveLoopList = new ArrayList<>();
-        //资源数量读取
+        // 是否开启直连接口
+        boolean whetherToChange = projectInfo.get("whetherToChange") != null
+                && projectInfo.get("whetherToChange").equals("true");
+
+        // 主供电回路和配电回路
+        List<Map<String, String>> elecLoopList = new ArrayList<>();
+        // 驱动回路
+        List<Map<String, String>> driveLoopList = new ArrayList<>();
+        // 资源数量读取
         Map<String, List<String>> resourceNum = new HashMap<>();
-        //组团一起
+        // 组团一起变：groupId → [loopId, ...]
         Map<String, List<String>> togetherGroup = new HashMap<>();
-        //互斥
+        // 互斥组：mutualId → [loopId, ...]
         Map<String, List<String>> mutualGroup = new HashMap<>();
-        //用电器id-名称
-        Map<String,String> elecNameId = new HashMap<>();
+        // 用电器 appId → appName
+        Map<String, String> elecNameId = new HashMap<>();
 
         List<String> strPointName = new ArrayList<>();
         List<String> endPointName = new ArrayList<>();
@@ -77,172 +79,262 @@ public class PowerDistributionDriveOptimization {
                 branchBreakList.add(interruptedEdgelist);
             }
         }
-        //获取有向图之间的索引，起点到终点之间的关系
-        GenerateTopoMatrix adjacencyMatrixGraph = new GenerateTopoMatrix(strPointName, endPointName, branchBreakList);//获取邻接矩阵基本信息
-        adjacencyMatrixGraph.adjacencyMatrix();//构建邻接矩阵列表及数组
-        adjacencyMatrixGraph.addEdge();//为邻接矩阵添加”边“元素
+
+        GenerateTopoMatrix adjacencyMatrixGraph = new GenerateTopoMatrix(strPointName, endPointName, branchBreakList);
+        adjacencyMatrixGraph.adjacencyMatrix();
+        adjacencyMatrixGraph.addEdge();
         adjacencyMatrixGraph.getAdj();
         List<String> allPoint = adjacencyMatrixGraph.getAllPoint();
 
-        //统计用电器可变位置点
+        // 统计用电器可变位置点：appName → [position, ...]
         Map<String, List<String>> elecChangeablePosition = new HashMap<>();
         for (Map<String, String> appPosition : appPositions) {
             String appName = appPosition.get("appName");
-            if(resourceNum.get(appName) == null){
-                List<String> list = objectMapper.readValue(appPosition.get("resourceNumb"), new TypeReference<List<String>>(){});
-                resourceNum.put(appName,list);
+            if (resourceNum.get(appName) == null) {
+                List<String> list = objectMapper.readValue(
+                        appPosition.get("resourceNumb"), new TypeReference<List<String>>() {});
+                resourceNum.put(appName, list);
             }
-
-            if (appPosition.get("changeType") != null && appPosition.get("changeType").toString().equals("1")) {
+            if ("1".equals(appPosition.get("changeType"))) {
                 List<String> list = new ArrayList<>();
-                if (appPosition.get("specifyPoints") != null && !appPosition.get("specifyPoints").toString().isEmpty()) {
-                    String specifyPoints = appPosition.get("specifyPoints").toString();
-                    String[] parts = specifyPoints.split(",");
-                    List<String> collect = new ArrayList<>();
-                    for (String part : parts) {
-                        collect.add(part);
-                    }
-                    for (String s : collect) {
-                        list.add(findNameById(s, points));
+                String sp = appPosition.get("specifyPoints");
+                if (sp != null && !sp.isEmpty()) {
+                    for (String part : sp.split(",")) {
+                        list.add(findNameById(part, points));
                     }
                 }
                 list.retainAll(allPoint);
                 elecChangeablePosition.put(appName, list);
-            } else if (appPosition.get("changeType") != null && appPosition.get("changeType").toString().equals("2")) {
-                elecChangeablePosition.put(appName, allPoint);
+            } else if ("2".equals(appPosition.get("changeType"))) {
+                elecChangeablePosition.put(appName, new ArrayList<>(allPoint));
             }
-            elecNameId.put(appPosition.get("appId"),appName);
-
+            elecNameId.put(appPosition.get("appId"), appName);
         }
 
         for (Map<String, String> loopInfo : loopInfos) {
-            if("主供电回路".equals(loopInfo.get("loopAttribute")) || "配电回路".equals(loopInfo.get("loopAttribute"))){
+            if ("主供电回路".equals(loopInfo.get("loopAttribute"))
+                    || "配电回路".equals(loopInfo.get("loopAttribute"))) {
                 elecLoopList.add(loopInfo);
-            }else if("驱动回路".equals(loopInfo.get("loopAttribute"))){
+            } else if ("驱动回路".equals(loopInfo.get("loopAttribute"))) {
                 driveLoopList.add(loopInfo);
             }
-
-            //组团查找
-            if(loopInfo.get("changeTogether") != null && !loopInfo.get("changeTogether").isEmpty()){
-                if(togetherGroup.get(loopInfo.get("changeTogether")) == null){
-                    List<String> ids = new ArrayList<>();
-                    ids.add(loopInfo.get("id"));
-                    togetherGroup.put(loopInfo.get("changeTogether"),ids);
-                }else {
-                    togetherGroup.get(loopInfo.get("changeTogether")).add(loopInfo.get("id"));
-                }
+            // 组团归组
+            String ct = loopInfo.get("changeTogether");
+            if (ct != null && !ct.isEmpty()) {
+                togetherGroup.computeIfAbsent(ct, k -> new ArrayList<>()).add(loopInfo.get("id"));
             }
-            //互斥查找
-            if(loopInfo.get("mutualExclusion") != null && !loopInfo.get("mutualExclusion").isEmpty()){
-                if(mutualGroup.get(loopInfo.get("mutualExclusion")) == null){
-                    List<String> ids = new ArrayList<>();
-                    ids.add(loopInfo.get("id"));
-                    mutualGroup.put(loopInfo.get("mutualExclusion"),ids);
-                }else {
-                    mutualGroup.get(loopInfo.get("mutualExclusion")).add(loopInfo.get("id"));
-                }
+            // 互斥归组
+            String me = loopInfo.get("mutualExclusion");
+            if (me != null && !me.isEmpty()) {
+                mutualGroup.computeIfAbsent(me, k -> new ArrayList<>()).add(loopInfo.get("id"));
             }
         }
 
-
-        //在points 找出所有可能发生变化点   并且将同一组的放在一起
+        // 找出所有可能变化的接口点，同组归并
         Map<String, List<String>> interfaceCodegroup = new HashMap<>();
         Set<String> pointNameSet = new HashSet<>();
         if (whetherToChange) {
             for (Map<String, Object> point : points) {
-                if (point.get("interfaceCode") != null && !point.get("interfaceCode").toString().trim().isEmpty()) {
+                if (point.get("interfaceCode") != null
+                        && !point.get("interfaceCode").toString().trim().isEmpty()) {
                     String interfaceCode = point.get("interfaceCode").toString();
                     String pointName = point.get("pointName").toString();
                     interfaceCode = interfaceCode.substring(0, interfaceCode.length() - 1);
-                    if (interfaceCodegroup.containsKey(interfaceCode)) {
-                        interfaceCodegroup.get(interfaceCode).add(pointName);
-                    } else {
-                        List<String> pointNames = new ArrayList<>();
-                        pointNames.add(pointName);
-                        interfaceCodegroup.put(interfaceCode, pointNames);
-                    }
+                    interfaceCodegroup.computeIfAbsent(interfaceCode, k -> new ArrayList<>()).add(pointName);
                     pointNameSet.add(pointName);
                 }
             }
         }
         System.out.println("回路分类耗时:" + (System.currentTimeMillis() - categoryTime));
 
-        //判断是否采用枚举，计算该方案存在的可能性
-        if("3".equals(optimizeType)){
-            //统计每根回路可变数量，后续会用来计算方案总的排列组合数量
-            List<Integer> changeNumb = new ArrayList<>();
-            for (Map<String, String> loopInfo : loopInfos) {
-                //判断起点和终点是不是可变用电器，判断这条回路可连接多少终点，判断组团
-                String startApp = loopInfo.get("startApp");
-                String endApp = loopInfo.get("endApp");
-                List<String> startAppList = elecChangeablePosition.get(startApp);
-                List<String> endAppList = elecChangeablePosition.get(endApp);
-                //拿到回路可连接的用电器
-                String specifyPoints = loopInfo.get("specifyPoints");
-                String[] split = specifyPoints.split(",");
-                //判断回路有没有约束
-                String changeTogether = loopInfo.get("changeTogether");
-                String mutualExclusion = loopInfo.get("mutualExclusion");
-                //如果没有组团和互斥约束，直接组合数量
-                if ((changeTogether == null && changeTogether.isEmpty()) && (mutualExclusion == null && mutualExclusion.isEmpty())) {
-                    changeNumb.add(startAppList.size() * endAppList.size());
-                    if(split.length != 0){
-                        for (int i = 0; i < split.length; i++) {
-                            //获取每个用电器可变位置的数量
-                            String elecId = split[i];
-                            String elecName = elecNameId.get(elecId);
-                            List<String> strings = elecChangeablePosition.get(elecName);
-                            changeNumb.add(strings.size());
-                        }
+        // ================================================================
+        // 枚举模式：计算带约束的方案总数
+        // ================================================================
+        if ("3".equals(optimizeType)) {
+            long calcStart = System.currentTimeMillis();
+
+            // loopId → loopInfo 快速查找
+            Map<String, Map<String, String>> loopById = new HashMap<>();
+            for (Map<String, String> lp : loopInfos) {
+                loopById.put(lp.get("id"), lp);
+            }
+
+            // --------------------------------------------------------
+            // Step 1: 构建"变量"列表
+            //
+            // 规则：
+            //   联动组（changeTogether）→ 合并为 1 个变量
+            //     该变量的域 = 组内所有回路 endApp 可变位置的【交集】
+            //   独立回路（无 changeTogether）→ 1 个变量
+            //     该变量的域 = 该回路 endApp 的可变位置列表
+            //
+            // 变量 key 格式：
+            //   联动组变量  → "G_<togetherGroupId>"
+            //   独立回路变量 → "L_<loopId>"
+            // --------------------------------------------------------
+            // varKey → 可选位置列表（域）
+            Map<String, List<String>> varDomains = new LinkedHashMap<>();
+            Set<String> coveredLoopIds = new HashSet<>();
+
+            // 处理联动组：取所有成员 endApp 可变位置的交集
+            for (Map.Entry<String, List<String>> entry : togetherGroup.entrySet()) {
+                String groupId = entry.getKey();
+                List<String> memberLoopIds = entry.getValue();
+                List<String> intersection = null;
+                for (String lid : memberLoopIds) {
+                    Map<String, String> lp = loopById.get(lid);
+                    if (lp == null) continue;
+                    List<String> pos = elecChangeablePosition.get(lp.get("endApp"));
+                    if (pos == null) pos = Collections.emptyList();
+                    if (intersection == null) {
+                        intersection = new ArrayList<>(pos);
+                    } else {
+                        intersection.retainAll(pos);
                     }
-                    continue;
+                    coveredLoopIds.add(lid);
                 }
-                //计算组团与互斥的情况
-                if((changeTogether != null && !changeTogether.isEmpty()) && (mutualExclusion != null && !mutualExclusion.isEmpty())){
-                    //取组团一起变的交集
-                    List<String> together = togetherGroup.get(changeTogether);
-                    //获取终点用电器可变位置(交集)
-                    List<String> original = elecChangeablePosition.get(endApp);
-                    List<String> copyOriginal = new ArrayList<>(original);
-                    //取每个用电器可变位置
-                    for (String s : together) {
-                        //每个用电器对应的可变位置
-                        if(s.equals(loopInfo.get("id"))){
-                            continue;
-                        }
-                        copyOriginal.retainAll(elecChangeablePosition.get(elecNameId.get(s)));
+                varDomains.put("G_" + groupId,
+                        intersection != null ? intersection : Collections.emptyList());
+            }
+
+            // 处理独立回路（不在任何联动组中）
+            for (Map<String, String> lp : loopInfos) {
+                String lid = lp.get("id");
+                if (coveredLoopIds.contains(lid)) continue;
+                List<String> pos = elecChangeablePosition.getOrDefault(
+                        lp.get("endApp"), Collections.emptyList());
+                varDomains.put("L_" + lid, new ArrayList<>(pos));
+            }
+
+            // --------------------------------------------------------
+            // Step 2: 变量 → 互斥组映射
+            //
+            // 一条回路如果有 mutualExclusion 标记：
+            //   若它属于某个联动组 → 整个联动组变量参与互斥
+            //   否则 → 该回路自己的变量参与互斥
+            // --------------------------------------------------------
+            // varKey → mutualGroupId（同一变量只属于一个互斥组）
+            Map<String, String> varKeyToMutualId = new LinkedHashMap<>();
+            for (Map<String, String> lp : loopInfos) {
+                String lid = lp.get("id");
+                String mutual = lp.get("mutualExclusion");
+                String together = lp.get("changeTogether");
+                if (mutual == null || mutual.isEmpty()) continue;
+                String vk = (together != null && !together.isEmpty())
+                        ? "G_" + together
+                        : "L_" + lid;
+                // 同一个变量只记录一次互斥组（以第一个为准）
+                varKeyToMutualId.putIfAbsent(vk, mutual);
+            }
+
+            // 互斥组 → 变量列表（去重，保持唯一）
+            Map<String, List<String>> mutualIdToVarKeys = new LinkedHashMap<>();
+            for (Map.Entry<String, String> e : varKeyToMutualId.entrySet()) {
+                mutualIdToVarKeys.computeIfAbsent(e.getValue(), k -> new ArrayList<>())
+                        .add(e.getKey());
+            }
+            Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualId.keySet());
+
+            // --------------------------------------------------------
+            // Step 3: 计算总方案数
+            //
+            // 3a. 独立变量（不在任何互斥组中）→ 直接乘以域大小
+            // 3b. 互斥组（可能含联动组变量）→ 回溯法计算"两两不同"的赋值数
+            // 3c. 起点位置（每个唯一 startApp 独立计算，相乘）
+            // --------------------------------------------------------
+            long totalCombinations = 1L;
+
+            // 3a: 独立变量
+            for (Map.Entry<String, List<String>> e : varDomains.entrySet()) {
+                if (!varsInAnyMutualGroup.contains(e.getKey())) {
+                    int sz = e.getValue().size();
+                    if (sz <= 0) {
+                        totalCombinations = 0;
+                        break;
                     }
-                    //对存在的互斥组进行计算
-                    List<String> mutual = mutualGroup.get(mutualExclusion);
-                    List<Integer> mutualNumb = new ArrayList<>();
-                    //互斥与组团一起的交集
-                    List<String> intersection = new ArrayList<>(original);
-                    //总互斥数量
-                    int totalMutallNumb = 1;
-                    for (String s : mutual) {
-                        if(s.equals(loopInfo.get("id"))){
-                            continue;
-                        }
-                        List<String> strings = elecChangeablePosition.get(elecNameId.get(s));
-                        List<String> copyMutual = new ArrayList<>(original);
-                        copyMutual.retainAll(strings);
-                        intersection.retainAll(copyMutual);
-                        mutualNumb.add(copyMutual.size());
-                        totalMutallNumb *= strings.size();
+                    totalCombinations *= sz;
+                }
+            }
+
+            // 3b: 互斥组 —— 回溯计算全不同赋值数
+            if (totalCombinations > 0) {
+                for (Map.Entry<String, List<String>> e : mutualIdToVarKeys.entrySet()) {
+                    List<List<String>> doms = new ArrayList<>();
+                    for (String vk : e.getValue()) {
+                        List<String> d = varDomains.get(vk);
+                        doms.add(d != null ? d : Collections.emptyList());
+                    }
+                    long mc = countAllDifferent(doms);
+                    if (mc <= 0) {
+                        totalCombinations = 0;
+                        break;
+                    }
+                    totalCombinations *= mc;
+                }
+            }
+
+            // 3c: 起点位置（同一用电器作为起点时只统计一次）
+            if (totalCombinations > 0) {
+                Set<String> countedStartApps = new HashSet<>();
+                for (Map<String, String> lp : loopInfos) {
+                    String startApp = lp.get("startApp");
+                    if (startApp == null || startApp.isEmpty()) continue;
+                    if (countedStartApps.contains(startApp)) continue;
+                    List<String> startPos = elecChangeablePosition.get(startApp);
+                    if (startPos != null && !startPos.isEmpty()) {
+                        totalCombinations *= startPos.size();
+                        countedStartApps.add(startApp);
                     }
                 }
             }
 
+            System.out.println("可行方案总数（含约束）: " + totalCombinations);
+            System.out.println("方案数计算耗时: " + (System.currentTimeMillis() - calcStart) + "ms");
+
+            // TODO: 将 totalCombinations 写入返回结果或数据库
         }
+
         return null;
     }
 
+    // ================================================================
+    // 辅助方法 1：回溯法计算"多变量两两互斥"的合法赋值数
+    //
+    // 思路：
+    //   逐个变量赋值，每次只选择"当前尚未被其他变量使用"的位置
+    //   递归到最后一个变量时，记为 1 种合法方案
+    //
+    // 适用条件：变量数量和域大小均较小（互斥组一般 ≤ 10 个变量）
+    // ================================================================
+    private long countAllDifferent(List<List<String>> domains) {
+        if (domains == null || domains.isEmpty()) return 1L;
+        return backtrackCount(domains, 0, new HashSet<>());
+    }
+
     /**
-     * @Description: 根据位置id获取对应的位置点名称
-     * @input: id  位置id
-     * @input: appPositions  用电器位置信息
-     * @Return: 返回接收到用电器id对应的位置名称
+     * @param domains    每个变量的可选值列表
+     * @param idx        当前处理第几个变量
+     * @param usedValues 已被前面变量占用的值（位置）集合
+     * @return 从 idx 开始往后的合法赋值数量
      */
+    private long backtrackCount(List<List<String>> domains, int idx, Set<String> usedValues) {
+        if (idx == domains.size()) return 1L;
+        List<String> domain = domains.get(idx);
+        if (domain == null || domain.isEmpty()) return 0L;
+        long count = 0L;
+        for (String val : domain) {
+            if (!usedValues.contains(val)) {
+                usedValues.add(val);
+                count += backtrackCount(domains, idx + 1, usedValues);
+                usedValues.remove(val);
+            }
+        }
+        return count;
+    }
+
+    // ================================================================
+    // 辅助方法 2：根据位置 id 获取对应的位置点名称
+    // ================================================================
     public String findNameById(String id, List<Map<String, Object>> points) {
         for (Map<String, Object> point : points) {
             if (point.get("id").toString().equals(id)) {
