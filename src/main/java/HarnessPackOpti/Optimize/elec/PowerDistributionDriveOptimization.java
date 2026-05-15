@@ -49,6 +49,8 @@ public class PowerDistributionDriveOptimization {
         String initializeCaseResult = powerProjectCircuitInfoOutput.powerOptimize(jsonContent);
         // 判断是哪种类型优化
         String optimizeType = projectInfo.get("optimizeType");
+        String[] split = optimizeType.split(",");
+        List<String> typeList = Arrays.asList(split);
         // 是否开启直连接口
         boolean whetherToChange = projectInfo.get("whetherToChange") != null
                 && projectInfo.get("whetherToChange").equals("true");
@@ -147,155 +149,195 @@ public class PowerDistributionDriveOptimization {
         }
         System.out.println("回路分类耗时:" + (System.currentTimeMillis() - categoryTime));
 
-        // ================================================================
         // 枚举模式：计算带约束的方案总数
-        // ================================================================
-        if ("3".equals(optimizeType)) {
-            long calcStart = System.currentTimeMillis();
+        // 优化类型 1：控制器回路
+        long combinationsTime = System.currentTimeMillis();
+        long combinations = 0;
 
-            // loopId → loopInfo 快速查找
-            Map<String, Map<String, String>> loopById = new HashMap<>();
-            for (Map<String, String> lp : loopInfos) {
-                loopById.put(lp.get("id"), lp);
-            }
-
-            // --------------------------------------------------------
-            // Step 1: 构建"变量"列表
-            //
-            // 规则：
-            //   联动组（changeTogether）→ 合并为 1 个变量
-            //     该变量的域 = 组内所有回路 endApp 可变位置的【交集】
-            //   独立回路（无 changeTogether）→ 1 个变量
-            //     该变量的域 = 该回路 endApp 的可变位置列表
-            //
-            // 变量 key 格式：
-            //   联动组变量  → "G_<togetherGroupId>"
-            //   独立回路变量 → "L_<loopId>"
-            // --------------------------------------------------------
-            // varKey → 可选位置列表（域）
-            Map<String, List<String>> varDomains = new LinkedHashMap<>();
-            Set<String> coveredLoopIds = new HashSet<>();
-
-            // 处理联动组：取所有成员 endApp 可变位置的交集
-            for (Map.Entry<String, List<String>> entry : togetherGroup.entrySet()) {
-                String groupId = entry.getKey();
-                List<String> memberLoopIds = entry.getValue();
-                List<String> intersection = null;
-                for (String lid : memberLoopIds) {
-                    Map<String, String> lp = loopById.get(lid);
-                    if (lp == null) continue;
-                    List<String> pos = elecChangeablePosition.get(lp.get("endApp"));
-                    if (pos == null) pos = Collections.emptyList();
-                    if (intersection == null) {
-                        intersection = new ArrayList<>(pos);
-                    } else {
-                        intersection.retainAll(pos);
-                    }
-                    coveredLoopIds.add(lid);
-                }
-                varDomains.put("G_" + groupId,
-                        intersection != null ? intersection : Collections.emptyList());
-            }
-
-            // 处理独立回路（不在任何联动组中）
-            for (Map<String, String> lp : loopInfos) {
-                String lid = lp.get("id");
-                if (coveredLoopIds.contains(lid)) continue;
-                List<String> pos = elecChangeablePosition.getOrDefault(
-                        lp.get("endApp"), Collections.emptyList());
-                varDomains.put("L_" + lid, new ArrayList<>(pos));
-            }
-
-            // --------------------------------------------------------
-            // Step 2: 变量 → 互斥组映射
-            //
-            // 一条回路如果有 mutualExclusion 标记：
-            //   若它属于某个联动组 → 整个联动组变量参与互斥
-            //   否则 → 该回路自己的变量参与互斥
-            // --------------------------------------------------------
-            // varKey → mutualGroupId（同一变量只属于一个互斥组）
-            Map<String, String> varKeyToMutualId = new LinkedHashMap<>();
-            for (Map<String, String> lp : loopInfos) {
-                String lid = lp.get("id");
-                String mutual = lp.get("mutualExclusion");
-                String together = lp.get("changeTogether");
-                if (mutual == null || mutual.isEmpty()) continue;
-                String vk = (together != null && !together.isEmpty())
-                        ? "G_" + together
-                        : "L_" + lid;
-                // 同一个变量只记录一次互斥组（以第一个为准）
-                varKeyToMutualId.putIfAbsent(vk, mutual);
-            }
-
-            // 互斥组 → 变量列表（去重，保持唯一）
-            Map<String, List<String>> mutualIdToVarKeys = new LinkedHashMap<>();
-            for (Map.Entry<String, String> e : varKeyToMutualId.entrySet()) {
-                mutualIdToVarKeys.computeIfAbsent(e.getValue(), k -> new ArrayList<>())
-                        .add(e.getKey());
-            }
-            Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualId.keySet());
-
-            // --------------------------------------------------------
-            // Step 3: 计算总方案数
-            //
-            // 3a. 独立变量（不在任何互斥组中）→ 直接乘以域大小
-            // 3b. 互斥组（可能含联动组变量）→ 回溯法计算"两两不同"的赋值数
-            // 3c. 起点位置（每个唯一 startApp 独立计算，相乘）
-            // --------------------------------------------------------
-            long totalCombinations = 1L;
-
-            // 3a: 独立变量
-            for (Map.Entry<String, List<String>> e : varDomains.entrySet()) {
-                if (!varsInAnyMutualGroup.contains(e.getKey())) {
-                    int sz = e.getValue().size();
-                    if (sz <= 0) {
-                        totalCombinations = 0;
-                        break;
-                    }
-                    totalCombinations *= sz;
-                }
-            }
-
-            // 3b: 互斥组 —— 回溯计算全不同赋值数
-            if (totalCombinations > 0) {
-                for (Map.Entry<String, List<String>> e : mutualIdToVarKeys.entrySet()) {
-                    List<List<String>> doms = new ArrayList<>();
-                    for (String vk : e.getValue()) {
-                        List<String> d = varDomains.get(vk);
-                        doms.add(d != null ? d : Collections.emptyList());
-                    }
-                    long mc = countAllDifferent(doms);
-                    if (mc <= 0) {
-                        totalCombinations = 0;
-                        break;
-                    }
-                    totalCombinations *= mc;
-                }
-            }
-
-            // 3c: 起点位置（同一用电器作为起点时只统计一次）
-            if (totalCombinations > 0) {
-                Set<String> countedStartApps = new HashSet<>();
-                for (Map<String, String> lp : loopInfos) {
-                    String startApp = lp.get("startApp");
-                    if (startApp == null || startApp.isEmpty()) continue;
-                    if (countedStartApps.contains(startApp)) continue;
-                    List<String> startPos = elecChangeablePosition.get(startApp);
-                    if (startPos != null && !startPos.isEmpty()) {
-                        totalCombinations *= startPos.size();
-                        countedStartApps.add(startApp);
-                    }
-                }
-            }
-
-            System.out.println("可行方案总数（含约束）: " + totalCombinations);
-            System.out.println("方案数计算耗时: " + (System.currentTimeMillis() - calcStart) + "ms");
-
-            // TODO: 将 totalCombinations 写入返回结果或数据库
+        //同时优化配电回路和驱动器回路
+        List<Map<String, String>> combinedList = new ArrayList<>(elecLoopList);
+        combinedList.addAll(driveLoopList);
+        if (typeList.contains("1") && typeList.contains("2")) {
+            combinations = calculateOptimizationCombinations(combinedList, elecChangeablePosition, togetherGroup);
         }
+
+        //优化驱动回路
+        if ("1".equals(optimizeType)) {
+             combinations = calculateOptimizationCombinations(driveLoopList, elecChangeablePosition, togetherGroup);
+        }
+
+        // 优化类型 2：配电器回路
+        if ("2".equals(optimizeType)) {
+             combinations = calculateOptimizationCombinations(elecLoopList, elecChangeablePosition, togetherGroup);
+        }
+
+        // 优化类型 3：所有回路
+        if ("3".equals(optimizeType)) {
+             combinations = calculateOptimizationCombinations(loopInfos, elecChangeablePosition, togetherGroup);
+        }
+
+        System.out.println("枚举模式耗时:" + (System.currentTimeMillis() - combinationsTime));
 
         return null;
     }
+
+
+    // ================================================================
+    // 计算优化方案总数（支持不同类型的回路集合）
+    //
+    // @param loopInfos           需要优化的回路列表
+    // @param elecChangeablePosition 用电器到可变位置列表的映射
+    // @param togetherGroup       联动组配置（groupId -> [loopId, ...]）
+    // @return 可行方案总数
+    // ================================================================
+    private long calculateOptimizationCombinations(
+            List<Map<String, String>> loopInfos,
+            Map<String, List<String>> elecChangeablePosition,
+            Map<String, List<String>> togetherGroup) {
+
+        long calcStart = System.currentTimeMillis();
+
+        // loopId → loopInfo 快速查找
+        Map<String, Map<String, String>> loopById = new HashMap<>();
+        for (Map<String, String> lp : loopInfos) {
+            loopById.put(lp.get("id"), lp);
+        }
+
+        // --------------------------------------------------------
+        // Step 1: 构建"变量"列表
+        //
+        // 规则：
+        //   联动组（changeTogether）→ 合并为 1 个变量
+        //     该变量的域 = 组内所有回路 endApp 可变位置的【交集】
+        //   独立回路（无 changeTogether）→ 1 个变量
+        //     该变量的域 = 该回路 endApp 的可变位置列表
+        //
+        // 变量 key 格式：
+        //   联动组变量  → "G_<togetherGroupId>"
+        //   独立回路变量 → "L_<loopId>"
+        // --------------------------------------------------------
+        // varKey → 可选位置列表（域）
+        Map<String, List<String>> varDomains = new LinkedHashMap<>();
+        Set<String> coveredLoopIds = new HashSet<>();
+
+        // 处理联动组：取所有成员 endApp 可变位置的交集
+        for (Map.Entry<String, List<String>> entry : togetherGroup.entrySet()) {
+            String groupId = entry.getKey();
+            List<String> memberLoopIds = entry.getValue();
+            List<String> intersection = null;
+            for (String lid : memberLoopIds) {
+                Map<String, String> lp = loopById.get(lid);
+                if (lp == null) continue;
+                List<String> pos = elecChangeablePosition.get(lp.get("endApp"));
+                if (pos == null) pos = Collections.emptyList();
+                if (intersection == null) {
+                    intersection = new ArrayList<>(pos);
+                } else {
+                    intersection.retainAll(pos);
+                }
+                coveredLoopIds.add(lid);
+            }
+            varDomains.put("G_" + groupId,
+                    intersection != null ? intersection : Collections.emptyList());
+        }
+
+        // 处理独立回路（不在任何联动组中）
+        for (Map<String, String> lp : loopInfos) {
+            String lid = lp.get("id");
+            if (coveredLoopIds.contains(lid)) continue;
+            List<String> pos = elecChangeablePosition.getOrDefault(
+                    lp.get("endApp"), Collections.emptyList());
+            varDomains.put("L_" + lid, new ArrayList<>(pos));
+        }
+
+        // --------------------------------------------------------
+        // Step 2: 变量 → 互斥组映射
+        //
+        // 一条回路如果有 mutualExclusion 标记：
+        //   若它属于某个联动组 → 整个联动组变量参与互斥
+        //   否则 → 该回路自己的变量参与互斥
+        // --------------------------------------------------------
+        // varKey → mutualGroupId（同一变量只属于一个互斥组）
+        Map<String, String> varKeyToMutualId = new LinkedHashMap<>();
+        for (Map<String, String> lp : loopInfos) {
+            String lid = lp.get("id");
+            String mutual = lp.get("mutualExclusion");
+            String together = lp.get("changeTogether");
+            if (mutual == null || mutual.isEmpty()) continue;
+            String vk = (together != null && !together.isEmpty())
+                    ? "G_" + together
+                    : "L_" + lid;
+            // 同一个变量只记录一次互斥组（以第一个为准）
+            varKeyToMutualId.putIfAbsent(vk, mutual);
+        }
+
+        // 互斥组 → 变量列表（去重，保持唯一）
+        Map<String, List<String>> mutualIdToVarKeys = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : varKeyToMutualId.entrySet()) {
+            mutualIdToVarKeys.computeIfAbsent(e.getValue(), k -> new ArrayList<>())
+                    .add(e.getKey());
+        }
+        Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualId.keySet());
+
+        // --------------------------------------------------------
+        // Step 3: 计算总方案数
+        //
+        // 3a. 独立变量（不在任何互斥组中）→ 直接乘以域大小
+        // 3b. 互斥组（可能含联动组变量）→ 回溯法计算"两两不同"的赋值数
+        // 3c. 起点位置（每个唯一 startApp 独立计算，相乘）
+        // --------------------------------------------------------
+        long totalCombinations = 1L;
+
+        // 3a: 独立变量
+        for (Map.Entry<String, List<String>> e : varDomains.entrySet()) {
+            if (!varsInAnyMutualGroup.contains(e.getKey())) {
+                int sz = e.getValue().size();
+                if (sz <= 0) {
+                    totalCombinations = 0;
+                    break;
+                }
+                totalCombinations *= sz;
+            }
+        }
+
+        // 3b: 互斥组 —— 回溯计算全不同赋值数
+        if (totalCombinations > 0) {
+            for (Map.Entry<String, List<String>> e : mutualIdToVarKeys.entrySet()) {
+                List<List<String>> doms = new ArrayList<>();
+                for (String vk : e.getValue()) {
+                    List<String> d = varDomains.get(vk);
+                    doms.add(d != null ? d : Collections.emptyList());
+                }
+                long mc = countAllDifferent(doms);
+                if (mc <= 0) {
+                    totalCombinations = 0;
+                    break;
+                }
+                totalCombinations *= mc;
+            }
+        }
+
+        // 3c: 起点位置（同一用电器作为起点时只统计一次）
+        if (totalCombinations > 0) {
+            Set<String> countedStartApps = new HashSet<>();
+            for (Map<String, String> lp : loopInfos) {
+                String startApp = lp.get("startApp");
+                if (startApp == null || startApp.isEmpty()) continue;
+                if (countedStartApps.contains(startApp)) continue;
+                List<String> startPos = elecChangeablePosition.get(startApp);
+                if (startPos != null && !startPos.isEmpty()) {
+                    totalCombinations *= startPos.size();
+                    countedStartApps.add(startApp);
+                }
+            }
+        }
+
+        System.out.println("可行方案总数（含约束）: " + totalCombinations);
+        System.out.println("方案数计算耗时: " + (System.currentTimeMillis() - calcStart) + "ms");
+
+        return totalCombinations;
+    }
+
 
     // ================================================================
     // 辅助方法 1：回溯法计算"多变量两两互斥"的合法赋值数
