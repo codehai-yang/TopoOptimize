@@ -111,9 +111,25 @@ public class PowerDistributionDriveOptimization {
         adjacencyMatrixGraph.getAdj();
         List<String> allPoint = adjacencyMatrixGraph.getAllPoint();
 
-        // 统计用电器可变位置点：appName → [position, ...]
         //查找用电器自身位置点
         Map<String, String> eleclection = getEleclection(appPositions);
+
+        // 【关键修复】先收集直连接口分组（需要在构建 elecChangeablePosition 之前）
+        Map<String, List<String>> interfaceCodegroup = new HashMap<>();
+        Set<String> pointNameSet = new HashSet<>();
+        if (whetherToChange) {
+            for (Map<String, Object> point : points) {
+                if (point.get("interfaceCode") != null
+                        && !point.get("interfaceCode").toString().trim().isEmpty()) {
+                    String interfaceCode = point.get("interfaceCode").toString();
+                    String pointName = point.get("pointName").toString();
+                    interfaceCode = interfaceCode.substring(0, interfaceCode.length() - 1);
+                    interfaceCodegroup.computeIfAbsent(interfaceCode, k -> new ArrayList<>()).add(pointName);
+                    pointNameSet.add(pointName);
+                }
+            }
+        }
+
         Map<String, List<String>> elecChangeablePosition = new HashMap<>();
         for (Map<String, String> appPosition : appPositions) {
             String appName = appPosition.get("appName");
@@ -127,7 +143,24 @@ public class PowerDistributionDriveOptimization {
                 String sp = appPosition.get("specifyPoints");
                 if (sp != null && !sp.isEmpty()) {
                     for (String part : sp.split(",")) {
-                        list.add(findNameById(part, points));
+                        String pointName = findNameById(part, points);
+                        list.add(pointName);
+
+                        // 【关键修复】如果该位置点是直连接口，将整个接口组的位置都加入
+                        if (whetherToChange && pointNameSet.contains(pointName)) {
+                            // 查找该位置点属于哪个接口组
+                            for (List<String> interfacePoints : interfaceCodegroup.values()) {
+                                if (interfacePoints.contains(pointName)) {
+                                    // 将整个接口组的位置都加入可变列表
+                                    for (String interfacePoint : interfacePoints) {
+                                        if (!list.contains(interfacePoint) && allPoint.contains(interfacePoint)) {
+                                            list.add(interfacePoint);
+                                        }
+                                    }
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
                 list.retainAll(allPoint);
@@ -168,22 +201,6 @@ public class PowerDistributionDriveOptimization {
             if (me != null && !me.isEmpty()) {
                 mutualGroup.computeIfAbsent(me, k -> new ArrayList<>()).add(loopInfo.get("id"));
                 mutualList.add(loopInfo.get("id"));
-            }
-        }
-
-        // 找出所有可能变化的接口点，同组归并
-        Map<String, List<String>> interfaceCodegroup = new HashMap<>();
-        Set<String> pointNameSet = new HashSet<>();
-        if (whetherToChange) {
-            for (Map<String, Object> point : points) {
-                if (point.get("interfaceCode") != null
-                        && !point.get("interfaceCode").toString().trim().isEmpty()) {
-                    String interfaceCode = point.get("interfaceCode").toString();
-                    String pointName = point.get("pointName").toString();
-                    interfaceCode = interfaceCode.substring(0, interfaceCode.length() - 1);
-                    interfaceCodegroup.computeIfAbsent(interfaceCode, k -> new ArrayList<>()).add(pointName);
-                    pointNameSet.add(pointName);
-                }
             }
         }
         System.out.println("回路分类耗时:" + (System.currentTimeMillis() - categoryTime));
