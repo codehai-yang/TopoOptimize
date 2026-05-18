@@ -1,5 +1,6 @@
 package HarnessPackOpti.Optimize.elec;
 
+import HarnessPackOpti.Algorithm.FindElecLocation;
 import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.JsonToMap;
@@ -21,6 +22,12 @@ public class PowerDistributionDriveOptimization {
     private static String optimizeRecordId = null;
 
     private final OptimizeStopStatusStore optimizeStopStatusStore;
+
+    // 可变数量阈值，走枚举
+    public static Integer caseNumbe = 10000;
+
+    // 枚举收集的所有方案
+    private List<Map<String, String>> enumeratedSchemes = new ArrayList<>();
 
     public PowerDistributionDriveOptimization() {
         this.optimizeStopStatusStore = OptimizeStopStatusStore.getInstance();
@@ -67,17 +74,21 @@ public class PowerDistributionDriveOptimization {
         Map<String, List<String>> mutualGroup = new HashMap<>();
         // 用电器 appId → appName
         Map<String, String> elecNameId = new HashMap<>();
+        //位置点名称-id
+        Map<String, String> pointNameId = new HashMap<>();
 
         List<String> strPointName = new ArrayList<>();
         List<String> endPointName = new ArrayList<>();
         List<List<String>> branchBreakList = new ArrayList<>();
         for (Map<String, Object> edge : edges) {
-            strPointName.add(edge.get("分支起点名称").toString());
-            endPointName.add(edge.get("分支终点名称").toString());
-            if (edge.get("分支打断").equals("B")) {
+            strPointName.add(edge.get("startPointName").toString());
+            endPointName.add(edge.get("endPointName").toString());
+            pointNameId.put(edge.get("startPointName").toString(), edge.get("startPointId").toString());
+            pointNameId.put(edge.get("endPointName").toString(), edge.get("endPointId").toString());
+            if (edge.get("topologyStatusCode").equals("B")) {
                 List<String> interruptedEdgelist = new ArrayList<>();
-                interruptedEdgelist.add(edge.get("分支起点名称").toString());
-                interruptedEdgelist.add(edge.get("分支终点名称").toString());
+                interruptedEdgelist.add(edge.get("startPointName").toString());
+                interruptedEdgelist.add(edge.get("endPointName").toString());
                 branchBreakList.add(interruptedEdgelist);
             }
         }
@@ -89,6 +100,8 @@ public class PowerDistributionDriveOptimization {
         List<String> allPoint = adjacencyMatrixGraph.getAllPoint();
 
         // 统计用电器可变位置点：appName → [position, ...]
+        //查找用电器自身位置点
+        Map<String, String> eleclection = getEleclection(appPositions);
         Map<String, List<String>> elecChangeablePosition = new HashMap<>();
         for (Map<String, String> appPosition : appPositions) {
             String appName = appPosition.get("appName");
@@ -106,6 +119,7 @@ public class PowerDistributionDriveOptimization {
                     }
                 }
                 list.retainAll(allPoint);
+                list.add(eleclection.get(appName));     //把自身位置加进去
                 elecChangeablePosition.put(appName, list);
             } else if ("2".equals(appPosition.get("changeType"))) {
                 elecChangeablePosition.put(appName, new ArrayList<>(allPoint));
@@ -177,10 +191,381 @@ public class PowerDistributionDriveOptimization {
         }
 
         System.out.println("枚举模式耗时:" + (System.currentTimeMillis() - combinationsTime));
+        System.out.println("总方案数: " + combinations);
 
+        // 如果方案数在限制内，进行枚举生成方案列表
+        if (combinations <= caseNumbe) {
+            long enumerateTime = System.currentTimeMillis();
+
+            enumeratedSchemes.clear();
+
+            // 根据优化类型选择目标回路并枚举
+            List<Map<String, String>> targetLoops = null;
+            if (typeList.contains("1") && typeList.contains("2")) {
+                targetLoops = combinedList;
+            } else if ("1".equals(optimizeType)) {
+                targetLoops = driveLoopList;
+            } else if ("2".equals(optimizeType)) {
+                targetLoops = elecLoopList;
+            } else if ("3".equals(optimizeType)) {
+                targetLoops = loopInfos;
+            }
+
+            if (targetLoops != null && !targetLoops.isEmpty()) {
+                // 执行枚举
+                Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
+
+                enumerateAllSchemes(targetLoops, elecChangeablePosition, togetherGroup, mutualGroup, loopInfos);
+
+                System.out.println("枚举耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
+
+                // 每个方案格式: Map<回路ID, "起点用电器|终点用电器|起点位置|终点位置">
+                // 遍历所有方案
+                for (int i = 0; i < enumeratedSchemes.size(); i++) {
+                    Map<String, String> scheme = enumeratedSchemes.get(i);
+
+                    List<Map<String, String>> loopInfoCopy = new ArrayList<>();
+                    for (Map<String, String> loop : loopInfos) {
+                        loopInfoCopy.add(new HashMap<>(loop));
+                    }
+                    List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(appPositions);
+
+                    // 遍历该方案中的所有回路，还原方案，计算成本
+                    for (Map.Entry<String, String> entry : scheme.entrySet()) {
+                        String loopId = entry.getKey();           // 回路ID
+                        String value = entry.getValue();          // "BCM|CPM|前围板外中点|车身线左前inline点"
+
+                        // 解析value
+                        String[] parts = value.split("\\|");
+                        String startApp = parts[0];    // 起点用电器: "BCM"
+                        String endApp = parts[1];      // 终点用电器: "CPM"
+                        String startPos = parts[2];    // 起点位置: "前围板外中点"
+                        String endPos = parts[3];      // 终点位置: "车身线左前inline点"
+
+                        //方案还原
+                        for (Map<String, String> loop : loopInfoCopy) {
+                            if (loop.get("id").equals(loopId)) {
+                                loop.put("startApp", startApp);
+                                loop.put("endApp", endApp);
+                            }
+                        }
+
+                        for (Map<String, String> stringStringMap : appPositionsCopy) {
+                            if(stringStringMap.get("appName").equals(startApp)){
+                                stringStringMap.put("unregularPointName", startPos);
+                                stringStringMap.put("unregularPointId", pointNameId.get(startPos));
+                            }
+                            if(stringStringMap.get("appName").equals(endApp)){
+                                stringStringMap.put("unregularPointName", endPos);
+                                stringStringMap.put("unregularPointId", pointNameId.get(endPos));
+                            }
+                        }
+                    }
+                    //合成方案
+                    jsonMapCopy.put("loopInfo", loopInfoCopy);
+                    jsonMapCopy.put("appPositions", appPositionsCopy);
+                    //计算成本
+                }
+                String tempOptimizeResult = powerProjectCircuitInfoOutput.powerOptimize(jsonContent);
+            }
+
+
+            //枚举返回最优top20样本
+            return null;
+        }
         return null;
     }
 
+
+
+    /**
+     * 深拷贝 List<Map<String, String>>
+     */
+    private List<Map<String, String>> deepCopyAppPositions(List<Map<String, String>> source) {
+        if (source == null) {
+            return null;
+        }
+
+        List<Map<String, String>> copy = new ArrayList<>();
+        for (Map<String, String> map : source) {
+            copy.add(new HashMap<>(map));
+        }
+        return copy;
+    }
+
+
+    /**
+     * 查找用电器默认位置
+     * @param mapList 用电器位置集合
+     * @return
+     */
+    public Map<String,String> getEleclection(List<Map<String,String >> mapList)  {
+        Map<String,String> stringMap1=new HashMap<>();
+        for (Map<String, String> stringMap : mapList) {
+            String result = "";
+            if (stringMap.get("unregularPointName") !=null){
+                result= stringMap.get("unregularPointName");
+            } else if (stringMap.get("unregularPointName") ==null && stringMap.get("regularPointName") !=null ) {
+                result= stringMap.get("regularPointName");
+            }else if (stringMap.get("unregularPointName") ==null && stringMap.get("regularPointName") ==null ) {
+                result= null;
+            }
+
+            stringMap1.put(stringMap.get("appName"),result);
+        }
+//        System.out.println("从txt中读取到的用电器，经过位置判断后共计"+resultList.size()+"个");
+        return stringMap1;
+    }
+
+
+    /**
+     * 枚举所有可行方案并收集到 enumeratedSchemes
+     *
+     * @param targetLoops           需要优化的目标回路列表
+     * @param elecChangeablePosition 用电器到可变位置列表的映射
+     * @param togetherGroup         联动组配置
+     * @param mutualGroup           互斥组配置
+     * @param allLoopInfos          所有回路信息（用于获取回路详情）
+     */
+    private void enumerateAllSchemes(
+            List<Map<String, String>> targetLoops,
+            Map<String, List<String>> elecChangeablePosition,
+            Map<String, List<String>> togetherGroup,
+            Map<String, List<String>> mutualGroup,
+            List<Map<String, String>> allLoopInfos) {
+
+        long startTime = System.currentTimeMillis();
+
+        // loopId → loopInfo 快速查找
+        Map<String, Map<String, String>> loopById = new HashMap<>();
+        for (Map<String, String> lp : allLoopInfos) {
+            loopById.put(lp.get("id"), lp);
+        }
+
+        // --------------------------------------------------------
+        // Step 1: 构建"变量"列表
+        // --------------------------------------------------------
+        Map<String, List<String>> varDomains = new LinkedHashMap<>();
+        Set<String> coveredLoopIds = new HashSet<>();
+
+        // 处理联动组：取所有成员 endApp 可变位置的交集
+        for (Map.Entry<String, List<String>> entry : togetherGroup.entrySet()) {
+            String groupId = entry.getKey();
+            List<String> memberLoopIds = entry.getValue();
+            List<String> intersection = null;
+            for (String lid : memberLoopIds) {
+                Map<String, String> lp = loopById.get(lid);
+                if (lp == null) continue;
+                List<String> pos = elecChangeablePosition.get(lp.get("endApp"));
+                if (pos == null) pos = Collections.emptyList();
+                if (intersection == null) {
+                    intersection = new ArrayList<>(pos);
+                } else {
+                    intersection.retainAll(pos);
+                }
+                coveredLoopIds.add(lid);
+            }
+            varDomains.put("G_" + groupId,
+                    intersection != null ? intersection : Collections.emptyList());
+        }
+
+        // 处理独立回路（不在任何联动组中）
+        for (Map<String, String> lp : targetLoops) {
+            String lid = lp.get("id");
+            if (coveredLoopIds.contains(lid)) continue;
+            List<String> pos = elecChangeablePosition.getOrDefault(
+                    lp.get("endApp"), Collections.emptyList());
+            varDomains.put("L_" + lid, new ArrayList<>(pos));
+        }
+
+        // --------------------------------------------------------
+        // Step 2: 变量 → 互斥组映射
+        // --------------------------------------------------------
+        Map<String, String> varKeyToMutualId = new LinkedHashMap<>();
+        for (Map<String, String> lp : targetLoops) {
+            String lid = lp.get("id");
+            String mutual = lp.get("mutualExclusion");
+            String together = lp.get("changeTogether");
+            if (mutual == null || mutual.isEmpty()) continue;
+            String vk = (together != null && !together.isEmpty())
+                    ? "G_" + together
+                    : "L_" + lid;
+            varKeyToMutualId.putIfAbsent(vk, mutual);
+        }
+
+        Map<String, List<String>> mutualIdToVarKeys = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : varKeyToMutualId.entrySet()) {
+            mutualIdToVarKeys.computeIfAbsent(e.getValue(), k -> new ArrayList<>())
+                    .add(e.getKey());
+        }
+        Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualId.keySet());
+
+        // --------------------------------------------------------
+        // Step 3: 准备变量列表（包含起点位置变量）
+        // --------------------------------------------------------
+        List<String> varKeys = new ArrayList<>(varDomains.keySet());
+        Set<String> countedStartApps = new HashSet<>();
+        for (Map<String, String> lp : targetLoops) {
+            String startApp = lp.get("startApp");
+            if (startApp != null && !startApp.isEmpty() && !countedStartApps.contains(startApp)) {
+                List<String> startPos = elecChangeablePosition.get(startApp);
+                if (startPos != null && !startPos.isEmpty()) {
+                    String varKey = "S_" + startApp;
+                    varKeys.add(varKey);
+                    varDomains.put(varKey, new ArrayList<>(startPos));
+                    countedStartApps.add(startApp);
+                }
+            }
+        }
+
+        System.out.println("开始回溯枚举，变量数: " + varKeys.size());
+
+        // --------------------------------------------------------
+        // Step 4: 执行回溯枚举
+        // --------------------------------------------------------
+        Map<String, String> currentAssignment = new LinkedHashMap<>();
+        Set<String> usedPositions = new HashSet<>();
+
+        enumerateSchemesByBacktrack(
+                varDomains, mutualIdToVarKeys, varsInAnyMutualGroup,
+                0, varKeys, currentAssignment, usedPositions,
+                targetLoops, loopById);
+
+        System.out.println("枚举完成，耗时: " + (System.currentTimeMillis() - startTime) + "ms");
+    }
+
+    /**
+     * 回溯法枚举方案并收集到 enumeratedSchemes
+     */
+    private void enumerateSchemesByBacktrack(
+            Map<String, List<String>> varDomains,
+            Map<String, List<String>> mutualIdToVarKeys,
+            Set<String> varsInMutualGroup,
+            int varIndex,
+            List<String> varKeys,
+            Map<String, String> currentAssignment,
+            Set<String> usedPositions,
+            List<Map<String, String>> targetLoops,
+            Map<String, Map<String, String>> loopById) {
+
+        // 检查是否应该停止优化
+        if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+            System.out.println("优化被用户中断");
+            return;
+        }
+
+        // 检查是否超过限制
+        if (enumeratedSchemes.size() >= caseNumbe) {
+            System.out.println("枚举方案数已达到限制(" + caseNumbe + ")，提前退出");
+            return;
+        }
+
+        // 所有变量都已赋值，生成一个方案
+        if (varIndex == varKeys.size()) {
+            // 将变量赋值转换为回路级别的方案
+            Map<String, String> scheme = convertAssignmentToSchemeFormat(
+                    currentAssignment, targetLoops, loopById);
+
+            if (!scheme.isEmpty()) {
+                enumeratedSchemes.add(scheme);
+
+                // 每100个方案输出一次进度
+                if (enumeratedSchemes.size() % 100 == 0) {
+                    System.out.println("已枚举 " + enumeratedSchemes.size() + " 个方案...");
+                }
+            }
+            return;
+        }
+
+        String varKey = varKeys.get(varIndex);
+        List<String> domain = varDomains.get(varKey);
+
+        if (domain == null || domain.isEmpty()) {
+            return;
+        }
+
+        // 检查该变量是否在互斥组中
+        boolean isInMutualGroup = varsInMutualGroup.contains(varKey);
+
+        for (String position : domain) {
+            // 互斥约束检查
+            if (isInMutualGroup && usedPositions.contains(position)) {
+                continue;
+            }
+
+            // 做选择
+            currentAssignment.put(varKey, position);
+            usedPositions.add(position);
+
+            // 递归处理下一个变量
+            enumerateSchemesByBacktrack(
+                    varDomains, mutualIdToVarKeys, varsInMutualGroup,
+                    varIndex + 1, varKeys, currentAssignment, usedPositions,
+                    targetLoops, loopById);
+
+            // 如果已经达到限制，提前退出
+            if (enumeratedSchemes.size() >= caseNumbe) {
+                break;
+            }
+
+            // 撤销选择
+            usedPositions.remove(position);
+            currentAssignment.remove(varKey);
+        }
+    }
+
+    /**
+     * 将变量赋值转换为方案格式
+     *
+     * @return Map<回路ID, "起点用电器|终点用电器|起点位置|终点位置">
+     *         只包含需要优化的回路
+     */
+    private Map<String, String> convertAssignmentToSchemeFormat(
+            Map<String, String> assignment,
+            List<Map<String, String>> targetLoops,
+            Map<String, Map<String, String>> loopById) {
+
+        Map<String, String> scheme = new LinkedHashMap<>();
+
+        // 遍历所有目标回路
+        for (Map<String, String> loop : targetLoops) {
+            String loopId = loop.get("id");
+            String startApp = loop.get("startApp");
+            String endApp = loop.get("endApp");
+            String together = loop.get("changeTogether");
+
+            String assignedStartPosition = null;
+            String assignedEndPosition = null;
+
+            // 获取终点位置（endApp的位置）
+            if (together != null && !together.isEmpty()) {
+                // 联动组变量
+                assignedEndPosition = assignment.get("G_" + together);
+            } else {
+                // 独立回路变量
+                assignedEndPosition = assignment.get("L_" + loopId);
+            }
+
+            // 获取起点位置（startApp的位置）
+            if (startApp != null && !startApp.isEmpty()) {
+                assignedStartPosition = assignment.get("S_" + startApp);
+            }
+
+            // 如果位置有赋值，则加入方案
+            if (assignedStartPosition != null || assignedEndPosition != null) {
+                // 使用默认值（如果未赋值）
+                String finalStartPos = assignedStartPosition != null ? assignedStartPosition : "";
+                String finalEndPos = assignedEndPosition != null ? assignedEndPosition : "";
+
+                // 格式: "起点用电器|终点用电器|起点位置|终点位置"
+                String value = startApp + "|" + endApp + "|" + finalStartPos + "|" + finalEndPos;
+
+                scheme.put(loopId, value);
+            }
+        }
+
+        return scheme;
+    }
 
     // ================================================================
     // 计算优化方案总数（支持不同类型的回路集合）
