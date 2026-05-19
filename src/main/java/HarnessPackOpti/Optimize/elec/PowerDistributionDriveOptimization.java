@@ -12,6 +12,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -42,7 +43,7 @@ public class PowerDistributionDriveOptimization {
     public static Integer IterationRestrictNumber = 30;
 
     //遗传每轮迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 30;
+    public static Integer HybridizationLessRandomSamleNumber = 200;
 
     //遗传算法数量不够时自动补全得次数
     public static Integer AutoCompleteNumber = 30;
@@ -54,11 +55,7 @@ public class PowerDistributionDriveOptimization {
     public static Double CrossoverRate = 0.7;
 
     //定义一个仓库，遗传每次生成的方案存储，防止重复
-    public static List<List<String>>  WareHouse = new CopyOnWriteArrayList<>();
-
-    // 方案去重仓库：存储已存在方案的指纹
-    private Set<String> schemeFingerprintSet = new HashSet<>();
-
+    public static Set<String> WareHouse = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     // 枚举收集的所有方案
     private List<Map<String, String>> enumeratedSchemes = new ArrayList<>();
@@ -351,12 +348,12 @@ public class PowerDistributionDriveOptimization {
                     //字符串拼接(只传入用户需要优化的回路和用电器)
                     String fingerprint = generateSchemeFingerprint(connectionData, appPositionsData);
                     // 方案去重检查
-                    if (schemeFingerprintSet.contains(fingerprint)) {
+                    if (WareHouse.contains(fingerprint)) {
                         duplicateCount++;
                         continue; // 跳过重复方案
                     }
                     // 添加到去重仓库
-                    schemeFingerprintSet.add(fingerprint);
+                    WareHouse.add(fingerprint);
                     validSchemeCount++;
                     //合成方案
                     jsonMapCopy.put("loopInfo", loopInfoCopy);
@@ -432,7 +429,7 @@ public class PowerDistributionDriveOptimization {
         int hybridizationNumber = 0;
         List<Map<String, Object>> currentTopBest = topBest; // 初始 Top20
 
-        while (hybridizationNumber < IterationRestrictNumber) {
+        while (true) {
             System.out.println((hybridizationNumber + 1) + "代迭代开始");
 
             // 检查是否应该停止优化
@@ -492,11 +489,36 @@ public class PowerDistributionDriveOptimization {
                 continue;
             }
 
-            // 【关键修复】合并所有方案：原始Top20 + 交叉方案 + 变异方案
+            // 合并所有方案：原始Top20 + 交叉方案 + 变异方案
             List<Map<String, Object>> resuliList = new ArrayList<>(currentTopBest);
             resuliList.addAll(crossedSchemes);
             resuliList.addAll(mutatedSchemes);
+            // 【关键】检查方案数量是否达到最低要求，如果不够则补充
+            while (resuliList.size() < HybridizationLessRandomSamleNumber) {
+                int need = HybridizationLessRandomSamleNumber - resuliList.size();
+                System.out.println("方案数量不足，需要补充 " + need + " 个方案");
 
+                // 调用初代生成方法补充方案
+                List<Map<String, Object>> supplementedSchemes = generateInitialPopulation(
+                        need,
+                        targetLoops,
+                        loopInfos,
+                        appPositions,
+                        elecChangeablePosition,
+                        togetherGroup,
+                        mutualGroup,
+                        pointNameId,
+                        objectMapper,
+                        powerProjectCircuitInfoOutput,
+                        jsonToMap,
+                        topoInfoMap,
+                        projectInfo,
+                        loopElecById
+                );
+
+                System.out.println("补充生成 " + supplementedSchemes.size() + " 个方案");
+                resuliList.addAll(supplementedSchemes);
+            }
             // 按成本排序，选出新的 Top20
             currentTopBest = findBest.findBest(resuliList, "成本", TopNumber);
             System.out.println("第" + (hybridizationNumber + 1) + "代完成，最优成本: " +
@@ -672,7 +694,13 @@ public class PowerDistributionDriveOptimization {
         if (!success) {
             return null; // 约束冲突，返回 null
         }
+        // 【关键】生成方案指纹，检查是否与历史方案重复
+        String fingerprint = generateSchemeFingerprint(childLoops, childApps);
 
+        // 检查是否在 WareHouse 中（全局去重）
+        if (WareHouse.contains(fingerprint)) {
+            return null; // 与历史方案重复，跳过
+        }
         // 构建子代方案并计算成本
         Map<String, Object> tempJsonMap = new HashMap<>();
         tempJsonMap.put("loopInfos", childLoops);
@@ -698,13 +726,8 @@ public class PowerDistributionDriveOptimization {
                 map.put("caseId", projectInfo.get("caseId"));
                 map.put("finishStatue", "crossed");
                 map.put("initializationScheme", false);
-
-                // 检查是否重复
-                String fingerprint = generateSchemeFingerprint(childLoops, childApps);
-                if (schemeFingerprintSet.contains(fingerprint)) {
-                    return null; // 重复方案
-                }
-                schemeFingerprintSet.add(fingerprint);
+                // 添加到 WareHouse
+                WareHouse.add(fingerprint);
 
                 return map;
             }
@@ -912,12 +935,10 @@ public class PowerDistributionDriveOptimization {
 
                 // Step 3: 检查方案是否重复
                 String fingerprint = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
-                if (schemeFingerprintSet.contains(fingerprint)) {
-                    continue; // 重复方案，跳过
+                // 检查是否在 WareHouse 中（全局去重）
+                if (WareHouse.contains(fingerprint)) {
+                    continue; // 与历史方案重复，跳过
                 }
-
-                // Step 4: 添加到去重仓库
-                schemeFingerprintSet.add(fingerprint);
 
                 // Step 5: 构建完整的JSON方案并计算成本
                 Map<String, Object> tempJsonMap = new HashMap<>();
@@ -945,7 +966,8 @@ public class PowerDistributionDriveOptimization {
                         map.put("caseId", projectInfo.get("caseId"));
                         map.put("finishStatue", "mutated");
                         map.put("initializationScheme", false);
-
+                        // 【关键】添加到 WareHouse
+                        WareHouse.add(fingerprint);
                         mutatedSchemes.add(map);
                     }
                 } catch (Exception e) {
@@ -1320,44 +1342,6 @@ public class PowerDistributionDriveOptimization {
         return copy;
     }
 
-    /**
-     * 检查最优方案是否重复
-     */
-    private boolean isBestSchemeRepeated(List<Map<String, Object>> currentTopBest) {
-        if (WareHouse.isEmpty()) {
-            // 第一次，直接添加
-            List<String> bestFingerprints = new ArrayList<>();
-            for (Map<String, Object> scheme : currentTopBest) {
-                if (scheme.get("成本") != null) {
-                    bestFingerprints.add(String.valueOf(scheme.get("成本")));
-                }
-            }
-            WareHouse.add(bestFingerprints);
-            return false;
-        }
-
-        // 获取当前最优方案的成本指纹
-        List<String> currentFingerprints = new ArrayList<>();
-        for (Map<String, Object> scheme : currentTopBest) {
-            if (scheme.get("成本") != null) {
-                currentFingerprints.add(String.valueOf(scheme.get("成本")));
-            }
-        }
-
-        // 与上一代比较
-        List<String> lastFingerprints = WareHouse.get(WareHouse.size() - 1);
-        boolean isSame = currentFingerprints.equals(lastFingerprints);
-
-        // 添加到仓库
-        WareHouse.add(currentFingerprints);
-
-        // 保持仓库大小不超过限制
-        if (WareHouse.size() > 10) {
-            WareHouse.remove(0);
-        }
-
-        return isSame;
-    }
 
     /**
      * 生成遗传算法的初代种群
@@ -1435,13 +1419,14 @@ public class PowerDistributionDriveOptimization {
             );
 
             // Step 3: 检查方案是否重复
-            String s = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
-            if (schemeFingerprintSet.contains(s)) {
+            String fingerprint = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
+            // 检查是否在 WareHouse 中（全局去重）
+            if (WareHouse.contains(fingerprint)) {
                 continue; // 重复方案，跳过
             }
 
             // Step 4: 添加到去重仓库
-            schemeFingerprintSet.add(s);
+            WareHouse.add(fingerprint);
 
             // Step 5: 构建完整的JSON方案并计算成本
             Map<String, Object> tempJsonMap = new HashMap<>();
