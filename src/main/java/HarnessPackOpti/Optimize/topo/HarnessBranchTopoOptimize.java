@@ -692,7 +692,7 @@ public class HarnessBranchTopoOptimize {
                 }
             }
             if (BestRepetitionNumber == IterationRestrictNumber) {
-                System.out.println("迭代结束原因：迭代次数达到限制，后续与上一代结果相同达到30次");
+                System.out.println("迭代次数达到限制，后续与上一代结果相同达到30次");
                 break;
             }
             hybridizationNumber++;
