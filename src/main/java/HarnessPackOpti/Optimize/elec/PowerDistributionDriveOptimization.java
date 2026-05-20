@@ -67,7 +67,6 @@ public class PowerDistributionDriveOptimization {
     public List<Map<String, Object>> powerDriverOptimize(String jsonContent) throws Exception {
         long categoryTime = System.currentTimeMillis();
         ObjectMapper objectMapper = new ObjectMapper();
-        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         PowerProjectCircuitInfoOutput powerProjectCircuitInfoOutput = new PowerProjectCircuitInfoOutput();
         JsonToMap jsonToMap = new JsonToMap();
         Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
