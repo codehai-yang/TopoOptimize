@@ -2,6 +2,7 @@ package HarnessPackOpti;
 
 import HarnessPackOpti.ErrorOutput.CircuitErrorOutput;
 import HarnessPackOpti.ErrorOutput.HarnessBranchTopoOptiErrorOutPut;
+import HarnessPackOpti.Optimize.elec.PowerDistributionDriveOptimization;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoTest;
 import HarnessPackOpti.utils.GINEInferenceEngine;
@@ -12,12 +13,20 @@ import java.nio.file.Files;
 public class main {
     public static void main(String[] args) throws Exception {
 
+        //线束拓扑优化
+//        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
+//        String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
+//        HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
+//        harnessBranchTopoOptimize.topoOptimize(jsonContent);
+//        HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
+//        harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
+
+        //配电驱动优化
         File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
-        HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
-        harnessBranchTopoOptimize.topoOptimize(jsonContent);
-        HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
-        harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
+        PowerDistributionDriveOptimization powerDistributionDriveOptimization=new PowerDistributionDriveOptimization();
+        powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
+
 
 //        File file = new File("data/DataCoopWithEB/topoTxt/拓扑优化.txt");
 //        String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串；
