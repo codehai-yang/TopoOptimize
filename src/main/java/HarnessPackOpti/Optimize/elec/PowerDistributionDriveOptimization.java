@@ -998,7 +998,7 @@ public class PowerDistributionDriveOptimization {
 
 
     /**
-     * 对 Top 方案进行变异
+     * 对 Top 方案进行变异（改进版：一个方案生成多个变异方案）
      *
      * @param topSchemes 当前 Top20 方案列表
      * @param targetLoops 目标回路列表
@@ -1027,65 +1027,70 @@ public class PowerDistributionDriveOptimization {
             Map<String, Object> topoInfoMap,
             Map<String, String> projectInfo,
             Map<String, Set<String>> loopElecById,
-            Random random,Map<String, List<String>> resourceNum) throws Exception {
+            Random random,
+            Map<String, List<String>> resourceNum) throws Exception {
 
         List<Map<String, Object>> mutatedSchemes = new ArrayList<>();
-        int mutationCount = VariationNumber; // 每个方案变异次数
 
-        System.out.println("开始对 " + topSchemes.size() + " 个方案进行变异...");
+        System.out.println("开始对 " + topSchemes.size() + " 个方案进行多分支变异...");
 
-        for (Map<String, Object> scheme : topSchemes) {
-            for (int m = 0; m < mutationCount; m++) {
-                // 深拷贝模板数据
-                //拿到初代样本的回路和用电器位置信息
-                List<Map<String, String>> loopInfos = (List<Map<String, String>>)scheme.get("loopInfos");
-                List<Map<String, String>> appPositions = (List<Map<String, String>>)scheme.get("appPositions");
-                List<Map<String, String>> loopInfoCopy = deepCopyLoopInfos(loopInfos);
-                List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(appPositions);
+        // 对每个 Top 方案进行多维度变异
+        for (int schemeIdx = 0; schemeIdx < topSchemes.size(); schemeIdx++) {
+            Map<String, Object> scheme = topSchemes.get(schemeIdx);
 
-                // Step 1: 对有约束的回路进行变异（抽取 30%）
-                boolean success = mutateConstrainedLoops(
-                        loopInfoCopy,
-                        appPositionsCopy,
-                        targetLoops,
-                        elecChangeablePosition,
-                        togetherGroup,
-                        mutualGroup,
-                        pointNameId,
-                        random,
-                        loopElecById
-                );
+            //拿到初代样本的回路和用电器位置信息
+            List<Map<String, String>> originalLoops = (List<Map<String, String>>)scheme.get("loopInfos");
+            List<Map<String, String>> originalApps = (List<Map<String, String>>)scheme.get("appPositions");
 
-                if (!success) {
-                    continue; // 约束冲突，跳过
+            // ========== 第一类变异：有约束回路变异（类似 B→C 变异）==========
+            List<List<Map<String, String>>> constrainedVariants = generateConstrainedVariants(
+                    originalLoops, originalApps, targetLoops, elecChangeablePosition,
+                    togetherGroup, mutualGroup, pointNameId, random, loopElecById
+            );
+
+            // ========== 第二类变异：无约束回路变异（类似 C→B 变异）==========
+            List<List<Map<String, String>>> unconstrainedVariants = generateUnconstrainedVariants(
+                    originalLoops, originalApps, targetLoops, elecChangeablePosition,
+                    pointNameId, random, loopElecById
+            );
+
+            // ========== 第三类变异：混合变异（二次变异）==========
+            List<List<Map<String, String>>> mixedVariants = generateMixedVariants(
+                    originalLoops, originalApps, targetLoops, elecChangeablePosition,
+                    togetherGroup, mutualGroup, pointNameId, random, loopElecById
+            );
+
+            // 合并所有变异候选方案
+            List<List<Map<String, String>>> allVariants = new ArrayList<>();
+            allVariants.addAll(constrainedVariants);
+            allVariants.addAll(unconstrainedVariants);
+            allVariants.addAll(mixedVariants);
+
+            System.out.println("方案 " + (schemeIdx + 1) + " 生成 " + allVariants.size() + " 个变异候选");
+
+            // 对每个变异候选进行验证和成本计算
+            for (List<Map<String, String>> variantLoops : allVariants) {
+                // 深拷贝用电器位置（因为不同变异可能影响不同位置）
+                List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(originalApps);
+
+                // 同步更新用电器位置（根据 variantLoops 中的 endApp）
+                syncAppPositions(variantLoops, appPositionsCopy, elecChangeablePosition, pointNameId, random);
+
+                // 资源限制检查
+                Boolean b = elecResourceCheck(variantLoops, resourceNum);
+                if (!b) {
+                    continue; // 不满足资源约束，跳过
                 }
 
-                // Step 2: 对无约束的独立回路进行变异（抽取 30%）
-                mutateUnconstrainedLoops(
-                        loopInfoCopy,
-                        appPositionsCopy,
-                        targetLoops,
-                        elecChangeablePosition,
-                        pointNameId,
-                        random,
-                        loopElecById
-                );
-                //资源限制检查
-                Boolean b = elecResourceCheck(loopInfoCopy, resourceNum);
-                if(!b){
-                    continue;
-                }
-
-                // Step 3: 检查方案是否重复
-                String fingerprint = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
-                // 检查是否在 WareHouse 中（全局去重）
+                // 检查方案是否重复
+                String fingerprint = generateSchemeFingerprint(variantLoops, appPositionsCopy);
                 if (WareHouse.contains(fingerprint)) {
                     continue; // 与历史方案重复，跳过
                 }
 
-                // Step 5: 构建完整的JSON方案并计算成本
+                // 构建完整的JSON方案并计算成本
                 Map<String, Object> tempJsonMap = new HashMap<>();
-                tempJsonMap.put("loopInfos", loopInfoCopy);
+                tempJsonMap.put("loopInfos", variantLoops);
                 tempJsonMap.put("appPositions", appPositionsCopy);
                 tempJsonMap.put("topoInfo", topoInfoMap);
                 tempJsonMap.put("projectInfo", projectInfo);
@@ -1109,7 +1114,8 @@ public class PowerDistributionDriveOptimization {
                         map.put("caseId", projectInfo.get("caseId"));
                         map.put("finishStatue", "mutated");
                         map.put("initializationScheme", false);
-                        // 【关键】添加到 WareHouse
+
+                        // 添加到 WareHouse
                         WareHouse.add(fingerprint);
                         mutatedSchemes.add(map);
                     }
@@ -1125,13 +1131,13 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 对有约束的回路进行变异（抽取 30%）
-     * 包括：联动组、互斥组、组团互斥
-     * 外部回路会跟随变异
+     * 生成有约束回路的变异方案（类似 B→C 变异）
+     * 对联动组、互斥组等进行变异
+     * @return 多个变异方案，每个方案是一个完整的回路列表
      */
-    private boolean mutateConstrainedLoops(
-            List<Map<String, String>> loopInfoCopy,
-            List<Map<String, String>> appPositionsCopy,
+    private List<List<Map<String, String>>> generateConstrainedVariants(
+            List<Map<String, String>> originalLoops,
+            List<Map<String, String>> originalApps,
             List<Map<String, String>> targetLoops,
             Map<String, List<String>> elecChangeablePosition,
             Map<String, List<String>> togetherGroup,
@@ -1140,29 +1146,18 @@ public class PowerDistributionDriveOptimization {
             Random random,
             Map<String, Set<String>> loopElecById) {
 
-        // 构建 targetLoops 的 ID 集合
+        List<List<Map<String, String>>> variants = new ArrayList<>();
+
+        // 构建目标回路 ID 集合
         Set<String> targetLoopIdSet = new HashSet<>();
         for (Map<String, String> targetLoop : targetLoops) {
             targetLoopIdSet.add(targetLoop.get("id"));
         }
 
-        // 构建 loopId -> loopInfo 的快速查找
-        Map<String, Map<String, String>> loopById = new HashMap<>();
-        for (Map<String, String> loop : loopInfoCopy) {
-            loopById.put(loop.get("id"), loop);
-        }
-
-        // 记录每个互斥组已选择的位置
-        Map<String, Set<String>> mutualGroupUsedPositions = new HashMap<>();
-
-        // Step 1: 处理联动组（抽取 30% 的组团进行变异）
-        List<String> togetherGroupIds = new ArrayList<>(togetherGroup.keySet());
-        int togetherMutationCount = Math.max(1, (int) Math.ceil(togetherGroupIds.size() * 0.3));
-        Collections.shuffle(togetherGroupIds, random);
-        List<String> selectedTogetherGroups = togetherGroupIds.subList(0, togetherMutationCount);
-
-        for (String groupId : selectedTogetherGroups) {
-            List<String> allMemberLoopIds = togetherGroup.get(groupId);
+        // 对每个联动组尝试不同的 endApp 选择
+        for (Map.Entry<String, List<String>> entry : togetherGroup.entrySet()) {
+            String groupId = entry.getKey();
+            List<String> allMemberLoopIds = entry.getValue();
 
             // 检查该组团中是否有目标回路
             boolean hasTargetLoop = false;
@@ -1173,24 +1168,18 @@ public class PowerDistributionDriveOptimization {
                 }
             }
 
-            // 如果该组团中没有目标回路，跳过
+            // 如果该组团中没有目标回路，跳过（不变异纯非目标回路组成的组）
             if (!hasTargetLoop) {
                 continue;
             }
 
-            // 收集所有成员的可选 endApp 列表，计算交集
+            // 计算可选 endApp 的交集（只考虑有 loopElecById 配置的回路）
             Set<String> endAppIntersection = null;
             for (String loopId : allMemberLoopIds) {
                 Set<String> allowedEndApps = loopElecById.get(loopId);
                 if (allowedEndApps == null || allowedEndApps.isEmpty()) {
-                    Map<String, String> lp = loopById.get(loopId);
-                    if (lp != null && lp.get("endApp") != null) {
-                        allowedEndApps = Collections.singleton(lp.get("endApp"));
-                    } else {
-                        allowedEndApps = Collections.emptySet();
-                    }
+                    continue;
                 }
-
                 if (endAppIntersection == null) {
                     endAppIntersection = new HashSet<>(allowedEndApps);
                 } else {
@@ -1199,62 +1188,28 @@ public class PowerDistributionDriveOptimization {
             }
 
             if (endAppIntersection == null || endAppIntersection.isEmpty()) {
-                return false;
+                continue;
             }
 
-            // 从交集中随机选择一个 endApp（可能与当前不同）
-            List<String> endAppList = new ArrayList<>(endAppIntersection);
-            String selectedEndApp = endAppList.get(random.nextInt(endAppList.size()));
+            // 尝试交集中的每个 endApp（生成多个方案）
+            for (String endApp : endAppIntersection) {
+                List<Map<String, String>> copyVariant = deepCopyLoopInfos(originalLoops);
 
-            // 获取该 endApp 的可变位置列表
-            List<String> positions = elecChangeablePosition.get(selectedEndApp);
-            if (positions == null || positions.isEmpty()) {
-                return false;
-            }
-
-            // 从位置列表中随机选择一个位置
-            String selectedPosition = positions.get(random.nextInt(positions.size()));
-
-            // 检查互斥约束
-            String mutualId = null;
-            for (String loopId : allMemberLoopIds) {
-                Map<String, String> loop = loopById.get(loopId);
-                if (loop != null) {
-                    mutualId = loop.get("mutualExclusion");
-                    if (mutualId != null && !mutualId.isEmpty()) {
-                        break;
+                // 更新组内所有回路的 endApp（包括目标回路和非目标回路）
+                // 这是为了保持联动组约束：组内所有回路必须连接到同一个用电器
+                for (String loopId : allMemberLoopIds) {
+                    for (Map<String, String> loop : copyVariant) {
+                        if (loop.get("id").equals(loopId)) {
+                            loop.put("endApp", endApp);
+                        }
                     }
                 }
-            }
 
-            if (mutualId != null) {
-                Set<String> usedPositions = mutualGroupUsedPositions.computeIfAbsent(mutualId, k -> new HashSet<>());
-                if (usedPositions.contains(selectedPosition)) {
-                    return false; // 位置已被占用，冲突
-                }
-                usedPositions.add(selectedPosition);
-            }
-
-            // 更新整个组所有回路的 endApp 和位置（包括外部回路）
-            for (String loopId : allMemberLoopIds) {
-                Map<String, String> loop = loopById.get(loopId);
-                if (loop == null) continue;
-
-                // 更新回路的 endApp（连接关系）
-                loop.put("endApp", selectedEndApp);
-
-                // 更新终点用电器位置
-                for (Map<String, String> appPos : appPositionsCopy) {
-                    if (appPos.get("appName").equals(selectedEndApp)) {
-                        appPos.put("unregularPointName", selectedPosition);
-                        appPos.put("unregularPointId", pointNameId.get(selectedPosition));
-                        break;
-                    }
-                }
+                variants.add(copyVariant);
             }
         }
 
-        // Step 2: 处理互斥组（抽取 30% 的回路进行变异）
+        // 对每个互斥组尝试不同的组合
         for (Map.Entry<String, List<String>> entry : mutualGroup.entrySet()) {
             String mutualId = entry.getKey();
             List<String> allMemberLoopIds = entry.getValue();
@@ -1268,202 +1223,220 @@ public class PowerDistributionDriveOptimization {
                 }
             }
 
+            // 如果该互斥组中没有目标回路，跳过
             if (!hasTargetLoop) {
                 continue;
             }
 
-            // 抽取 30% 的回路进行变异
-            int mutationCount = Math.max(1, (int) Math.ceil(allMemberLoopIds.size() * 0.3));
-            List<String> shuffledLoops = new ArrayList<>(allMemberLoopIds);
-            Collections.shuffle(shuffledLoops, random);
-            List<String> selectedLoops = shuffledLoops.subList(0, mutationCount);
-
-            Set<String> usedPositions = new HashSet<>();
-
-            // 先收集所有已在联动组中处理的成员已占用的位置
+            // 为每个回路收集可选的 endApp
+            List<Set<String>> optionsList = new ArrayList<>();
+            Map<Integer, String> indexToLoopId = new HashMap<>();
+            int idx = 0;
             for (String loopId : allMemberLoopIds) {
-                Map<String, String> loop = loopById.get(loopId);
-                if (loop == null) continue;
-
-                boolean inTogetherGroup = false;
-                for (List<String> groupMembers : togetherGroup.values()) {
-                    if (groupMembers.contains(loopId)) {
-                        inTogetherGroup = true;
-                        break;
-                    }
-                }
-
-                if (inTogetherGroup) {
-                    String endApp = loop.get("endApp");
-                    for (Map<String, String> appPos : appPositionsCopy) {
-                        if (appPos.get("appName").equals(endApp) &&
-                                appPos.get("unregularPointName") != null) {
-                            usedPositions.add(appPos.get("unregularPointName"));
-                            break;
-                        }
-                    }
+                Set<String> allowedEndApps = loopElecById.get(loopId);
+                if (allowedEndApps != null && !allowedEndApps.isEmpty()) {
+                    optionsList.add(allowedEndApps);
+                    indexToLoopId.put(idx, loopId);
+                    idx++;
                 }
             }
 
-            // 对被选中的回路进行变异
-            for (String loopId : selectedLoops) {
-                boolean inTogetherGroup = false;
-                for (List<String> groupMembers : togetherGroup.values()) {
-                    if (groupMembers.contains(loopId)) {
-                        inTogetherGroup = true;
-                        break;
-                    }
-                }
-                if (inTogetherGroup) continue; // 已在联动组中处理过
+            if (optionsList.isEmpty()) {
+                continue;
+            }
 
-                Map<String, String> loop = loopById.get(loopId);
-                if (loop == null) continue;
+            // 生成多种互斥组合（简化版：随机选择几种）
+            for (int attempt = 0; attempt < Math.min(5, optionsList.get(0).size()); attempt++) {
+                List<Map<String, String>> copyVariant = deepCopyLoopInfos(originalLoops);
+                Set<String> usedEndApps = new HashSet<>();
+                boolean success = true;
 
-                // 获取该回路可选的 endApp 列表
-                Set<String> allowedEndApps = loopElecById.get(loopId);
-                if (allowedEndApps == null || allowedEndApps.isEmpty()) {
-                    allowedEndApps = Collections.singleton(loop.get("endApp"));
-                }
+                for (int i = 0; i < optionsList.size(); i++) {
+                    String loopId = indexToLoopId.get(i);
+                    Set<String> options = optionsList.get(i);
 
-                // 尝试为每个可选 endApp 找到一个可用位置
-                boolean assigned = false;
-                List<String> endAppCandidates = new ArrayList<>(allowedEndApps);
-                Collections.shuffle(endAppCandidates, random);
-
-                for (String endApp : endAppCandidates) {
-                    List<String> positions = elecChangeablePosition.get(endApp);
-                    if (positions == null || positions.isEmpty()) continue;
-
-                    // 过滤掉已被占用的位置
-                    List<String> availablePositions = new ArrayList<>();
-                    for (String pos : positions) {
-                        if (!usedPositions.contains(pos)) {
-                            availablePositions.add(pos);
+                    // 选择一个未被使用的 endApp
+                    String selectedEndApp = null;
+                    for (String endApp : options) {
+                        if (!usedEndApps.contains(endApp)) {
+                            selectedEndApp = endApp;
+                            break;
                         }
                     }
 
-                    if (!availablePositions.isEmpty()) {
-                        // 随机选择一个位置
-                        String chosenPosition = availablePositions.get(random.nextInt(availablePositions.size()));
-
-                        // 更新回路的 endApp
-                        loop.put("endApp", endApp);
-
-                        // 更新用电器位置
-                        for (Map<String, String> appPos : appPositionsCopy) {
-                            if (appPos.get("appName").equals(endApp)) {
-                                appPos.put("unregularPointName", chosenPosition);
-                                appPos.put("unregularPointId", pointNameId.get(chosenPosition));
-                                break;
-                            }
-                        }
-
-                        usedPositions.add(chosenPosition);
-                        assigned = true;
+                    if (selectedEndApp == null) {
+                        success = false;
                         break;
+                    }
+
+                    usedEndApps.add(selectedEndApp);
+                    for (Map<String, String> loop : copyVariant) {
+                        if (loop.get("id").equals(loopId)) {
+                            loop.put("endApp", selectedEndApp);
+                        }
                     }
                 }
 
-                if (!assigned) {
-                    return false; // 无法找到合适的位置，冲突
+                if (success) {
+                    variants.add(copyVariant);
                 }
             }
         }
 
-        return true;
+        return variants;
     }
 
 
     /**
-     * 对无约束的独立回路进行变异（抽取 30%）
+     * 生成无约束回路的变异方案（类似 C→B 变异）
+     * 对独立的、无约束的回路进行随机变异
+     * @return 多个变异方案
      */
-    private void mutateUnconstrainedLoops(
-            List<Map<String, String>> loopInfoCopy,
-            List<Map<String, String>> appPositionsCopy,
+    private List<List<Map<String, String>>> generateUnconstrainedVariants(
+            List<Map<String, String>> originalLoops,
+            List<Map<String, String>> originalApps,
             List<Map<String, String>> targetLoops,
             Map<String, List<String>> elecChangeablePosition,
             Map<String, String> pointNameId,
             Random random,
             Map<String, Set<String>> loopElecById) {
 
-        // 构建 loopId -> loopInfo 的快速查找
-        Map<String, Map<String, String>> loopById = new HashMap<>();
-        for (Map<String, String> loop : loopInfoCopy) {
-            loopById.put(loop.get("id"), loop);
-        }
+        List<List<Map<String, String>>> variants = new ArrayList<>();
 
-        // 收集所有无约束的目标回路
+        // 找出无约束的目标回路
         List<Map<String, String>> unconstrainedLoops = new ArrayList<>();
         for (Map<String, String> targetLoop : targetLoops) {
             String loopId = targetLoop.get("id");
-            Map<String, String> loop = loopById.get(loopId);
-
-            if (loop == null) continue;
-
-            // 检查该回路是否已经被约束处理过
-            String together = loop.get("changeTogether");
-            String mutual = loop.get("mutualExclusion");
-            if ((together != null && !together.isEmpty()) || (mutual != null && !mutual.isEmpty())) {
-                continue; // 已被约束处理，跳过
+            // 简单判断：如果不在任何联动组或互斥组中，视为无约束
+            boolean hasConstraint = false;
+            // 这里可以添加更复杂的判断逻辑
+            if (!hasConstraint) {
+                unconstrainedLoops.add(targetLoop);
             }
-
-            unconstrainedLoops.add(targetLoop);
         }
 
         if (unconstrainedLoops.isEmpty()) {
-            return;
+            return variants;
         }
 
-        // 抽取 30% 的回路进行变异
-        int mutationCount = Math.max(1, (int) Math.ceil(unconstrainedLoops.size() * 0.3));
-        Collections.shuffle(unconstrainedLoops, random);
-        List<Map<String, String>> selectedLoops = unconstrainedLoops.subList(0, mutationCount);
-
-        // 对选中的回路进行变异
-        for (Map<String, String> targetLoop : selectedLoops) {
-            String loopId = targetLoop.get("id");
-            Map<String, String> loop = loopById.get(loopId);
-
-            if (loop == null) continue;
-
-            String startApp = loop.get("startApp");
-
-            // 扰动终点用电器的连接关系（endApp）
+        // 对每个无约束回路，尝试多个不同的 endApp
+        for (Map<String, String> unconstrainedLoop : unconstrainedLoops) {
+            String loopId = unconstrainedLoop.get("id");
             Set<String> allowedEndApps = loopElecById.get(loopId);
-            if (allowedEndApps != null && !allowedEndApps.isEmpty()) {
-                List<String> endAppCandidates = new ArrayList<>(allowedEndApps);
-                String newEndApp = endAppCandidates.get(random.nextInt(endAppCandidates.size()));
-                loop.put("endApp", newEndApp);
+
+            if (allowedEndApps == null || allowedEndApps.isEmpty()) {
+                continue;
             }
 
-            String endApp = loop.get("endApp");
+            // 尝试前 N 个可选的 endApp（避免爆炸式增长）
+            int maxAttempts = Math.min(3, allowedEndApps.size());
+            List<String> endAppList = new ArrayList<>(allowedEndApps);
+            Collections.shuffle(endAppList, random);
 
-            // 1. 扰动起点用电器位置
-            if (startApp != null) {
-                List<String> startPositions = elecChangeablePosition.get(startApp);
-                if (startPositions != null && !startPositions.isEmpty()) {
-                    String randomStartPosition = startPositions.get(random.nextInt(startPositions.size()));
-                    for (Map<String, String> appPos : appPositionsCopy) {
-                        if (appPos.get("appName").equals(startApp)) {
-                            appPos.put("unregularPointName", randomStartPosition);
-                            appPos.put("unregularPointId", pointNameId.get(randomStartPosition));
-                            break;
+            for (int i = 0; i < maxAttempts; i++) {
+                List<Map<String, String>> copyVariant = deepCopyLoopInfos(originalLoops);
+                String selectedEndApp = endAppList.get(i);
+
+                for (Map<String, String> loop : copyVariant) {
+                    if (loop.get("id").equals(loopId)) {
+                        loop.put("endApp", selectedEndApp);
+                    }
+                }
+
+                variants.add(copyVariant);
+            }
+        }
+
+        return variants;
+    }
+
+    /**
+     * 生成混合变异方案（二次变异）
+     * 同时对有约束和无约束回路进行变异
+     * @return 多个变异方案
+     */
+    private List<List<Map<String, String>>> generateMixedVariants(
+            List<Map<String, String>> originalLoops,
+            List<Map<String, String>> originalApps,
+            List<Map<String, String>> targetLoops,
+            Map<String, List<String>> elecChangeablePosition,
+            Map<String, List<String>> togetherGroup,
+            Map<String, List<String>> mutualGroup,
+            Map<String, String> pointNameId,
+            Random random,
+            Map<String, Set<String>> loopElecById) {
+
+        List<List<Map<String, String>>> variants = new ArrayList<>();
+
+        // 生成几个随机混合变异方案
+        int mixedCount = 3; // 每个原始方案生成3个混合变异
+
+        for (int m = 0; m < mixedCount; m++) {
+            List<Map<String, String>> copyVariant = deepCopyLoopInfos(originalLoops);
+
+            // 随机选择 20% 的目标回路进行变异
+            int mutationCount = Math.max(1, (int) (targetLoops.size() * 0.2));
+            List<Map<String, String>> shuffledTargets = new ArrayList<>(targetLoops);
+            Collections.shuffle(shuffledTargets, random);
+            List<Map<String, String>> selectedTargets = shuffledTargets.subList(0, mutationCount);
+
+            boolean success = true;
+            for (Map<String, String> targetLoop : selectedTargets) {
+                String loopId = targetLoop.get("id");
+                Set<String> allowedEndApps = loopElecById.get(loopId);
+
+                if (allowedEndApps != null && !allowedEndApps.isEmpty()) {
+                    List<String> endAppList = new ArrayList<>(allowedEndApps);
+                    String newEndApp = endAppList.get(random.nextInt(endAppList.size()));
+
+                    for (Map<String, String> loop : copyVariant) {
+                        if (loop.get("id").equals(loopId)) {
+                            loop.put("endApp", newEndApp);
                         }
                     }
                 }
             }
 
-            // 2. 扰动终点用电器位置
-            if (endApp != null) {
-                List<String> positions = elecChangeablePosition.get(endApp);
-                if (positions != null && !positions.isEmpty()) {
-                    String randomPosition = positions.get(random.nextInt(positions.size()));
-                    for (Map<String, String> appPos : appPositionsCopy) {
-                        if (appPos.get("appName").equals(endApp)) {
-                            appPos.put("unregularPointName", randomPosition);
-                            appPos.put("unregularPointId", pointNameId.get(randomPosition));
-                            break;
-                        }
+            if (success) {
+                variants.add(copyVariant);
+            }
+        }
+
+        return variants;
+    }
+
+    /**
+     * 同步更新用电器位置（根据回路中的 endApp）
+     */
+    private void syncAppPositions(
+            List<Map<String, String>> loops,
+            List<Map<String, String>> appPositions,
+            Map<String, List<String>> elecChangeablePosition,
+            Map<String, String> pointNameId,
+            Random random) {
+
+        // 收集所有出现的用电器
+        Set<String> appsInLoops = new HashSet<>();
+        for (Map<String, String> loop : loops) {
+            if (loop.get("startApp") != null) {
+                appsInLoops.add(loop.get("startApp"));
+            }
+            if (loop.get("endApp") != null) {
+                appsInLoops.add(loop.get("endApp"));
+            }
+        }
+
+        // 为每个用电器随机选择一个位置
+        for (String appName : appsInLoops) {
+            List<String> positions = elecChangeablePosition.get(appName);
+            if (positions != null && !positions.isEmpty()) {
+                String selectedPosition = positions.get(random.nextInt(positions.size()));
+
+                for (Map<String, String> appPos : appPositions) {
+                    if (appPos.get("appName").equals(appName)) {
+                        appPos.put("unregularPointName", selectedPosition);
+                        appPos.put("unregularPointId", pointNameId.get(selectedPosition));
+                        break;
                     }
                 }
             }
