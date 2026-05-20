@@ -98,7 +98,7 @@ public class PowerDistributionDriveOptimization {
         List<Map<String, String>> elecLoopList = new ArrayList<>();
         // 驱动回路
         List<Map<String, String>> driveLoopList = new ArrayList<>();
-        // 资源数量读取
+        // 资源数量读取：{"2","5","不限"}分别对应大，中，小电流
         Map<String, List<String>> resourceNum = new HashMap<>();
         // 组团一起变：groupId → [loopId, ...]
         Map<String, List<String>> togetherGroup = new HashMap<>();
@@ -137,7 +137,7 @@ public class PowerDistributionDriveOptimization {
         //查找用电器自身位置点
         Map<String, String> eleclection = getEleclection(appPositions);
 
-        // 【关键修复】先收集直连接口分组（需要在构建 elecChangeablePosition 之前）
+        // 先收集直连接口分组（需要在构建 elecChangeablePosition 之前）
         Map<String, List<String>> interfaceCodegroup = new HashMap<>();
         Set<String> pointNameSet = new HashSet<>();
         if (whetherToChange) {
@@ -280,8 +280,6 @@ public class PowerDistributionDriveOptimization {
 
             if (targetLoops != null && !targetLoops.isEmpty()) {
                 // 执行枚举
-                Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
-
                 enumerateAllSchemes(targetLoops, elecChangeablePosition, togetherGroup, mutualGroup, loopInfos,loopElecById);
 
                 System.out.println("枚举耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
@@ -289,6 +287,7 @@ public class PowerDistributionDriveOptimization {
                 // 每个方案格式: Map<回路ID, "起点用电器|终点用电器|起点位置|终点位置">
                 // 遍历所有方案
                 for (int i = 0; i < enumeratedSchemes.size(); i++) {
+                    Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
                     Map<String, String> scheme = enumeratedSchemes.get(i);
 
                     //存储指定连接关系和用电器位置的数据以方便后续去重
@@ -352,28 +351,35 @@ public class PowerDistributionDriveOptimization {
                         duplicateCount++;
                         continue; // 跳过重复方案
                     }
+                    //资源数量检查，和位置无关
+                    Boolean aBoolean = elecResourceCheck(loopInfoCopy,resourceNum);
+                    //不符合约束的方案跳过
+                    if(!aBoolean){
+                        continue;
+                    }
+
                     // 添加到去重仓库
                     WareHouse.add(fingerprint);
                     validSchemeCount++;
                     //合成方案
                     jsonMapCopy.put("loopInfo", loopInfoCopy);
                     jsonMapCopy.put("appPositions", appPositionsCopy);
-                }
-                //计算成本
-                String s = powerProjectCircuitInfoOutput.powerOptimize(jsonContent);
-                Map<String, Object> map = jsonToMap.TransJsonToMap(s);
-                Map<String, Object> projectCircuitInfo = (Map<String, Object>) map.get("projectCircuitInfo");
-                Map<String, Double> projectCost = new HashMap<>();
-                projectCost.put("总成本", (Double) projectCircuitInfo.get("总成本"));
-                projectCost.put("总重量", (Double) projectCircuitInfo.get("回路总重量"));
-                projectCost.put("总长度", (Double) projectCircuitInfo.get("回路总长度"));
+                    //计算成本
+                    String s = powerProjectCircuitInfoOutput.powerOptimize(jsonContent);
+                    Map<String, Object> map = jsonToMap.TransJsonToMap(s);
+                    Map<String, Object> projectCircuitInfo = (Map<String, Object>) map.get("projectCircuitInfo");
+                    Map<String, Double> projectCost = new HashMap<>();
+                    projectCost.put("总成本", (Double) projectCircuitInfo.get("总成本"));
+                    projectCost.put("总重量", (Double) projectCircuitInfo.get("回路总重量"));
+                    projectCost.put("总长度", (Double) projectCircuitInfo.get("回路总长度"));
 
-                map.put("成本", projectCost);
-                map.put("topoId", topoInfoMap.get("id").toString());
-                map.put("caseId", projectInfo.get("caseId"));
-                map.put("finishStatue", "normal");
-                map.put("initializationScheme", false);
-                resultList.add(map);
+                    map.put("成本", projectCost);
+                    map.put("topoId", topoInfoMap.get("id").toString());
+                    map.put("caseId", projectInfo.get("caseId"));
+                    map.put("finishStatue", "normal");
+                    map.put("initializationScheme", false);
+                    resultList.add(map);
+                }
             }
             System.out.println("重复方案数: " + duplicateCount);
             System.out.println("有效方案数: " + validSchemeCount);
@@ -411,7 +417,8 @@ public class PowerDistributionDriveOptimization {
                     jsonToMap,
                     topoInfoMap,
                     projectInfo,
-                    loopElecById
+                    loopElecById,
+                    resourceNum
             );
 
             System.out.println("初代样本生成耗时: " + (System.currentTimeMillis() - gaInitTime) + "ms");
@@ -454,7 +461,8 @@ public class PowerDistributionDriveOptimization {
                     topoInfoMap,
                     projectInfo,
                     loopElecById,
-                    random
+                    random,
+                    resourceNum
             );
 
             System.out.println("交叉生成 " + crossedSchemes.size() + " 个方案");
@@ -479,7 +487,8 @@ public class PowerDistributionDriveOptimization {
                     topoInfoMap,
                     projectInfo,
                     loopElecById,
-                    random
+                    random,
+                    resourceNum
             );
             System.out.println("变异生成 " + mutatedSchemes.size() + " 个方案");
 
@@ -494,6 +503,7 @@ public class PowerDistributionDriveOptimization {
             resuliList.addAll(crossedSchemes);
             resuliList.addAll(mutatedSchemes);
             // 【关键】检查方案数量是否达到最低要求，如果不够则补充
+            int numb = 0;
             while (resuliList.size() < HybridizationLessRandomSamleNumber) {
                 int need = HybridizationLessRandomSamleNumber - resuliList.size();
                 System.out.println("方案数量不足，需要补充 " + need + " 个方案");
@@ -513,10 +523,13 @@ public class PowerDistributionDriveOptimization {
                         jsonToMap,
                         topoInfoMap,
                         projectInfo,
-                        loopElecById
+                        loopElecById,
+                        resourceNum
                 );
-
-                System.out.println("补充生成 " + supplementedSchemes.size() + " 个方案");
+                numb++;
+                if(numb > AutoCompleteNumber){
+                    break;
+                }
                 resuliList.addAll(supplementedSchemes);
             }
             // 按成本排序，选出新的 Top20
@@ -563,6 +576,127 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
+     * 资源连接数量检查
+     * @param loopInfos 生成的方案回路列表
+     * @param resourceNum 前端传入的每个用电器的电流限制 {"ECU": ["2", "5", "不限"]}
+     * @return true-满足约束，false-不满足约束
+     */
+    public Boolean elecResourceCheck(List<Map<String, String>> loopInfos, Map<String, List<String>> resourceNum){
+        // 存储现有方案中每个用电器的大、中、小电流回路数量
+        // 结构: {"ECU": {"large": 3, "medium": 2, "small": 1}}
+        Map<String, Map<String, Integer>> currentResource = new HashMap<>();
+
+        // 找出哪些用电器有资源限制
+        Set<String> restrictedApps = resourceNum.keySet();
+
+        // 遍历方案中的所有回路，统计每个用电器的电流类型数量
+        for (Map<String, String> loopInfo : loopInfos) {
+            String startApp = loopInfo.get("startApp");
+            String endApp = loopInfo.get("endApp");
+            String wireType = loopInfo.get("loopWireway");
+
+            if (wireType == null || wireType.isEmpty()) {
+                continue;
+            }
+
+            // 获取方铜数量，判断电流类型
+            // split[1]是一个数字，>=6表示大电流，>2且<6表示中电流，<=2表示小电流
+            String[] split = wireType.split(" ");
+            if (split.length < 2) {
+                continue;
+            }
+
+            String currentType;
+            try {
+                int copperCount = Integer.parseInt(split[1]);
+                if (copperCount >= 6) {
+                    currentType = "large";
+                } else if (copperCount > 2) {
+                    currentType = "medium";
+                } else {
+                    currentType = "small";
+                }
+            } catch (NumberFormatException e) {
+                // 如果解析失败，跳过该回路
+                continue;
+            }
+
+            // 统计起点用电器的电流类型数量
+            if (restrictedApps.contains(startApp)) {
+                currentResource.computeIfAbsent(startApp, k -> new HashMap<>());
+                Map<String, Integer> appResource = currentResource.get(startApp);
+                appResource.merge(currentType, 1, Integer::sum);
+            }
+
+            // 统计终点用电器的电流类型数量
+            if (restrictedApps.contains(endApp)) {
+                currentResource.computeIfAbsent(endApp, k -> new HashMap<>());
+                Map<String, Integer> appResource = currentResource.get(endApp);
+                appResource.merge(currentType, 1, Integer::sum);
+            }
+        }
+
+        // 检查每个有限制的用电器是否满足资源约束
+        for (String appName : restrictedApps) {
+            List<String> limits = resourceNum.get(appName);
+            if (limits == null || limits.size() < 3) {
+                continue;
+            }
+
+            // 获取该用电器实际的电流回路数量
+            Map<String, Integer> actualResource = currentResource.getOrDefault(appName, new HashMap<>());
+            int actualLarge = actualResource.getOrDefault("large", 0);
+            int actualMedium = actualResource.getOrDefault("medium", 0);
+            int actualSmall = actualResource.getOrDefault("small", 0);
+
+            // 检查大电流限制
+            String largeLimit = limits.get(0);
+            if (!"不限".equals(largeLimit) && !largeLimit.isEmpty()) {
+                try {
+                    int maxLarge = Integer.parseInt(largeLimit);
+                    if (actualLarge > maxLarge) {
+                        System.out.println("用电器 " + appName + " 大电流超限: 实际" + actualLarge + " > 限制" + maxLarge);
+                        return false;
+                    }
+                } catch (NumberFormatException e) {
+                    // 如果不是数字且不是"不限"，跳过
+                }
+            }
+
+            // 检查中电流限制
+            String mediumLimit = limits.get(1);
+            if (!"不限".equals(mediumLimit) && !mediumLimit.isEmpty()) {
+                try {
+                    int maxMedium = Integer.parseInt(mediumLimit);
+                    if (actualMedium > maxMedium) {
+                        System.out.println("用电器 " + appName + " 中电流超限: 实际" + actualMedium + " > 限制" + maxMedium);
+                        return false;
+                    }
+                } catch (NumberFormatException e) {
+                    // 如果不是数字且不是"不限"，跳过
+                }
+            }
+
+            // 检查小电流限制
+            String smallLimit = limits.get(2);
+            if (!"不限".equals(smallLimit) && !smallLimit.isEmpty()) {
+                try {
+                    int maxSmall = Integer.parseInt(smallLimit);
+                    if (actualSmall > maxSmall) {
+                        System.out.println("用电器 " + appName + " 小电流超限: 实际" + actualSmall + " > 限制" + maxSmall);
+                        return false;
+                    }
+                } catch (NumberFormatException e) {
+                    // 如果不是数字且不是"不限"，跳过
+                }
+            }
+        }
+
+        // 所有用电器都满足约束
+        return true;
+    }
+
+    /**
      * 交叉操作：对 Top 方案进行随机配对交叉
      */
     private List<Map<String, Object>> crossoverTopSchemes(
@@ -580,7 +714,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, Object> topoInfoMap,
             Map<String, String> projectInfo,
             Map<String, Set<String>> loopElecById,
-            Random random) throws Exception {
+            Random random,Map<String, List<String>> resourceNum) throws Exception {
 
         List<Map<String, Object>> crossedSchemes = new ArrayList<>();
         int populationSize = topSchemes.size();
@@ -606,13 +740,13 @@ public class PowerDistributionDriveOptimization {
                     parent1, parent2, targetLoops, allLoopInfos, allAppPositions,
                     elecChangeablePosition, togetherGroup, mutualGroup,
                     pointNameId, objectMapper, powerProjectCircuitInfoOutput,
-                    jsonToMap, topoInfoMap, projectInfo, loopElecById, random);
+                    jsonToMap, topoInfoMap, projectInfo, loopElecById, random,resourceNum);
 
             Map<String, Object> child2 = uniformCrossover(
                     parent2, parent1, targetLoops, allLoopInfos, allAppPositions,
                     elecChangeablePosition, togetherGroup, mutualGroup,
                     pointNameId, objectMapper, powerProjectCircuitInfoOutput,
-                    jsonToMap, topoInfoMap, projectInfo, loopElecById, random);
+                    jsonToMap, topoInfoMap, projectInfo, loopElecById, random,resourceNum);
 
             if (child1 != null) {
                 crossedSchemes.add(child1);
@@ -644,7 +778,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, Object> topoInfoMap,
             Map<String, String> projectInfo,
             Map<String, Set<String>> loopElecById,
-            Random random) throws Exception {
+            Random random,Map<String, List<String>> resourceNum) throws Exception {
 
         // 深拷贝父本数据
         List<Map<String, String>> parent1Loops = (List<Map<String, String>>) parent1.get("loopInfos");
@@ -693,6 +827,11 @@ public class PowerDistributionDriveOptimization {
 
         if (!success) {
             return null; // 约束冲突，返回 null
+        }
+        //资源限制检查
+        Boolean b = elecResourceCheck(childLoops, resourceNum);
+        if(!b){
+            return null;
         }
         // 【关键】生成方案指纹，检查是否与历史方案重复
         String fingerprint = generateSchemeFingerprint(childLoops, childApps);
@@ -889,7 +1028,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, Object> topoInfoMap,
             Map<String, String> projectInfo,
             Map<String, Set<String>> loopElecById,
-            Random random) throws Exception {
+            Random random,Map<String, List<String>> resourceNum) throws Exception {
 
         List<Map<String, Object>> mutatedSchemes = new ArrayList<>();
         int mutationCount = VariationNumber; // 每个方案变异次数
@@ -932,6 +1071,11 @@ public class PowerDistributionDriveOptimization {
                         random,
                         loopElecById
                 );
+                //资源限制检查
+                Boolean b = elecResourceCheck(loopInfoCopy, resourceNum);
+                if(!b){
+                    continue;
+                }
 
                 // Step 3: 检查方案是否重复
                 String fingerprint = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
@@ -1371,7 +1515,7 @@ public class PowerDistributionDriveOptimization {
             JsonToMap jsonToMap,
             Map<String, Object> topoInfoMap,
             Map<String, String> projectInfo,
-            Map<String, Set<String>> loopElecById) throws Exception {
+            Map<String, Set<String>> loopElecById,Map<String, List<String>> resourceNum) throws Exception {
 
         Random random = new Random();
         List<Map<String, Object>> population = new ArrayList<>();
@@ -1417,6 +1561,11 @@ public class PowerDistributionDriveOptimization {
                     random,
                     loopElecById
             );
+            //资源限制检查
+            Boolean b = elecResourceCheck(loopInfoCopy, resourceNum);
+            if(!b){
+                continue;
+            }
 
             // Step 3: 检查方案是否重复
             String fingerprint = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
