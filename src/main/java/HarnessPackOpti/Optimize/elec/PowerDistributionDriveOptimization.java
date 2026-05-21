@@ -65,6 +65,11 @@ public class PowerDistributionDriveOptimization {
     }
 
     public List<Map<String, Object>> powerDriverOptimize(String jsonContent) throws Exception {
+        // ========== 修复3：重置静态状态，避免多任务干扰 ==========
+        WareHouse.clear();
+        BestRepetitionNumber = 0;
+        BestCost.clear();
+
         long categoryTime = System.currentTimeMillis();
         ObjectMapper objectMapper = new ObjectMapper();
         PowerProjectCircuitInfoOutput powerProjectCircuitInfoOutput = new PowerProjectCircuitInfoOutput();
@@ -350,8 +355,9 @@ public class PowerDistributionDriveOptimization {
                     validSchemeCount++;
                     jsonMapCopy.put("loopInfo", loopInfoCopy);
                     jsonMapCopy.put("appPositions", appPositionsCopy);
-                    //计算成本
-                    String s = powerProjectCircuitInfoOutput.powerOptimize(jsonContent);
+                    // ========== 修复1：计算成本时使用修改后的方案 ==========
+                    String modifiedJson = objectMapper.writeValueAsString(jsonMapCopy);
+                    String s = powerProjectCircuitInfoOutput.powerOptimize(modifiedJson);
                     Map<String, Object> map = jsonToMap.TransJsonToMap(s);
                     Map<String, Object> projectCircuitInfo = (Map<String, Object>) map.get("projectCircuitInfo");
                     Map<String, Double> projectCost = new HashMap<>();
@@ -402,6 +408,7 @@ public class PowerDistributionDriveOptimization {
                     topoInfoMap,
                     projectInfo,
                     loopElecById,
+                    loopElecByIdStart,
                     resourceNum
             );
 
@@ -465,6 +472,7 @@ public class PowerDistributionDriveOptimization {
                     topoInfoMap,
                     projectInfo,
                     loopElecById,
+                    loopElecByIdStart,
                     random,
                     resourceNum
             );
@@ -498,6 +506,7 @@ public class PowerDistributionDriveOptimization {
                         topoInfoMap,
                         projectInfo,
                         loopElecById,
+                        loopElecByIdStart,
                         resourceNum
                 );
                 numb++;
@@ -677,7 +686,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 均匀交叉（修正：增加位置一致性同步）
+     * 均匀交叉（修复：增加位置一致性同步，并继承父本2的用电器位置）
      */
     private Map<String, Object> uniformCrossover(
             Map<String, Object> parent1,
@@ -706,11 +715,20 @@ public class PowerDistributionDriveOptimization {
         List<Map<String, String>> childLoops = deepCopyLoopInfos(parent1Loops);
         List<Map<String, String>> childApps = deepCopyAppPositions(parent1Apps);
 
+        // 构建父本2的用电器位置映射
+        Map<String, String> parent2AppPosMap = new HashMap<>();
+        for (Map<String, String> appPos : parent2Apps) {
+            parent2AppPosMap.put(appPos.get("appName"), appPos.get("unregularPointName"));
+        }
+
         Map<String, Map<String, String>> childLoopById = new HashMap<>();
         for (Map<String, String> loop : childLoops) childLoopById.put(loop.get("id"), loop);
 
         Map<String, Map<String, String>> parent2LoopById = new HashMap<>();
         for (Map<String, String> loop : parent2Loops) parent2LoopById.put(loop.get("id"), loop);
+
+        // 记录哪些用电器需要从父本2继承位置
+        Set<String> appsToInheritFromParent2 = new HashSet<>();
 
         for (Map<String, String> targetLoop : targetLoops) {
             String loopId = targetLoop.get("id");
@@ -718,8 +736,37 @@ public class PowerDistributionDriveOptimization {
                 Map<String, String> p2Loop = parent2LoopById.get(loopId);
                 Map<String, String> childLoop = childLoopById.get(loopId);
                 if (p2Loop != null && childLoop != null) {
+                    String oldStart = childLoop.get("startApp");
+                    String oldEnd = childLoop.get("endApp");
                     childLoop.put("startApp", p2Loop.get("startApp"));
                     childLoop.put("endApp", p2Loop.get("endApp"));
+                    if (!p2Loop.get("startApp").equals(oldStart)) {
+                        appsToInheritFromParent2.add(p2Loop.get("startApp"));
+                    }
+                    if (!p2Loop.get("endApp").equals(oldEnd)) {
+                        appsToInheritFromParent2.add(p2Loop.get("endApp"));
+                    }
+                }
+            }
+        }
+
+        // 从父本2继承位置（如果子代中该用电器尚无位置或位置为空）
+        for (String appName : appsToInheritFromParent2) {
+            boolean hasPosition = false;
+            for (Map<String, String> ap : childApps) {
+                if (ap.get("appName").equals(appName) && ap.get("unregularPointName") != null && !ap.get("unregularPointName").isEmpty()) {
+                    hasPosition = true;
+                    break;
+                }
+            }
+            if (!hasPosition && parent2AppPosMap.containsKey(appName) && parent2AppPosMap.get(appName) != null) {
+                String pos = parent2AppPosMap.get(appName);
+                for (Map<String, String> ap : childApps) {
+                    if (ap.get("appName").equals(appName)) {
+                        ap.put("unregularPointName", pos);
+                        ap.put("unregularPointId", pointNameId.get(pos));
+                        break;
+                    }
                 }
             }
         }
@@ -730,7 +777,7 @@ public class PowerDistributionDriveOptimization {
                 loopElecById, elecChangeablePosition, pointNameId, random);
         if (!success) return null;
 
-        // 关键修正：确保子代中同一用电器位置唯一且优先保留父本已有位置
+        // 关键修正：确保子代中同一用电器位置唯一且优先保留已有位置
         syncAppPositionsPreservingExisting(childLoops, childApps, elecChangeablePosition, pointNameId, random);
 
         Boolean b = elecResourceCheck(childLoops, resourceNum);
@@ -878,7 +925,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 变异操作（修正：位置随机加入概率保留）
+     * 变异操作（修正：位置随机加入概率保留，并增加约束修复）
      */
     private List<Map<String, Object>> mutateTopSchemes(
             List<Map<String, Object>> topSchemes,
@@ -895,6 +942,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, Object> topoInfoMap,
             Map<String, String> projectInfo,
             Map<String, Set<String>> loopElecById,
+            Map<String, Set<String>> loopElecByIdStart,
             Random random,
             Map<String, List<String>> resourceNum) throws Exception {
 
@@ -909,14 +957,12 @@ public class PowerDistributionDriveOptimization {
             List<List<Map<String, String>>> constrainedVariants = generateConstrainedVariants(
                     originalLoops, originalApps, targetLoops, elecChangeablePosition,
                     togetherGroup, mutualGroup, pointNameId, random, loopElecById);
-
             List<List<Map<String, String>>> unconstrainedVariants = generateUnconstrainedVariants(
                     originalLoops, originalApps, targetLoops, elecChangeablePosition,
-                    pointNameId, random, loopElecById);
-
+                    pointNameId, random, loopElecById, loopElecByIdStart, togetherGroup, mutualGroup);
             List<List<Map<String, String>>> mixedVariants = generateMixedVariants(
                     originalLoops, originalApps, targetLoops, elecChangeablePosition,
-                    togetherGroup, mutualGroup, pointNameId, random, loopElecById);
+                    togetherGroup, mutualGroup, pointNameId, random, loopElecById, loopElecByIdStart, togetherGroup, mutualGroup);
 
             List<List<Map<String, String>>> allVariants = new ArrayList<>();
             allVariants.addAll(constrainedVariants);
@@ -929,6 +975,12 @@ public class PowerDistributionDriveOptimization {
                 List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(originalApps);
                 // 变异中位置随机概率保留（0.3 表示 30% 概率重新选位）
                 syncAppPositionsWithProbability(variantLoops, appPositionsCopy, elecChangeablePosition, pointNameId, random, 0.3);
+
+                // ========== 修复4：对变异候选进行约束修复，确保联动组和互斥组正确 ==========
+                enforceTogetherGroupConstraints(variantLoops, appPositionsCopy, togetherGroup, loopElecById, random);
+                boolean ok = enforceMutualGroupConstraints(variantLoops, appPositionsCopy, mutualGroup,
+                        loopElecById, elecChangeablePosition, pointNameId, random);
+                if (!ok) continue;
 
                 Boolean b = elecResourceCheck(variantLoops, resourceNum);
                 if (!b) continue;
@@ -969,7 +1021,7 @@ public class PowerDistributionDriveOptimization {
         return mutatedSchemes;
     }
 
-    // 以下为辅助方法（保持不变或已修正）
+    // 以下为辅助方法（保持原有逻辑，但部分签名修改以支持约束检查）
 
     private List<List<Map<String, String>>> generateConstrainedVariants(
             List<Map<String, String>> originalLoops,
@@ -981,7 +1033,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, String> pointNameId,
             Random random,
             Map<String, Set<String>> loopElecById) {
-        // 此方法保持原样（用户已实现）
+        // 此方法保持原样（已正确实现）
         List<List<Map<String, String>>> variants = new ArrayList<>();
         Set<String> targetLoopIdSet = new HashSet<>();
         for (Map<String, String> targetLoop : targetLoops) targetLoopIdSet.add(targetLoop.get("id"));
@@ -1081,6 +1133,9 @@ public class PowerDistributionDriveOptimization {
         return variants;
     }
 
+    /**
+     * 生成无约束回路的变异方案（修复：只处理真正无约束的回路）
+     */
     private List<List<Map<String, String>>> generateUnconstrainedVariants(
             List<Map<String, String>> originalLoops,
             List<Map<String, String>> originalApps,
@@ -1088,28 +1143,60 @@ public class PowerDistributionDriveOptimization {
             Map<String, List<String>> elecChangeablePosition,
             Map<String, String> pointNameId,
             Random random,
-            Map<String, Set<String>> loopElecById) {
+            Map<String, Set<String>> loopElecById,
+            Map<String, Set<String>> loopElecByIdStart,
+            Map<String, List<String>> togetherGroup,
+            Map<String, List<String>> mutualGroup) {
+
         List<List<Map<String, String>>> variants = new ArrayList<>();
+
+        // 构建约束回路ID集合
+        Set<String> constrainedLoopIds = new HashSet<>();
+        for (List<String> ids : togetherGroup.values()) constrainedLoopIds.addAll(ids);
+        for (List<String> ids : mutualGroup.values()) constrainedLoopIds.addAll(ids);
+
+        // 筛选出无约束的目标回路
         List<Map<String, String>> unconstrainedLoops = new ArrayList<>();
         for (Map<String, String> targetLoop : targetLoops) {
             String loopId = targetLoop.get("id");
-            boolean hasConstraint = false; // 简化判断，实际可根据是否在 togetherGroup/mutualGroup 中判断
-            if (!hasConstraint) unconstrainedLoops.add(targetLoop);
+            if (!constrainedLoopIds.contains(loopId)) {
+                unconstrainedLoops.add(targetLoop);
+            }
         }
+
         if (unconstrainedLoops.isEmpty()) return variants;
 
+        // 对每个无约束回路，尝试多个不同的终点和起点组合
         for (Map<String, String> unconstrainedLoop : unconstrainedLoops) {
             String loopId = unconstrainedLoop.get("id");
+
             Set<String> allowedEndApps = loopElecById.get(loopId);
-            if (allowedEndApps == null || allowedEndApps.isEmpty()) continue;
-            int maxAttempts = Math.min(3, allowedEndApps.size());
-            List<String> endAppList = new ArrayList<>(allowedEndApps);
+            Set<String> allowedStartApps = loopElecByIdStart.get(loopId);
+
+            if ((allowedEndApps == null || allowedEndApps.isEmpty()) &&
+                    (allowedStartApps == null || allowedStartApps.isEmpty())) {
+                continue;
+            }
+
+            // 最多生成3个变异方案
+            int maxAttempts = Math.min(3, Math.max(
+                    allowedEndApps != null ? allowedEndApps.size() : 1,
+                    allowedStartApps != null ? allowedStartApps.size() : 1));
+            List<String> endAppList = allowedEndApps != null ? new ArrayList<>(allowedEndApps) : Collections.singletonList(null);
+            List<String> startAppList = allowedStartApps != null ? new ArrayList<>(allowedStartApps) : Collections.singletonList(null);
             Collections.shuffle(endAppList, random);
+            Collections.shuffle(startAppList, random);
+
             for (int i = 0; i < maxAttempts; i++) {
                 List<Map<String, String>> copyVariant = deepCopyLoopInfos(originalLoops);
-                String selectedEndApp = endAppList.get(i);
+                String selectedEndApp = endAppList.get(i % endAppList.size());
+                String selectedStartApp = startAppList.get(i % startAppList.size());
+
                 for (Map<String, String> loop : copyVariant) {
-                    if (loop.get("id").equals(loopId)) loop.put("endApp", selectedEndApp);
+                    if (loop.get("id").equals(loopId)) {
+                        if (selectedEndApp != null) loop.put("endApp", selectedEndApp);
+                        if (selectedStartApp != null) loop.put("startApp", selectedStartApp);
+                    }
                 }
                 variants.add(copyVariant);
             }
@@ -1117,6 +1204,9 @@ public class PowerDistributionDriveOptimization {
         return variants;
     }
 
+    /**
+     * 生成混合变异方案（修复：只对无约束回路进行变异）
+     */
     private List<List<Map<String, String>>> generateMixedVariants(
             List<Map<String, String>> originalLoops,
             List<Map<String, String>> originalApps,
@@ -1126,23 +1216,58 @@ public class PowerDistributionDriveOptimization {
             Map<String, List<String>> mutualGroup,
             Map<String, String> pointNameId,
             Random random,
-            Map<String, Set<String>> loopElecById) {
+            Map<String, Set<String>> loopElecById,
+            Map<String, Set<String>> loopElecByIdStart,
+            Map<String, List<String>> allTogetherGroup,
+            Map<String, List<String>> allMutualGroup) {
+
         List<List<Map<String, String>>> variants = new ArrayList<>();
         int mixedCount = 3;
+
+        // 构建约束回路ID集合
+        Set<String> constrainedLoopIds = new HashSet<>();
+        for (List<String> ids : allTogetherGroup.values()) constrainedLoopIds.addAll(ids);
+        for (List<String> ids : allMutualGroup.values()) constrainedLoopIds.addAll(ids);
+
+        // 筛选出无约束的目标回路
+        List<Map<String, String>> unconstrainedTargets = new ArrayList<>();
+        for (Map<String, String> targetLoop : targetLoops) {
+            if (!constrainedLoopIds.contains(targetLoop.get("id"))) {
+                unconstrainedTargets.add(targetLoop);
+            }
+        }
+        if (unconstrainedTargets.isEmpty()) return variants;
+
         for (int m = 0; m < mixedCount; m++) {
             List<Map<String, String>> copyVariant = deepCopyLoopInfos(originalLoops);
-            int mutationCount = Math.max(1, (int) (targetLoops.size() * 0.2));
-            List<Map<String, String>> shuffledTargets = new ArrayList<>(targetLoops);
+            // 随机选择 20% 的无约束回路进行变异
+            int mutationCount = Math.max(1, (int) (unconstrainedTargets.size() * 0.2));
+            List<Map<String, String>> shuffledTargets = new ArrayList<>(unconstrainedTargets);
             Collections.shuffle(shuffledTargets, random);
-            List<Map<String, String>> selectedTargets = shuffledTargets.subList(0, mutationCount);
+            List<Map<String, String>> selectedTargets = shuffledTargets.subList(0, Math.min(mutationCount, shuffledTargets.size()));
+
             for (Map<String, String> targetLoop : selectedTargets) {
                 String loopId = targetLoop.get("id");
+                // 随机变异终点
                 Set<String> allowedEndApps = loopElecById.get(loopId);
                 if (allowedEndApps != null && !allowedEndApps.isEmpty()) {
                     List<String> endAppList = new ArrayList<>(allowedEndApps);
                     String newEndApp = endAppList.get(random.nextInt(endAppList.size()));
                     for (Map<String, String> loop : copyVariant) {
-                        if (loop.get("id").equals(loopId)) loop.put("endApp", newEndApp);
+                        if (loop.get("id").equals(loopId)) {
+                            loop.put("endApp", newEndApp);
+                        }
+                    }
+                }
+                // 随机变异起点
+                Set<String> allowedStartApps = loopElecByIdStart.get(loopId);
+                if (allowedStartApps != null && !allowedStartApps.isEmpty()) {
+                    List<String> startAppList = new ArrayList<>(allowedStartApps);
+                    String newStartApp = startAppList.get(random.nextInt(startAppList.size()));
+                    for (Map<String, String> loop : copyVariant) {
+                        if (loop.get("id").equals(loopId)) {
+                            loop.put("startApp", newStartApp);
+                        }
                     }
                 }
             }
@@ -1285,7 +1410,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 生成初代种群（原样保留，已通过 perturbConstrainedLoops 等正确实现）
+     * 生成初代种群
      */
     private List<Map<String, Object>> generateInitialPopulation(
             int populationSize,
@@ -1302,6 +1427,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, Object> topoInfoMap,
             Map<String, String> projectInfo,
             Map<String, Set<String>> loopElecById,
+            Map<String, Set<String>> loopElecByIdStart,
             Map<String, List<String>> resourceNum) throws Exception {
         Random random = new Random();
         List<Map<String, Object>> population = new ArrayList<>();
@@ -1321,7 +1447,7 @@ public class PowerDistributionDriveOptimization {
 
             perturbUnconstrainedLoops(
                     loopInfoCopy, appPositionsCopy, targetLoops, elecChangeablePosition,
-                    pointNameId, random, loopElecById);
+                    pointNameId, random, loopElecById, loopElecByIdStart);
 
             Boolean b = elecResourceCheck(loopInfoCopy, resourceNum);
             if (!b) continue;
@@ -1520,7 +1646,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 扰动无约束回路（统一位置随机化）
+     * 扰动无约束回路（同时处理起点和终点的连接关系及位置）
      */
     private void perturbUnconstrainedLoops(
             List<Map<String, String>> loopInfoCopy,
@@ -1529,29 +1655,51 @@ public class PowerDistributionDriveOptimization {
             Map<String, List<String>> elecChangeablePosition,
             Map<String, String> pointNameId,
             Random random,
-            Map<String, Set<String>> loopElecById) {
+            Map<String, Set<String>> loopElecById,
+            Map<String, Set<String>> loopElecByIdStart) {
+
         Map<String, Map<String, String>> loopById = new HashMap<>();
-        for (Map<String, String> loop : loopInfoCopy) loopById.put(loop.get("id"), loop);
+        for (Map<String, String> loop : loopInfoCopy) {
+            loopById.put(loop.get("id"), loop);
+        }
+
+        // 收集所有需要随机化位置的用电器（起点和终点）
         Set<String> appsToRandomize = new HashSet<>();
+
         for (Map<String, String> targetLoop : targetLoops) {
             String loopId = targetLoop.get("id");
             Map<String, String> loop = loopById.get(loopId);
             if (loop == null) continue;
+
             String together = loop.get("changeTogether");
             String mutual = loop.get("mutualExclusion");
-            if ((together != null && !together.isEmpty()) || (mutual != null && !mutual.isEmpty())) continue;
+            if ((together != null && !together.isEmpty()) || (mutual != null && !mutual.isEmpty())) {
+                continue; // 有约束回路已在 perturbConstrainedLoops 中处理，这里不扰动
+            }
 
+            // 随机改变终点用电器
             Set<String> allowedEndApps = loopElecById.get(loopId);
             if (allowedEndApps != null && !allowedEndApps.isEmpty()) {
                 List<String> endAppList = new ArrayList<>(allowedEndApps);
                 String newEndApp = endAppList.get(random.nextInt(endAppList.size()));
                 loop.put("endApp", newEndApp);
             }
+
+            // 随机改变起点用电器
+            Set<String> allowedStartApps = loopElecByIdStart.get(loopId);
+            if (allowedStartApps != null && !allowedStartApps.isEmpty()) {
+                List<String> startAppList = new ArrayList<>(allowedStartApps);
+                String newStartApp = startAppList.get(random.nextInt(startAppList.size()));
+                loop.put("startApp", newStartApp);
+            }
+
             String startApp = loop.get("startApp");
             String endApp = loop.get("endApp");
             if (startApp != null) appsToRandomize.add(startApp);
             if (endApp != null) appsToRandomize.add(endApp);
         }
+
+        // 统一为每个用电器随机选择一个位置（保证唯一性）
         for (String appName : appsToRandomize) {
             List<String> positions = elecChangeablePosition.get(appName);
             if (positions != null && !positions.isEmpty()) {
@@ -1568,7 +1716,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 枚举相关方法（保持不变，但已在主流程中修正指纹使用完整列表）
+     * 枚举所有可行方案（保持不变）
      */
     private void enumerateAllSchemes(
             List<Map<String, String>> targetLoops,
