@@ -107,8 +107,10 @@ public class PowerDistributionDriveOptimization {
         Map<String, String> elecNameId = new HashMap<>();
         //位置点名称-id
         Map<String, String> pointNameId = new HashMap<>();
-        //回路id-可连接的用电器列表
+        //回路id-可连接的用电器列表,关于终点的
         Map<String, Set<String>> loopElecById = new HashMap<>();
+        //回路id-可连接的用电器列表,关于起始点的
+        Map<String, Set<String>> loopElecByIdStart = new HashMap<>();
         FindBest findBest = new FindBest();
 
         List<String> strPointName = new ArrayList<>();
@@ -205,11 +207,19 @@ public class PowerDistributionDriveOptimization {
                 driveLoopList.add(loopInfo);
             }
             //回路可连接的终点用电器统计
-            String s = loopInfo.get("specifyPoints");
+            String s = loopInfo.get("endSpecifyPoints");
             if (s != null && !s.isEmpty()) {
                 for (String part : s.split(",")) {
                     String pointName = findNameById(part, points);
                     loopElecById.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(pointName);
+                }
+            }
+            //回路可连接的终点用电器统计
+            String start = loopInfo.get("startSpecifyPoints");
+            if (start != null && !start.isEmpty()) {
+                for (String part : start.split(",")) {
+                    String pointName = findNameById(part, points);
+                    loopElecByIdStart.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(pointName);
                 }
             }
             // 组团归组
@@ -996,7 +1006,6 @@ public class PowerDistributionDriveOptimization {
         return true;
     }
 
-
     /**
      * 对 Top 方案进行变异（改进版：一个方案生成多个变异方案）
      *
@@ -1286,7 +1295,6 @@ public class PowerDistributionDriveOptimization {
         return variants;
     }
 
-
     /**
      * 生成无约束回路的变异方案（类似 C→B 变异）
      * 对独立的、无约束的回路进行随机变异
@@ -1458,7 +1466,6 @@ public class PowerDistributionDriveOptimization {
         return copy;
     }
 
-
     /**
      * 生成遗传算法的初代种群
      *
@@ -1586,11 +1593,9 @@ public class PowerDistributionDriveOptimization {
                 continue;
             }
         }
-
         System.out.println("初代种群生成完成，共 " + population.size() + " 个个体，尝试次数: " + attemptCount);
         return population;
     }
-
 
     /**
      * 扰动有约束的回路（联动组、互斥组、组团内互斥）
@@ -1598,7 +1603,6 @@ public class PowerDistributionDriveOptimization {
      * 1. 同时扰动连接关系（endApp）和用电器位置
      * 2. 如果联动组中有任意一个目标回路，则该组所有回路都要一起变化（endApp必须相同）
      * 3. 互斥组同理，只要有一个目标回路，组内所有回路的endApp对应的位置必须不同
-     *
      * @return true-成功应用约束，false-约束冲突
      */
     private boolean perturbConstrainedLoops(
@@ -1727,7 +1731,6 @@ public class PowerDistributionDriveOptimization {
         for (Map.Entry<String, List<String>> entry : mutualGroup.entrySet()) {
             String mutualId = entry.getKey();
             List<String> allMemberLoopIds = entry.getValue();
-
             // 检查该互斥组中是否有目标回路
             boolean hasTargetLoop = false;
             for (String loopId : allMemberLoopIds) {
@@ -1736,13 +1739,10 @@ public class PowerDistributionDriveOptimization {
                     break;
                 }
             }
-
             if (!hasTargetLoop) {
                 continue;
             }
-
             Set<String> usedPositions = new HashSet<>();
-
             // 先收集所有已在联动组中处理的成员已占用的位置
             for (String loopId : allMemberLoopIds) {
                 Map<String, String> loop = loopById.get(loopId);
@@ -1804,7 +1804,6 @@ public class PowerDistributionDriveOptimization {
                             availablePositions.add(pos);
                         }
                     }
-
                     if (!availablePositions.isEmpty()) {
                         // 随机选择一个位置
                         String chosenPosition = availablePositions.get(random.nextInt(availablePositions.size()));
@@ -1820,29 +1819,24 @@ public class PowerDistributionDriveOptimization {
                                 break;
                             }
                         }
-
                         usedPositions.add(chosenPosition);
                         assigned = true;
                         break;
                     }
                 }
-
                 if (!assigned) {
                     return false; // 无法找到合适的位置，冲突
                 }
             }
         }
-
         return true;
     }
-
 
     /**
      * 生成方案的唯一指纹（用于去重检查）
      * 指纹包含两部分：
      * 1. 回路连接关系：loopId -> startApp|endApp
      * 2. 用电器位置：appName -> unregularPointName
-     *
      * @param loopInfos 回路信息列表
      * @param appPositions 用电器位置列表
      * @return 方案指纹字符串
@@ -1978,14 +1972,12 @@ public class PowerDistributionDriveOptimization {
         if (source == null) {
             return null;
         }
-
         List<Map<String, String>> copy = new ArrayList<>();
         for (Map<String, String> map : source) {
             copy.add(new HashMap<>(map));
         }
         return copy;
     }
-
 
     /**
      * 查找用电器默认位置
@@ -2037,11 +2029,8 @@ public class PowerDistributionDriveOptimization {
             loopById.put(lp.get("id"), lp);
         }
 
-        // --------------------------------------------------------
         // Step 1: 构建"变量"列表 - 只包含 endApp 选择变量
-        //
         // 【关键】约束只针对 endApp，不包含位置
-        // --------------------------------------------------------
         Map<String, List<String>> varDomains = new LinkedHashMap<>();
         Set<String> coveredLoopIds = new HashSet<>();
 
@@ -2091,10 +2080,8 @@ public class PowerDistributionDriveOptimization {
             }
         }
 
-        // --------------------------------------------------------
         // Step 2: 变量 → 互斥组映射
         // 互斥的是 endApp 选择变量
-        // --------------------------------------------------------
         Map<String, List<String>> varKeyToMutualIds = new LinkedHashMap<>();
         for (Map<String, String> lp : targetLoops) {
             String lid = lp.get("id");
@@ -2123,16 +2110,12 @@ public class PowerDistributionDriveOptimization {
         }
         Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualIds.keySet());
 
-        // --------------------------------------------------------
         // Step 3: 准备变量列表
-        // --------------------------------------------------------
         List<String> varKeys = new ArrayList<>(varDomains.keySet());
 
         System.out.println("开始回溯枚举，变量数: " + varKeys.size());
 
-        // --------------------------------------------------------
         // Step 4: 执行回溯枚举
-        // --------------------------------------------------------
         Map<String, String> currentAssignment = new LinkedHashMap<>();
         Set<String> usedEndApps = new HashSet<>(); // 用于互斥检查：记录已使用的 endApp
 
@@ -2143,8 +2126,6 @@ public class PowerDistributionDriveOptimization {
 
         System.out.println("枚举完成，耗时: " + (System.currentTimeMillis() - startTime) + "ms");
     }
-
-
 
     /**
      * 回溯法枚举方案并收集到 enumeratedSchemes
@@ -2229,7 +2210,6 @@ public class PowerDistributionDriveOptimization {
 
     /**
      * 将变量赋值转换为方案格式
-     *
      * @return Map<回路ID, "起点用电器|终点用电器|起点位置|终点位置">
      *         包含所有发生变化的回路（目标回路 + 受约束影响的外部回路）
      */
@@ -2330,8 +2310,6 @@ public class PowerDistributionDriveOptimization {
         return scheme;
     }
 
-
-
     private long calculateOptimizationCombinations(
             List<Map<String, String>> loopInfos,
             Map<String, List<String>> elecChangeablePosition,
@@ -2346,9 +2324,7 @@ public class PowerDistributionDriveOptimization {
             loopById.put(lp.get("id"), lp);
         }
 
-        // --------------------------------------------------------
         // 【关键修复】Step 0: 扩展回路列表，包含所有受约束影响的外部回路
-        // --------------------------------------------------------
         Set<String> extendedLoopIds = new HashSet<>();
 
         // 1. 添加所有目标回路
@@ -2388,19 +2364,15 @@ public class PowerDistributionDriveOptimization {
             }
         }
 
-        // --------------------------------------------------------
-        // Step 1: 构建"变量"列表 - 只包含 endApp 选择变量
-        //
-        // 规则：
-        //   联动组（changeTogether）→ 合并为 1 个变量
-        //     该变量的域 = 组内所有回路可选 endApp 的【交集】
-        //   独立回路（无 changeTogether）→ 1 个变量
-        //     该变量的域 = 该回路可选 endApp 列表
-        //
-        // 变量 key 格式：
-        //   联动组变量  → "E_G_<togetherGroupId>"
-        //   独立回路变量 → "E_L_<loopId>"
-        // --------------------------------------------------------
+        /* Step 1: 构建"变量"列表 - 只包含 endApp 选择变量
+         规则：
+           联动组（changeTogether）→ 合并为 1 个变量
+             该变量的域 = 组内所有回路可选 endApp 的【交集】
+           独立回路（无 changeTogether）→ 1 个变量
+             该变量的域 = 该回路可选 endApp 列表
+         变量 key 格式：
+           联动组变量  → "E_G_<togetherGroupId>"
+           独立回路变量 → "E_L_<loopId>"*/
         Map<String, List<String>> varDomains = new LinkedHashMap<>();
         Set<String> coveredLoopIds = new HashSet<>();
 
@@ -2449,16 +2421,12 @@ public class PowerDistributionDriveOptimization {
                 varDomains.put("E_L_" + lid, Collections.singletonList(lp.get("endApp")));
             }
         }
-
-        // --------------------------------------------------------
-        // Step 2: 变量 → 互斥组映射
-        //
-        // 一条回路如果有 mutualExclusion 标记：
-        //   若它属于某个联动组 → 整个联动组变量参与互斥
-        //   否则 → 该回路自己的变量参与互斥
-        //
-        // 注意：同一个变量可能属于多个互斥组
-        // --------------------------------------------------------
+        
+        /* Step 2: 变量 → 互斥组映射
+         一条回路如果有 mutualExclusion 标记：
+           若它属于某个联动组 → 整个联动组变量参与互斥
+           否则 → 该回路自己的变量参与互斥
+         注意：同一个变量可能属于多个互斥组*/
         Map<String, List<String>> varKeyToMutualIds = new LinkedHashMap<>();
         for (Map<String, String> lp : extendedLoops) {
             String lid = lp.get("id");
@@ -2492,13 +2460,11 @@ public class PowerDistributionDriveOptimization {
         // 收集所有参与互斥的变量
         Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualIds.keySet());
 
-        // --------------------------------------------------------
-        // Step 3: 计算总方案数
-        //
-        // 3a. 独立变量（不在任何互斥组中）→ 直接乘以域大小
-        // 3b. 互斥组（可能含联动组变量）→ 回溯法计算"两两不同 endApp"的赋值数
-        // 3c. 用电器位置（每个唯一 endApp 和 startApp 独立计算，相乘）
-        // --------------------------------------------------------
+
+      /*   Step 3: 计算总方案数
+         3a. 独立变量（不在任何互斥组中）→ 直接乘以域大小
+         3b. 互斥组（可能含联动组变量）→ 回溯法计算"两两不同 endApp"的赋值数
+         3c. 用电器位置（每个唯一 endApp 和 startApp 独立计算，相乘）*/
         long totalCombinations = 1L;
 
         // 3a: 独立变量
@@ -2562,20 +2528,14 @@ public class PowerDistributionDriveOptimization {
 
         return totalCombinations;
     }
-
-
-
-
-
-    // ================================================================
-    // 辅助方法 1：回溯法计算"多变量两两互斥"的合法赋值数
-    //
-    // 思路：
-    //   逐个变量赋值，每次只选择"当前尚未被其他变量使用"的位置
-    //   递归到最后一个变量时，记为 1 种合法方案
-    //
-    // 适用条件：变量数量和域大小均较小（互斥组一般 ≤ 10 个变量）
-    // ================================================================
+    
+  /*
+     辅助方法 1：回溯法计算"多变量两两互斥"的合法赋值数
+     思路：
+      逐个变量赋值，每次只选择"当前尚未被其他变量使用"的位置
+      递归到最后一个变量时，记为 1 种合法方案
+     适用条件：变量数量和域大小均较小（互斥组一般 ≤ 10 个变量）
+ */
     private long countAllDifferent(List<List<String>> domains) {
         if (domains == null || domains.isEmpty()) return 1L;
         return backtrackCount(domains, 0, new HashSet<>());
@@ -2601,10 +2561,8 @@ public class PowerDistributionDriveOptimization {
         }
         return count;
     }
-
-    // ================================================================
+    
     // 辅助方法 2：根据位置 id 获取对应的位置点名称
-    // ================================================================
     public String findNameById(String id, List<Map<String, Object>> points) {
         for (Map<String, Object> point : points) {
             if (point.get("id").toString().equals(id)) {
