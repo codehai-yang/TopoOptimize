@@ -730,13 +730,13 @@ public class ProjectCircuitInfoOutput {
             Object endPositionName = loopInfo.get("终点位置名称");
             // 是焊点，则用焊点名称
             if (startName.startsWith("[")) {
-                 if(loopInfo.get("焊点位置名称") == null){
+                if (loopInfo.get("焊点位置名称") == null) {
                     return;
                 }
                 startPositionName = loopInfo.get("焊点位置名称").toString();
             }
             if (endName.startsWith("[")) {
-                if(loopInfo.get("焊点位置名称") == null){
+                if (loopInfo.get("焊点位置名称") == null) {
                     return;
                 }
                 endPositionName = loopInfo.get("焊点位置名称").toString();
@@ -784,17 +784,17 @@ public class ProjectCircuitInfoOutput {
                     }
                 }
             }
-            //根据上面的组合找回路直径判定颜色
-            Map<String,String> colorMap = new HashMap<>();
+            // 根据上面的组合找回路直径判定颜色
+            Map<String, String> colorMap = new HashMap<>();
             combinations.forEach(combination -> {
                 String[] pointsName = combination.split("&");
                 Double length = circuitLengthMap.get(combination);
                 Double length2 = circuitLengthMap.get(pointsName[1] + "&" + pointsName[0]);
-                //两个分支点之间的总理论直径
-                Double totalLength = length==null?0:length + (length2==null?0:length2);
-                //判断颜色
+                // 两个分支点之间的总理论直径
+                Double totalLength = length == null ? 0 : length + (length2 == null ? 0 : length2);
+                // 判断颜色
                 String edgeColor = getlengthColor(totalLength);
-                //两个分支点-对应的颜色
+                // 两个分支点-对应的颜色
                 colorMap.put(combination, edgeColor);
             });
             result.put(id, colorMap);
