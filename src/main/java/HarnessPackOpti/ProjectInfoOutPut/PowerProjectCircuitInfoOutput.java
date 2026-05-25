@@ -342,7 +342,7 @@ public class PowerProjectCircuitInfoOutput {
             objectMap1.put("分支打断代价", colorMap.get("cost"));
         }
         //根据回路信息构建分支点对应的分支直径(颜色),放入分支集合里
-        Map<String, Map<String, String>> connectedEdgesByMatrix = projectCircuitInfoOutput.findConnectedEdgesByMatrix(points, bundeleRelatedCircuitInfo, adjacencyMatrixGraph, edges);
+        // Map<String, Map<String, String>> connectedEdgesByMatrix = projectCircuitInfoOutput.findConnectedEdgesByMatrix(points, bundeleRelatedCircuitInfo, adjacencyMatrixGraph, edges);
 
         Map<String, Object> resultMap = new HashMap<>();
         resultMap.put("systemCircuitInfo", systemCircuitInfo);
@@ -351,7 +351,7 @@ public class PowerProjectCircuitInfoOutput {
         resultMap.put("bundeleRelatedCircuitInfo", bundeleRelatedCircuitInfo);
         resultMap.put("circuitInfo", circuitInfo);
         resultMap.put("projectCircuitInfo", projectCircuitInfo);
-        resultMap.put("edgeColorInfo", connectedEdgesByMatrix);
+        // resultMap.put("edgeColorInfo", connectedEdgesByMatrix);
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
         String json = objectMapper.writeValueAsString(resultMap);// 将Map转换为JSON字符串
 //        System.out.println("信息汇总:\n" +json);
