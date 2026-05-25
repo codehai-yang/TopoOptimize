@@ -13,11 +13,15 @@ import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
+import HarnessPackOpti.utils.ThreadPool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.math.BigInteger;
 import java.text.DecimalFormat;
 import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class ElecPositionVariantCalculation {
@@ -40,7 +44,8 @@ public class ElecPositionVariantCalculation {
     //    初代样本量
     public static Integer InitialSampleNumber = 10000;
     //    优化阈值
-    public static Integer OptimizeThresholdValue = 100000;
+    public static Integer OptimizeThresholdValue = 10000;
+    private static ThreadPool threadPool = new ThreadPool(11, 11);
 
 
     private final OptimizeStopStatusStore optimizeStopStatusStore;
@@ -129,12 +134,14 @@ public class ElecPositionVariantCalculation {
         System.out.println("计算用电器再每个点的成本");
 
 //        计算每个用电器在所有点的成本计算
+        long costTime = System.currentTimeMillis();
         List<Map<String, Object>> elecInAllAddress = new ArrayList<>();
         for (int i = 0; i < elecChangeableList.size(); i++) {
             String s = elecChangeableList.get(i);
             Map<String, Object> elecInAllAddressDetail = new HashMap<>();
             Map<String, Object> mapFile = deepCopy(initmapFile);
-            List<Map<String, Object>> best = findOneGroup(mapFile, s, allPoint, "0");
+            //这里只传入每个用电器对应的可变位置点
+            List<Map<String, Object>> best = findOneGroup(mapFile, s, elecChangeablePosition.get(s), "0");
             elecInAllAddressDetail.put("group", s);
             elecInAllAddressDetail.put("detail", best);
             elecInAllAddress.add(elecInAllAddressDetail);
@@ -143,7 +150,7 @@ public class ElecPositionVariantCalculation {
                 return objectMapper.writeValueAsString(elecInAllAddress);
             }
         }
-
+        System.out.println("计算用电器再每个点的成本所用时间" + (System.currentTimeMillis() - costTime));
         System.out.println("计算用电器再每个点的成本完成");
         if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
             String s1 = objectMapper.writeValueAsString(elecInAllAddress);
@@ -152,7 +159,9 @@ public class ElecPositionVariantCalculation {
 
 
         System.out.println("生成字典");
+        long start = System.currentTimeMillis();
         Map<String, Object> filtration = filtration(adjacencyMatrixGraph, projectInfo);
+        System.out.println("生成字典所用时间" + (System.currentTimeMillis() - start));
         System.out.println("字典生成完成");
 //        筛选出可变的回路
         List<Map<String, Object>> unfixedLoopInfoList = new ArrayList<>();
@@ -167,6 +176,7 @@ public class ElecPositionVariantCalculation {
         List<List<String>> correlationElec = new ArrayList<>();
 
 //      可变用电器一一比对   将符合要求的放到一个组里面
+        long groupTime = System.currentTimeMillis();
         for (int i = 0; i < elecChangeablePositionList.size() - 1; i++) {
             for (int j = i + 1; j < elecChangeablePositionList.size(); j++) {
                 String elec1 = elecChangeablePositionList.get(i);
@@ -195,9 +205,10 @@ public class ElecPositionVariantCalculation {
         }
 //        对当前的用电器进行一个分组
         List<List<String>> lists = elecGroup(elecChangeablePositionSet.stream().collect(Collectors.toList()), correlationElec);
-
+        System.out.println("用电器分组时间:" + (System.currentTimeMillis() - groupTime));
         List<Map<String, Object>> bestList = new ArrayList<>();
 //        针对不同的阈值进行一个计算
+        long optimizeTime = System.currentTimeMillis();
         for (List<String> list : lists) {
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 break;
@@ -261,8 +272,9 @@ public class ElecPositionVariantCalculation {
             BestCost = new HashMap<>();
             BestRepetitionNumber = 0;
         }
-
+        System.out.println("对分好组的用电器进行优化，耗时:" + (System.currentTimeMillis() - optimizeTime));
 //
+        long noneGroupTime = System.currentTimeMillis();
         Set<String> groupSet = new HashSet<>();
         for (Map<String, Object> map : bestList) {
             String group = map.get("group").toString();
@@ -295,8 +307,9 @@ public class ElecPositionVariantCalculation {
 
             }
         }
+        System.out.println("对未分组用电器优化，耗时：" + (System.currentTimeMillis() - noneGroupTime));
         String json = objectMapper.writeValueAsString(bestList);
-        System.out.println(json);
+        threadPool.terminateNow();
         return json;
     }
 
@@ -307,56 +320,77 @@ public class ElecPositionVariantCalculation {
      * @input: map 解析完成的整车信息
      * @Return: 返回两点之间所有的路径   每个路劲中又详细说明了长度、分支打断等情况
      */
-    public Map<String, Object> filtration(GenerateTopoMatrix adjacencyMatrixGraph, Map<String, Object> map) {
+    public Map<String, Object> filtration(GenerateTopoMatrix adjacencyMatrixGraph, Map<String, Object> map) throws Exception{
         Map<String, Object> result = new HashMap<>();
         List<String> allPoint = adjacencyMatrixGraph.getAllPoint();
         FindAllPath findAllPath = new FindAllPath();
         List<Map<String, String>> edges = (List<Map<String, String>>) map.get("所有分支信息");
+        //多线程查找路径信息
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
+        //统计所有点之间的所有路径，并统计回路长度，湿区个数等
         for (int i = 0; i < allPoint.size(); i++) {
             String startName = allPoint.get(i);
-            for (int j = 0; j < allPoint.size(); j++) {
-                String endName = allPoint.get(j);
-                List<List<Integer>> allPathBetweenTwoPoint = findAllPath.findAllPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(startName), adjacencyMatrixGraph.getAllPoint().indexOf(endName));
-                List<Object> currentPath = new ArrayList<>();
-                for (List<Integer> list : allPathBetweenTwoPoint) {
-                    //           将路径中的数字转化为对应的名称
-                    List<String> listname = convertPathToNumbers(list, adjacencyMatrixGraph.getAllPoint());
+            tasks.add(() -> {
+                Map<String,Object> pathInfo = new HashMap<>();
+                for (int j = 0; j < allPoint.size(); j++) {
+                    String endName = allPoint.get(j);
+                    //查找两点间的所有路径
+                    List<List<Integer>> allPathBetweenTwoPoint = findAllPath.findAllPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(startName), adjacencyMatrixGraph.getAllPoint().indexOf(endName));
+                    List<Object> currentPath = new ArrayList<>();
+                    for (List<Integer> list : allPathBetweenTwoPoint) {
+                        //           将路径中的数字转化为对应的名称
+                        List<String> listname = convertPathToNumbers(list, adjacencyMatrixGraph.getAllPoint());
 //                        开始及逆行一个计算
-                    Map<String, Object> information = new HashMap<>();
-                    FindBranchByNode findBranchByNode = new FindBranchByNode();
-                    Map<String, Object> MapbranchByNode = findBranchByNode.findBranchByNode(listname, edges);
-                    List<String> edgeIdList = (List<String>) MapbranchByNode.get("idList");
-                    CalculatePathLength calculatePathLength = new CalculatePathLength();
-                    Map<String, Object> pathLength = calculatePathLength.calculatePathLength(edgeIdList, map);
-                    CalculatePathBreakNumber calculatePathBreakNumber = new CalculatePathBreakNumber();
-                    Map<String, Object> objectMap = calculatePathBreakNumber.calculatePathBreakNumber(edgeIdList, map);
+                        Map<String, Object> information = new HashMap<>();
+                        FindBranchByNode findBranchByNode = new FindBranchByNode();
+                        //找到途径所有分支
+                        Map<String, Object> MapbranchByNode = findBranchByNode.findBranchByNode(listname, edges);
+                        List<String> edgeIdList = (List<String>) MapbranchByNode.get("idList");
+                        CalculatePathLength calculatePathLength = new CalculatePathLength();
+                        //计算回路长度
+                        Map<String, Object> pathLength = calculatePathLength.calculatePathLength(edgeIdList, map);
+                        CalculatePathBreakNumber calculatePathBreakNumber = new CalculatePathBreakNumber();
+                        Map<String, Object> objectMap = calculatePathBreakNumber.calculatePathBreakNumber(edgeIdList, map);
 //        分支打断名称
-                    List<String> topologyStatusCodeNameList = (List<String>) objectMap.get("nameList");
+                        List<String> topologyStatusCodeNameList = (List<String>) objectMap.get("nameList");
 
-                    Integer breakNumber = topologyStatusCodeNameList.size();
-                    CalculateInlineWet calculateInlineWet = new CalculateInlineWet();
-                    Map<String, String> inlineWet = calculateInlineWet.calculateInlineWet(topologyStatusCodeNameList, map);
-                    int count = 0;
-                    for (Object mapValue : inlineWet.values()) {
-                        if ("w".toUpperCase().equals(mapValue.toString())) {
+                        Integer breakNumber = topologyStatusCodeNameList.size();
+                        CalculateInlineWet calculateInlineWet = new CalculateInlineWet();
+                        //计算回路中分支干湿状态
+                        Map<String, String> inlineWet = calculateInlineWet.calculateInlineWet(topologyStatusCodeNameList, map);
+                        int count = 0;
+                        for (Object mapValue : inlineWet.values()) {
+                            if ("w".toUpperCase().equals(mapValue.toString())) {
+                                count++;
+                            }
+                        }
+                        //回路两端断点干湿
+                        if ("w".toUpperCase().equals(getWaterParam(listname.get(0), (List<Map<String, String>>) map.get("所有端点信息")))) {
                             count++;
                         }
+                        if ("w".toUpperCase().equals(getWaterParam(listname.get(listname.size() - 1), (List<Map<String, String>>) map.get("所有端点信息")))) {
+                            count++;
+                        }
+                        information.put("回路长度", (Double) pathLength.get("长度") / 1000);
+                        information.put("打断次数", breakNumber);
+                        information.put("湿区个数", count);
+                        information.put("路径", listname);
+                        currentPath.add(information);
                     }
-                    if ("w".toUpperCase().equals(getWaterParam(listname.get(0), (List<Map<String, String>>) map.get("所有端点信息")))) {
-                        count++;
-                    }
-                    if ("w".toUpperCase().equals(getWaterParam(listname.get(listname.size() - 1), (List<Map<String, String>>) map.get("所有端点信息")))) {
-                        count++;
-                    }
-                    information.put("回路长度", (Double) pathLength.get("长度") / 1000);
-                    information.put("打断次数", breakNumber);
-                    information.put("湿区个数", count);
-                    information.put("路径", listname);
-                    currentPath.add(information);
+                    String name = startName + "-" + endName;
+                    pathInfo.put(name, currentPath);
                 }
-                String name = startName + "-" + endName;
-                result.put(name, currentPath);
-            }
+                return pathInfo;
+            });
+        }
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            Future<Map<String, Object>> future = threadPool.submit(task);
+            futures.add(future);
+        }
+        for (Future<Map<String, Object>> future : futures) {
+            Map<String, Object> stringObjectMap = future.get(300, TimeUnit.SECONDS);
+            result.putAll(stringObjectMap);
         }
         return result;
     }
@@ -461,7 +495,9 @@ public class ElecPositionVariantCalculation {
         }
 
 //        按照新的位置点随机生成一批样本
+        long startTime = System.currentTimeMillis();
         List<List<String>> possibilityLists = initialOptimize(newElecChangeablePosition, electricalList);
+        System.out.println("生成初代样本耗时：" + (System.currentTimeMillis() - startTime));
         WareHouse.addAll(possibilityLists);
 //        找出这些可变用电器的相关回路
         List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) mapFile.get("loopInfos");
@@ -502,11 +538,13 @@ public class ElecPositionVariantCalculation {
         result.add(baseCalculateMap);
         temporarilyList.add(baseCalculateMap);
 //        计算在当前的方案下面筛选出来的回路成本:直接将要的回路放在里面   替换位置点的信息
-
+        long findBestTime = System.currentTimeMillis();
         List<Map<String, Object>> findBest = compute(possibilityLists, mapFile, electricalList, "0", elecFixedLocationLibrary, elecBusinessPrice, filtration);
+        System.out.println("初代方案中找最优Top耗时:" + (System.currentTimeMillis() - findBestTime));
         temporarilyList.addAll(findBest);
 //        开始进行一个迭代
         int hybridizationNumber = 1;
+        long hybridizationTime = System.currentTimeMillis();
         while (true) {
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 List<Map<String, Object>> restore = restore(findBest, initMapFile);
@@ -548,6 +586,7 @@ public class ElecPositionVariantCalculation {
             }
             hybridizationNumber++;
         }
+        System.out.println("遗传算法迭代耗时：" + (System.currentTimeMillis() - hybridizationTime));
         List<Map<String, Object>> restore = restore(findBest, initMapFile);
         result.addAll(restore);
         return result;
@@ -651,26 +690,26 @@ public class ElecPositionVariantCalculation {
         System.out.println("lists:" + lists.size() + "个方案");
         int numbber = 1;
         DecimalFormat df = new DecimalFormat("0.00");
+        //多线程优化(10000个方案)
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
         for (List<String> list : lists) {
-            Map<String, Object> mapFile = deepCopy(initMapFile);
-            numbber++;
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 break;
             }
+            tasks.add(() -> {
+            Map<String, Object> mapFile = deepCopy(initMapFile);
             Map<String, Object> map = new HashMap<>();
             List<Map<String, Object>> copyAppPositions = (List<Map<String, Object>>) mapFile.get("appPositions");
             for (String s : electricalList) {
                 for (Map<String, Object> copyAppPosition : copyAppPositions) {
                     if (copyAppPosition.get("appName").toString().equals(s)) {
                         copyAppPosition.put("unregularPointName", list.get(electricalList.indexOf(s)));
-                        continue;
                     }
                 }
             }
             mapFile.put("appPositions", copyAppPositions);
             long l = System.currentTimeMillis();
             String json = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(mapFile), filtration, elecFixedLocationLibrary, elecBusinessPrice);
-            System.out.println("第" + numbber + "个方案" + "用时" + (System.currentTimeMillis() - l));
             Map<String, Object> calculatemap = jsonToMap.TransJsonToMap(json);
             Map<String, Double> cost = new HashMap<>();
             Map<String, Object> projectCircuitInfo = (Map<String, Object>) calculatemap.get("projectCircuitInfo");
@@ -688,9 +727,17 @@ public class ElecPositionVariantCalculation {
             map.put("number", number);
             calculatemap.put("成本", cost);
             calculatemap.put("elecOptimizeResult", map);
-            result.add(calculatemap);
-            mapFile = null;
-
+            return calculatemap;
+            });
+        }
+        //获取结果
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            futures.add(threadPool.submit( task));
+        }
+        for (Future<Map<String, Object>> future : futures) {
+            Map<String, Object> stringObjectMap = future.get(180, TimeUnit.SECONDS);
+            result.add(stringObjectMap);
         }
         List<Map<String, Object>> best = findBest.findBest(result, "成本", TopNumber);
         result = null;
@@ -710,6 +757,7 @@ public class ElecPositionVariantCalculation {
         while (result.size() < LessRandomSamleNumber) {
             List<String> caseList = new ArrayList<>();
             for (String s : electricalList) {
+                //拿到可变位置
                 List<String> list = newElecChangeablePosition.get(s);
                 caseList.add(list.get(random.nextInt(list.size())));
             }
@@ -880,16 +928,18 @@ public class ElecPositionVariantCalculation {
 
 
         System.out.println(allArrangements.size());
-        int i = 0;
 
         DecimalFormat df = new DecimalFormat("0.00");
         List<Map<String, Object>> allArrangementList = new ArrayList<>();
+        //多线程对所有的方案进行成本计算
+        List<Callable<Map<String,Object>>> tasks = new ArrayList<>();
         for (List<String> allArrangement : allArrangements) {
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                //关闭线程池
+                threadPool.terminateNow();
                 break;
             }
-
-            System.out.println(i++);
+            tasks.add(() -> {
             Map<String, Object> map = new HashMap<>();
             List<Map<String, Object>> copyAppPositions = (List<Map<String, Object>>) mapFile.get("appPositions");
             for (String s : electricalList) {
@@ -919,12 +969,24 @@ public class ElecPositionVariantCalculation {
             map.put("成本", cost);
             calculatemap.put("elecOptimizeResult", map);
             calculatemap.put("成本", cost);
-            allArrangementList.add(calculatemap);
+            return calculatemap;
+            });
+        }
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            futures.add(threadPool.submit(task));
+        }
+        for (Future<Map<String, Object>> future : futures) {
+            Map<String, Object> stringObjectMap = future.get(180, TimeUnit.SECONDS);
+            allArrangementList.add(stringObjectMap);
         }
         List<Map<String, Object>> cost = findBest.findBest(allArrangementList, "成本", TopNumber);
+        long restoreTime = System.currentTimeMillis();
         List<Map<String, Object>> restore = restore(cost, initmapFile);
+        System.out.println("方案还原耗时：" + (System.currentTimeMillis() - restoreTime));
         result.addAll(restore);
         allArrangementList = null;
+        threadPool.terminateNow();
         System.gc();
         return result;
     }
@@ -941,9 +1003,12 @@ public class ElecPositionVariantCalculation {
         ObjectMapper objectMapper = new ObjectMapper();
         JsonToMap jsonToMap = new JsonToMap();
         int i = 1;
+        //这里多线程还原
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
         for (Map<String, Object> map : originalMap) {
-            System.out.println("i=" + i);
-            i++;
+            tasks.add(() -> {
+
+
             Map<String, Object> mapFile = deepCopy(initmapFile);
             List<Map<String, Object>> copyAppPositions = (List<Map<String, Object>>) mapFile.get("appPositions");
             Map<String, Object> elecOptimizeResult = (Map<String, Object>) map.get("elecOptimizeResult");
@@ -959,7 +1024,16 @@ public class ElecPositionVariantCalculation {
             result.put("topoId", TopoId);
             result.put("caseId", CaseId);
             result.put("elecOptimizeResult", elecOptimizeResult);
-            resultList.add(result);
+            return result;
+            });
+        }
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            futures.add(threadPool.submit(task));
+        }
+        for (Future<Map<String, Object>> future : futures) {
+            Map<String, Object> stringObjectMap = future.get(180, TimeUnit.SECONDS);
+            resultList.add(stringObjectMap);
         }
         return resultList;
     }
