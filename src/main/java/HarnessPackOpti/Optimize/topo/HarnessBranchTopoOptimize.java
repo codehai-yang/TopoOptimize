@@ -29,9 +29,9 @@ import java.util.stream.Collectors;
 
 public class HarnessBranchTopoOptimize {
     //    随机变换样本数量
-    public static Integer LessRandomSamleNumber = 20;
+    public static Integer LessRandomSamleNumber = 100;
     //   迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 30;
+    public static Integer HybridizationLessRandomSamleNumber = 200;
     //    top几的数量规定
     public static final Integer TopNumber = 20;
     //    每次迭代最优的成本
@@ -1571,9 +1571,9 @@ public class HarnessBranchTopoOptimize {
         //查找每一代最优结果耗时
         long topTenStartTime = System.currentTimeMillis();
 //        接下来就是对simple 进行一个分支闭环的检查
-        System.out.println("要预测的样本数：" + simple.size());
-        List<List<String>> lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap);
-        System.out.println("预测" + simple.size() + "个样本耗时：" + (System.currentTimeMillis() - topTenStartTime));
+        // System.out.println("要预测的样本数：" + simple.size());
+        // List<List<String>> lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap);
+        // System.out.println("预测" + simple.size() + "个样本耗时：" + (System.currentTimeMillis() - topTenStartTime));
         //模型粗筛
 //        if(BestCost.size() > 0) {
 //            System.out.println("模型筛选前方案数量：" + simple.size());
@@ -1585,7 +1585,7 @@ public class HarnessBranchTopoOptimize {
 //        if(lists.size() == 0 || lists == null){
 //            return null;
 //        }
-        List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS,elecPosition,branchLength,connection, multiLoopInfos, pointMap);
+        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap, edgeChooseBS,elecPosition,branchLength,connection, multiLoopInfos, pointMap);
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
         System.out.println("查找每一代最优结果耗时：" + (System.currentTimeMillis() - topTenStartTime));
         return mapList;
