@@ -18,8 +18,8 @@ public class main {
                 // HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut = new HarnessBranchTopoOptiErrorOutPut();
                 // harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
 
-                //控制器位置优化
-                File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\线束拓扑优化TXT.txt");
+                //用电器位置布局优化
+                File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\用电器位置布局优化遗传算法样本.txt");
                 String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
                 ElecPositionVariantCalculation elecPositionVariantCalculation=new ElecPositionVariantCalculation();
                 elecPositionVariantCalculation.elecPositionVariantCalculation(jsonContent);
