@@ -1,18 +1,21 @@
 package HarnessPackOpti.utils;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import java.io.BufferedOutputStream;
-import java.io.DataOutputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.text.DecimalFormat;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.stream.Collectors;
 
 /**
  * 负责AI训练的样本生成,方案二，值判断是否连通以及周围存在分支
@@ -31,11 +34,12 @@ public class GenerateBreakNoise {
      * @throws Exception
      */
     public void projectCalculate(List<String> normList, List<List<String>> changeList, List<Map<String, Object>> edges,
-                                 Map<String, Object> jsonMap, Map<String, Map<String, String>> elecFixedLocationLibrary,
-                                 List<String> edgeChooseBS, String filePath,List<Map<String, String>> appPositions, Map<String, String> eleclection,
-                                 Map<String, Map<String, List<String>>> mutexMap,
-                                 List<Map<String, List<String>>> chooseOneList,
-                                 List<List<String>> togetherBCList) throws Exception {
+            Map<String, Object> jsonMap, Map<String, Map<String, String>> elecFixedLocationLibrary,
+            List<String> edgeChooseBS, String filePath, List<Map<String, String>> appPositions,
+            Map<String, String> eleclection,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList, List<Map<String, Object>> collectedSamples) throws Exception {
         HarnessBranchTopoOptimize harnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         List<Map<String, String>> pointList = (List<Map<String, String>>) jsonMap.get("points");
@@ -48,7 +52,7 @@ public class GenerateBreakNoise {
         List<String> endNameList = new ArrayList<>();
         Set<String> branchPointNameList = new HashSet<>();
         for (int i = 0; i < edgeFirst.size(); i++) {
-            //生成起点和终点列表
+            // 生成起点和终点列表
             Map<String, Object> branch = edgeFirst.get(i);
             startNameList.add(branch.get("startPointName").toString());
             endNameList.add(branch.get("endPointName").toString());
@@ -56,7 +60,7 @@ public class GenerateBreakNoise {
             branchPointNameList.add(branch.get("endPointName").toString());
         }
         List<String> allNameList = new ArrayList<>(branchPointNameList);
-        //起点和终点二进制化，转为AI可直接训练的形式,长度[2,211]
+        // 起点和终点二进制化，转为AI可直接训练的形式,长度[2,211]
         List<Integer> startIndex = new ArrayList<>();
         List<Integer> endIndex = new ArrayList<>();
         for (String s : startNameList) {
@@ -65,14 +69,14 @@ public class GenerateBreakNoise {
         for (String s : endNameList) {
             endIndex.add(allNameList.indexOf(s));
         }
-        //最终索引形式
+        // 最终索引形式
         int[][] edgeIndex = new int[2][startIndex.size()];
         for (int i = 0; i < startIndex.size(); i++) {
             edgeIndex[0][i] = startIndex.get(i);
             edgeIndex[1][i] = endIndex.get(i);
         }
-        //分支长度集合
-        List<Float> branchLengthList = SampleSave.getBranchLength( edgeFirst);
+        // 分支长度集合
+        List<Float> branchLengthList = SampleSave.getBranchLength(edgeFirst);
         for (List<String> list : changeList) {
             tasks.add(() -> {
                 Map<String, Object> result = new HashMap<>();
@@ -85,20 +89,28 @@ public class GenerateBreakNoise {
                         serviceableStatue.set(i, "S");
                     }
                 }
-                List<Map<String, Object>> newEdges = harnessBranchTopoOptimize.createNewEdges(serviceableStatue, edges, normList);
-                //约束判断
-                Boolean sonSate = harnessBranchTopoOptimize.checkFirstOption(normList, list, newEdges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
+                List<Map<String, Object>> newEdges = harnessBranchTopoOptimize.createNewEdges(serviceableStatue, edges,
+                        normList);
+                // 约束判断
+                Boolean sonSate = harnessBranchTopoOptimize.checkFirstOption(normList, list, newEdges, appPositions,
+                        eleclection, mutexMap, chooseOneList, togetherBCList);
                 if (!sonSate) {
                     return null;
                 }
                 Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
                 jsonMapCopy.put("edges", newEdges);
-                String projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMapCopy));
+
+                result.put("jsonMapCopy", jsonMapCopy);
+                result.put("serviceableStatue", new ArrayList<>(serviceableStatue));
+
+                String projectInfo = projectCircuitInfoOutput
+                        .projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMapCopy));
                 if (projectInfo == null || "".equals(projectInfo)) {
                     return null;
                 }
                 Map<String, Object> stringObjectMap = jsonToMap.TransJsonToMap(projectInfo);
-                Map<String, Object> projectCircuitlnfo = (Map<String, Object>) stringObjectMap.get("projectCircuitInfo");
+                Map<String, Object> projectCircuitlnfo = (Map<String, Object>) stringObjectMap
+                        .get("projectCircuitInfo");
                 Float baseCost = Float.parseFloat(projectCircuitlnfo.get("总成本").toString());
                 Float baseWeight = Float.parseFloat(projectCircuitlnfo.get("回路总重量").toString());
                 Float baseLength = Float.parseFloat(projectCircuitlnfo.get("回路总长度").toString());
@@ -106,7 +118,7 @@ public class GenerateBreakNoise {
                 int branchCount = serviceableStatue.size();
                 float[][] branchFeatureArray = new float[branchCount][4];
 
-                //状态转换
+                // 状态转换
                 for (int i = 0; i < serviceableStatue.size(); i++) {
                     String s = serviceableStatue.get(i);
                     // 初始化前3列为0
@@ -119,10 +131,10 @@ public class GenerateBreakNoise {
                             // 已经是 [0, 0, 0]，无需修改
                             break;
                         case "C":
-                            branchFeatureArray[i][1] = 1.0f;  // [0, 1, 0]
+                            branchFeatureArray[i][1] = 1.0f; // [0, 1, 0]
                             break;
                         case "S":
-                            branchFeatureArray[i][2] = 1.0f;  // [0, 0, 1]
+                            branchFeatureArray[i][2] = 1.0f; // [0, 0, 1]
                             break;
                         default:
                             break;
@@ -133,13 +145,13 @@ public class GenerateBreakNoise {
                 for (int i = 0; i < branchLengthList.size(); i++) {
                     branchFeatureArray[i][3] = branchLengthList.get(i);
                 }
-                //获取回路信息
+                // 获取回路信息
                 List<Map<String, Object>> circuitList = (List<Map<String, Object>>) stringObjectMap.get("circuitInfo");
-                //175*176特征
+                // 175*176特征
                 float[][] x = new float[allNameList.size()][allNameList.size() + 1];
-                //回路单价总和
+                // 回路单价总和
                 Map<String, Float> circuitPrice = new HashMap<>();
-                //分支点为湿区的成本
+                // 分支点为湿区的成本
                 Map<String, Float> wetCost = new HashMap<>();
                 for (Map<String, Object> objectMap : circuitList) {
                     String startName = objectMap.get("起点用电器名称").toString();
@@ -147,7 +159,7 @@ public class GenerateBreakNoise {
                     String wireType = objectMap.get("导线选型").toString();
                     Map<String, String> materialsMsg = elecFixedLocationLibrary.get(wireType);
                     String price = materialsMsg.get("导线单位商务价（元/米）");
-                    if((startName.startsWith("[") || endName.startsWith("[")) && objectMap.get("焊点位置名称") == null){
+                    if ((startName.startsWith("[") || endName.startsWith("[")) && objectMap.get("焊点位置名称") == null) {
                         continue;
                     }
                     String startAppPosition = null;
@@ -168,10 +180,11 @@ public class GenerateBreakNoise {
                     if (circuitPrice.get(startAppPosition + ":" + endAppPosition) == null) {
                         circuitPrice.put(startAppPosition + ":" + endAppPosition, Float.parseFloat(price));
                     } else {
-                        circuitPrice.put(startAppPosition + ":" + endAppPosition, circuitPrice.get(startAppPosition + ":" + endAppPosition) + Float.parseFloat(price));
+                        circuitPrice.put(startAppPosition + ":" + endAppPosition,
+                                circuitPrice.get(startAppPosition + ":" + endAppPosition) + Float.parseFloat(price));
                     }
 
-                    //湿区成本，用回路单价替代
+                    // 湿区成本，用回路单价替代
                     String startParam = SampleSave.getWaterParam(startAppPosition, pointList);
                     String endParam = SampleSave.getWaterParam(endAppPosition, pointList);
                     if ("w".toUpperCase().equals(startParam) || "w".toUpperCase().equals(endParam)) {
@@ -182,7 +195,7 @@ public class GenerateBreakNoise {
                         }
                     }
                 }
-                //x矩阵构建
+                // x矩阵构建
                 circuitPrice.forEach((k, v) -> {
                     x[allNameList.indexOf(k.split(":")[0])][allNameList.indexOf(k.split(":")[1])] = v;
                 });
@@ -199,7 +212,7 @@ public class GenerateBreakNoise {
                 return result;
             });
         }
-        //获取结果
+        // 获取结果
         List<Future<Map<String, Object>>> futures = new ArrayList<>();
         for (Callable<Map<String, Object>> task : tasks) {
             if (task != null) {
@@ -217,15 +230,21 @@ public class GenerateBreakNoise {
                     Float totalPrice = Float.parseFloat(result.get("totalPrice").toString());
                     Float totalLength = Float.parseFloat(result.get("totalLength").toString());
                     Float totalWeight = Float.parseFloat(result.get("totalWeight").toString());
-                    //样本写入
+                    // 样本写入
                     SampleSave.saveSample(edgeIndex1, edgeAttr, x, filePath, totalPrice, totalLength, totalWeight);
+                    // 收集扰动后的方案信息供交叉使用
+                    Map<String, Object> perturbedInfo = new HashMap<>();
+                    perturbedInfo.put("jsonMapCopy", result.get("jsonMapCopy"));
+                    perturbedInfo.put("serviceableStatue", result.get("serviceableStatue"));
+                    if (collectedSamples != null) {
+                        collectedSamples.add(perturbedInfo);
+                    }
                 }
             } catch (Exception e) {
-//                e.printStackTrace();
+                // e.printStackTrace();
             }
         }
 
     }
-
 
 }
