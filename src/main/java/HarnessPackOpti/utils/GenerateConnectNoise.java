@@ -24,11 +24,13 @@ public class GenerateConnectNoise {
 
     public void generateConnectNoise(List<String> normList, List<List<String>> changeList, List<Map<String, Object>> edges,
                                  Map<String, Object> jsonMap,Map<String, Map<String, String>> elecFixedLocationLibrary,
-                                 List<String> edgeChooseBS,String filePath) throws Exception {
+                                 List<String> edgeChooseBS,String filePath,List<Map<String, String>> appPositions, Map<String, String> eleclection,
+                                 Map<String, Map<String, List<String>>> mutexMap,
+                                 List<Map<String, List<String>>> chooseOneList,
+                                 List<List<String>> togetherBCList) throws Exception {
         HarnessBranchTopoOptimize harnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         List<Map<String, String>> pointList = (List<Map<String, String>>)jsonMap.get("points");
-        List<Map<String, String>> appPositions = (List<Map<String, String>>)jsonMap.get("appPositions");
         JsonToMap jsonToMap = new JsonToMap();
         ObjectMapper objectMapper = new ObjectMapper();
         List<Callable<Map<String,Object>>> tasks = new ArrayList<>();
@@ -110,6 +112,11 @@ public class GenerateConnectNoise {
                     if(!startApp.equals(s)){
                         stringObjectMap.put("endApp",s);
                     }
+                }
+                //约束判断
+                Boolean sonSate = harnessBranchTopoOptimize.checkFirstOption(normList, list, newEdges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);                
+                if (!sonSate) {
+                    return null;
                 }
 
                 jsonMapCopy.put("loopInfos", topoCopy);

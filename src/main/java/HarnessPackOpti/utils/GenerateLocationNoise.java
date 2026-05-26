@@ -23,7 +23,10 @@ public class GenerateLocationNoise {
 
     public void generateLocationNoise(List<String> normList, List<List<String>> changeList, List<Map<String, Object>> edges,
                                  Map<String, Object> jsonMap, Map<String, Map<String, String>> elecFixedLocationLibrary,
-                                 List<String> edgeChooseBS, String filePath) throws Exception {
+                                 List<String> edgeChooseBS, String filePath,List<Map<String, String>> appPositions, Map<String, String> eleclection,
+                                 Map<String, Map<String, List<String>>> mutexMap,
+                                 List<Map<String, List<String>>> chooseOneList,
+                                 List<List<String>> togetherBCList) throws Exception {
         HarnessBranchTopoOptimize harnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         List<Map<String, String>> pointList = (List<Map<String, String>>) jsonMap.get("points");
@@ -108,6 +111,11 @@ public class GenerateLocationNoise {
                     map.put("unregularPointId",randomMap.get("startPointId").toString());
                 }
                 jsonMapCopy.put("appPositions",appPositionsCopy);
+                //约束判断
+                Boolean sonSate = harnessBranchTopoOptimize.checkFirstOption(normList, list, newEdges, appPositionsCopy, eleclection, mutexMap, chooseOneList, togetherBCList);                
+                if (!sonSate) {
+                    return null;
+                }
 
                 String projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMapCopy));
                 if (projectInfo == null || "".equals(projectInfo)) {

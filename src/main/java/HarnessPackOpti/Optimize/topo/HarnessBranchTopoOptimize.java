@@ -698,7 +698,7 @@ public class HarnessBranchTopoOptimize {
         String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS").format(new java.util.Date());
         String fileName = "Samples_" + timestamp + ".dat";
         String filePath = "F:\\office\\pythonProjects\\GINEModel\\Samples\\" + fileName;
-        generateBreakNoise.projectCalculate(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath);
+        generateBreakNoise.projectCalculate(normList, WareHouseTemp, edges, jsonMap, ProjectCircuitInfoOutput.elecFixedLocationLibrary,edgeChooseBS, filePath, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
         System.out.println("AI样本生成结束，耗时：" + (System.currentTimeMillis() - generateAiCase));
         initializeCaseResultMap.put("finishStatue", "normal");
         mapList.add(initializeCaseResultMap);
@@ -1405,11 +1405,6 @@ public class HarnessBranchTopoOptimize {
                                                    List<Map<String, Object>> circuitInfoList,Map<String,List<String>> togetherBCMap,Map<String, Map<String, List<String>>> chooseOneMap) throws Exception {
         //利用约束变异开始时间
         long constraintStartTime = System.currentTimeMillis();
-        GenerateBreakNoise generateBreakNoise = new GenerateBreakNoise();
-        GenerateLengthNoise generateLengthNoise = new GenerateLengthNoise();
-        GenerateLocationNoise generateLocationNoise = new GenerateLocationNoise();
-        GeneratePriceNoise generatePriceNoise = new GeneratePriceNoise();
-        GenerateConnectNoise generateConnectNoise = new GenerateConnectNoise();
         List<List<String>> simple = new ArrayList<>();
         Random random = new Random();
 //        首先将给定的top20的方案进行一个还原   将里面符合要求的S就是可以变s的分支改为C
@@ -1704,9 +1699,6 @@ public class HarnessBranchTopoOptimize {
                     }
                 }
             }
-
-
-            //TODO 自动不全次数稍微有点多，无效补充会导致时间增加，可适当降低，目前是30
             if (completeNumber > AutoCompleteNumber) {
                 break;
             }
@@ -1734,7 +1726,7 @@ public class HarnessBranchTopoOptimize {
                 edges,
                 jsonMap,
                 edgeChooseBS,
-                filePath
+                filePath, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList
         );
         System.out.println("样本扰动总耗时：" + (System.currentTimeMillis() - perturbationStartTime));
 

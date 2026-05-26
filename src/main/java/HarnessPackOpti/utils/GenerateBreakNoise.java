@@ -32,7 +32,10 @@ public class GenerateBreakNoise {
      */
     public void projectCalculate(List<String> normList, List<List<String>> changeList, List<Map<String, Object>> edges,
                                  Map<String, Object> jsonMap, Map<String, Map<String, String>> elecFixedLocationLibrary,
-                                 List<String> edgeChooseBS, String filePath) throws Exception {
+                                 List<String> edgeChooseBS, String filePath,List<Map<String, String>> appPositions, Map<String, String> eleclection,
+                                 Map<String, Map<String, List<String>>> mutexMap,
+                                 List<Map<String, List<String>>> chooseOneList,
+                                 List<List<String>> togetherBCList) throws Exception {
         HarnessBranchTopoOptimize harnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         List<Map<String, String>> pointList = (List<Map<String, String>>) jsonMap.get("points");
@@ -83,6 +86,11 @@ public class GenerateBreakNoise {
                     }
                 }
                 List<Map<String, Object>> newEdges = harnessBranchTopoOptimize.createNewEdges(serviceableStatue, edges, normList);
+                //约束判断
+                Boolean sonSate = harnessBranchTopoOptimize.checkFirstOption(normList, list, newEdges, appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
+                if (!sonSate) {
+                    return null;
+                }
                 Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
                 jsonMapCopy.put("edges", newEdges);
                 String projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMapCopy));
