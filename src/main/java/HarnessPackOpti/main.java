@@ -4,18 +4,25 @@ import java.io.File;
 import java.nio.file.Files;
 
 import HarnessPackOpti.ErrorOutput.HarnessBranchTopoOptiErrorOutPut;
+import HarnessPackOpti.Optimize.elec.ElecPositionVariantCalculation;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 
 public class main {
         public static void main(String[] args) throws Exception {
 
                 // 线束拓扑优化
-                File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
+                // File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
+                // String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
+                // HarnessBranchTopoOptimize harnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
+                // harnessBranchTopoOptimize.topoOptimize(jsonContent);
+                // HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut = new HarnessBranchTopoOptiErrorOutPut();
+                // harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
+
+                //控制器位置优化
+                File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\线束拓扑优化TXT.txt");
                 String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
-                HarnessBranchTopoOptimize harnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
-                harnessBranchTopoOptimize.topoOptimize(jsonContent);
-                HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut = new HarnessBranchTopoOptiErrorOutPut();
-                harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
+                ElecPositionVariantCalculation elecPositionVariantCalculation=new ElecPositionVariantCalculation();
+                elecPositionVariantCalculation.elecPositionVariantCalculation(jsonContent);
 
                 // 配电驱动优化
                 // File file = new
