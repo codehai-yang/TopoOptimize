@@ -743,11 +743,11 @@ public class ProjectCircuitInfoOutput {
             }
             // 如果起点和终点都是邻居节点
             Double lengthOne = circuitLengthMap.get(startPositionName + "&" + endPositionName);
-
+            Double diameter = (Double) loopInfo.get("回路理论直径");
             if (lengthOne != null) {
-                lengthOne = lengthOne + (Double) loopInfo.get("回路理论直径");
+                lengthOne = lengthOne + diameter * diameter;
             } else {
-                circuitLengthMap.put(startPositionName + "&" + endPositionName, (Double) loopInfo.get("回路理论直径"));
+                circuitLengthMap.put(startPositionName + "&" + endPositionName, diameter * diameter);
             }
         });
         // 分支点id，两两分支点之间的颜色名称用&拼接
@@ -792,8 +792,10 @@ public class ProjectCircuitInfoOutput {
                 Double length2 = circuitLengthMap.get(pointsName[1] + "&" + pointsName[0]);
                 // 两个分支点之间的总理论直径
                 Double totalLength = length == null ? 0 : length + (length2 == null ? 0 : length2);
+                // 开根号 × 1.3 得到等效直径
+                Double equivalentDiameter = Math.sqrt(totalLength) * 1.3;
                 // 判断颜色
-                String edgeColor = getlengthColor(totalLength);
+                String edgeColor = getlengthColor(equivalentDiameter);
                 // 两个分支点-对应的颜色
                 colorMap.put(combination, edgeColor);
             });
@@ -2571,3 +2573,4 @@ public class ProjectCircuitInfoOutput {
         return 0.0;
     }
 }
+
