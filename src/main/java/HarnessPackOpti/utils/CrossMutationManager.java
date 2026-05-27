@@ -194,7 +194,7 @@ public class CrossMutationManager {
             statueList.add("B");
         }
         for (Map<String, Object> edge : edges) {
-            String branchId = edge.get("branchId").toString();
+            String branchId = edge.get("id").toString();
             String topologyStatusCode = edge.get("topologyStatusCode").toString();
             int index = normList.indexOf(branchId);
             if (index >= 0) {
