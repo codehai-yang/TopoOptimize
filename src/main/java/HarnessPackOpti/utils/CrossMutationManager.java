@@ -13,11 +13,11 @@ import java.util.*;
  * 对不同扰动类型的方案进行两两交叉组合，增加样本多样性
  * 
  * 交叉策略：
- * - CONNECT × BREAK   : 继承连接关系的loopInfos + 通断状态的edges
+ * - CONNECT × BREAK : 继承连接关系的loopInfos + 通断状态的edges
  * - CONNECT × LOCATION: 继承连接关系的loopInfos + 用电器位置的appPositions
- * - BREAK × LOCATION  : 继承通断状态的edges + 用电器位置的appPositions
- * - LENGTH × CONNECT  : CONNECT的拓扑 + 对结果施加长度扰动
- * - LENGTH × BREAK    : BREAK的拓扑 + 对结果施加长度扰动
+ * - BREAK × LOCATION : 继承通断状态的edges + 用电器位置的appPositions
+ * - LENGTH × CONNECT : CONNECT的拓扑 + 对结果施加长度扰动
+ * - LENGTH × BREAK : BREAK的拓扑 + 对结果施加长度扰动
  * - LOCATION × CONNECT: 继承用电器位置的appPositions + 连接关系的loopInfos
  */
 public class CrossMutationManager {
@@ -84,6 +84,7 @@ public class CrossMutationManager {
         for (Object[] config : pairConfigs) {
             PerturbType typeA = (PerturbType) config[0];
             PerturbType typeB = (PerturbType) config[1];
+            //获取
             List<Map<String, Object>> poolA = (List<Map<String, Object>>) config[2];
             List<Map<String, Object>> poolB = (List<Map<String, Object>>) config[3];
 
@@ -100,8 +101,14 @@ public class CrossMutationManager {
                         sampleA, typeA, sampleB, typeB, jsonMap);
 
                 // 使用交叉后的jsonMap重新计算回路信息
-                String projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(
+                String projectInfo = null;
+                try{
+                     projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(
                         objectMapper.writeValueAsString(crossedJsonMap));
+                }catch(Exception exception){
+                    System.out.println(exception);
+                }
+               
                 if (projectInfo == null || "".equals(projectInfo)) {
                     continue;
                 }
@@ -145,10 +152,10 @@ public class CrossMutationManager {
             Map<String, Object> sampleB, PerturbType typeB,
             Map<String, Object> jsonMap) {
 
-        Map<String, Object> crossed = deepCopyJsonMap(jsonMap);
+        Map<String, Object> crossed = deepCopyJsonMap((Map<String,Object>)sampleA.get("jsonMapCopy"));
 
         // 从sampleA继承typeA的扰动域
-        applyDomain(crossed, sampleA, typeA);
+        // applyDomain(crossed, sampleA, typeA);
         // 从sampleB继承typeB的扰动域
         applyDomain(crossed, sampleB, typeB);
 
@@ -232,7 +239,7 @@ public class CrossMutationManager {
      * 构建分支特征数组 [N, 4]: [B状态, C状态, S状态, 分支长度]
      */
     private float[][] buildEdgeAttr(List<String> statueList, List<Map<String, Object>> crossedEdges,
-                                    boolean applyLengthPerturbation) {
+            boolean applyLengthPerturbation) {
         int count = statueList.size();
         float[][] edgeAttr = new float[count][4];
         for (int i = 0; i < count; i++) {
@@ -276,11 +283,11 @@ public class CrossMutationManager {
      * 构建节点特征矩阵 x [nodeCount, nodeCount + 1]
      */
     private float[][] buildNodeFeature(Map<String, Object> crossedJsonMap,
-                                       List<Map<String, Object>> crossedEdges,
-                                       List<Map<String, String>> pointList,
-                                       Map<String, Map<String, String>> elecFixedLocationLibrary,
-                                       JsonToMap jsonToMap, ObjectMapper objectMapper,
-                                       ProjectCircuitInfoOutput projectCircuitInfoOutput) throws Exception {
+            List<Map<String, Object>> crossedEdges,
+            List<Map<String, String>> pointList,
+            Map<String, Map<String, String>> elecFixedLocationLibrary,
+            JsonToMap jsonToMap, ObjectMapper objectMapper,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput) throws Exception {
 
         // 重新计算获得circuitInfo
         String projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(
