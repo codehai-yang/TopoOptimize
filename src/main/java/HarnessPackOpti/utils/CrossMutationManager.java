@@ -106,7 +106,7 @@ public class CrossMutationManager {
                      projectInfo = projectCircuitInfoOutput.projectCircuitInfoOutput(
                         objectMapper.writeValueAsString(crossedJsonMap));
                 }catch(Exception exception){
-                    System.out.println(exception);
+                    // System.out.println(exception);
                 }
                
                 if (projectInfo == null || "".equals(projectInfo)) {

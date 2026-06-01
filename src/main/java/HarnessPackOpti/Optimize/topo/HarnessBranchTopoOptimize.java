@@ -1793,7 +1793,7 @@ public class HarnessBranchTopoOptimize {
         // 创建文件
         String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS").format(new java.util.Date());
         String fileName = "Samples_" + timestamp;
-        String filePath = "F:\\office\\pythonProjects\\GINEModel\\Samples\\" + fileName;
+        String filePath = "//ssaed410/SD_ID_AI/样本归档/模型训练所用样本/" + fileName;
         // 使用扰动管理器统一执行所有扰动
         long perturbationStartTime = System.currentTimeMillis();
         SamplePerturbationManager perturbationManager = new SamplePerturbationManager();
