@@ -33,9 +33,9 @@ import HarnessPackOpti.utils.TypeCheckUtils;
 
 public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
-    public static Integer LessRandomSamleNumber = 20;
+    public static Integer LessRandomSamleNumber = 100;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 50;
+    public static Integer HybridizationLessRandomSamleNumber = 300;
     // top几的数量规定
     public static final Integer TopNumber = 20;
     // 每次迭代最优的成本
@@ -51,7 +51,7 @@ public class HarnessBranchTopoOptimize {
     // 暂存的仓库
     public static List<List<String>> WareHouseTemp = new CopyOnWriteArrayList<>();
     // AI仓库存放的样本数量限制
-    public static Integer AutoCompleteNumberLimit = 30000;
+    public static Integer AutoCompleteNumberLimit = 100000;
     // 变异的次数
     public static Integer VariationNumber = 1;
     // 每次迭代得到的top20
@@ -717,7 +717,7 @@ public class HarnessBranchTopoOptimize {
             System.out.println("遗传算法迭代一共生成AI样本数：" + allCounts);
             String jsonString = TypeCheckUtils.toJsonString();
             System.out.println("各类型样本数量:" + jsonString);
-            if (allCounts >= AutoCompleteNumberLimit) {
+            if (hybridizationNumber >= AutoCompleteNumberLimit) {
                 break;
             }
 

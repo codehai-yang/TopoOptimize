@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
+import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 
 /**
@@ -26,7 +27,7 @@ public class SamplePerturbationManager {
                 this.locationNoiseGenerator = new GenerateLocationNoise();
                 this.priceNoiseGenerator = new GeneratePriceNoise();
                 this.connectNoiseGenerator = new GenerateConnectNoise();
-                this.crossMutationManager = new CrossMutationManager(10);
+                this.crossMutationManager = new CrossMutationManager(HarnessBranchTopoOptimize.HybridizationLessRandomSamleNumber);
         }
 
         public SamplePerturbationManager(int crossoverCountPerPair) {
