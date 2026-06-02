@@ -12,10 +12,12 @@ import HarnessPackOpti.Optimize.topo.HarnessBranchTopoTest;
 import HarnessPackOpti.ProjectInfoOutPut.ElecFixedLocationOutput;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
@@ -24,7 +26,17 @@ public class main {
 
         //线束拓扑优化
         InputStream inputStream = main.class.getClassLoader().getResourceAsStream("优化测试后台记录.txt");
-        String jsonContent = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+              if (inputStream == null) {
+            throw new RuntimeException("找不到资源文件: 优化测试后台记录.txt");
+        }
+        BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            sb.append(line);
+        }
+        reader.close();
+        String jsonContent = sb.toString();
         HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
         harnessBranchTopoOptimize.topoOptimize(jsonContent);
         HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
