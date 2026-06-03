@@ -1829,7 +1829,11 @@ public class ProjectCircuitInfoOutput {
                         if (stringMap.get("回路起点用电器接口编号") != null) {
                             String startAppPort = stringMap.get("回路起点用电器接口编号");
                             Map<String, String> map1 = (Map<String, String>) objectMap.get(elecName);
-                            appNode.add(map1.get(startAppPort));
+                            if(map1.get(startAppPort) == null){
+                                appNode.add(findNode(elecName, appPositions));
+                            }else{
+                                appNode.add(map1.get(startAppPort));
+                            }
                         } else {
                             Map<String, String> map1 = (Map<String, String>) objectMap.get(elecName);
                             appNode.add(map1.get("null"));
@@ -1843,7 +1847,11 @@ public class ProjectCircuitInfoOutput {
                         if (stringMap.get("回路终点用电器接口编号") != null) {
                             String endAppPort = stringMap.get("回路终点用电器接口编号");
                             Map<String, String> map1 = (Map<String, String>) objectMap.get(elecName);
-                            appNode.add(map1.get(endAppPort));
+                            if(map1.get(endAppPort) == null){
+                                appNode.add(findNode(elecName, appPositions));
+                            }else{
+                                appNode.add(map1.get(endAppPort));
+                            }
                         } else {
                             Map<String, String> map1 = (Map<String, String>) objectMap.get(elecName);
                             if (map1 != null) {
