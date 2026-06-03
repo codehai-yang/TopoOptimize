@@ -1,24 +1,40 @@
 package HarnessPackOpti.ProjectInfoOutPut;
 
-import HarnessPackOpti.Algorithm.*;
-import HarnessPackOpti.CircuitInfoCalculate.CalculateCircuitInfo;
-import HarnessPackOpti.CircuitInfoCalculate.CalculateInlineWet;
-import HarnessPackOpti.CircuitInfoCalculate.CalculatePathBreakNumber;
-import HarnessPackOpti.CircuitInfoCalculate.CalculatePathLength;
-import HarnessPackOpti.InfoRead.ReadProjectInfo;
-import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
-import HarnessPackOpti.JsonToMap;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.commons.codec.binary.StringUtils;
-import org.apache.commons.collections4.map.LinkedMap;
-import org.apache.poi.util.StringUtil;
-
 import java.io.File;
 import java.nio.file.Files;
 import java.text.DecimalFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
+
+import org.apache.commons.collections4.map.LinkedMap;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import HarnessPackOpti.JsonToMap;
+import HarnessPackOpti.Algorithm.ClassifyCircuit;
+import HarnessPackOpti.Algorithm.FindAllPath;
+import HarnessPackOpti.Algorithm.FindBranchByNode;
+import HarnessPackOpti.Algorithm.FindElecLocation;
+import HarnessPackOpti.Algorithm.FindShortestPath;
+import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
+import HarnessPackOpti.Algorithm.GenerateTopoMatrixConnector;
+import HarnessPackOpti.Algorithm.IntergateCircuitInfo;
+import HarnessPackOpti.Algorithm.SplitCircuitByInterDirectConn;
+import HarnessPackOpti.CircuitInfoCalculate.CalculateCircuitInfo;
+import HarnessPackOpti.CircuitInfoCalculate.CalculateInlineWet;
+import HarnessPackOpti.CircuitInfoCalculate.CalculatePathLength;
+import HarnessPackOpti.InfoRead.ReadProjectInfo;
+import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 
 public class ProjectCircuitInfoOutput {
 
@@ -33,8 +49,13 @@ public class ProjectCircuitInfoOutput {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\20250630.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\logs.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
+        // 去掉外层可能存在的双引号（JSON被双重转义的情况）
+        jsonContent = jsonContent.trim();
+        if (jsonContent.startsWith("\"") && jsonContent.endsWith("\"")) {
+            jsonContent = jsonContent.substring(1, jsonContent.length() - 1);
+        }
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         long start = System.currentTimeMillis();
         String json = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
@@ -2573,4 +2594,3 @@ public class ProjectCircuitInfoOutput {
         return 0.0;
     }
 }
-
