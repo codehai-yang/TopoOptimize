@@ -22,11 +22,11 @@ import java.util.stream.Collectors;
 
 public class ProjectCircuitInfoOutput {
     public static void main(String[] args) throws Exception {
-        File file = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\20250630.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\logs.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         String json = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
-        File outputFile = new File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\output.txt");
+        File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\output.txt");
         Files.write(outputFile.toPath(), json.getBytes());
         System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
 
@@ -1410,7 +1410,11 @@ public class ProjectCircuitInfoOutput {
                         if (stringMap.get("回路起点用电器接口编号") != null) {
                             String startAppPort = stringMap.get("回路起点用电器接口编号");
                             Map<String, String> map1 = (Map<String, String>) objectMap.get(elecName);
-                            appNode.add(map1.get(startAppPort));
+                            if(map1.get(startAppPort) == null){
+                                appNode.add(findNode(elecName, appPositions));
+                            }else{
+                                appNode.add(map1.get(startAppPort));
+                            }  
                         } else {
                             Map<String, String> map1 = (Map<String, String>) objectMap.get(elecName);
                             appNode.add(map1.get("null"));
@@ -1424,7 +1428,11 @@ public class ProjectCircuitInfoOutput {
                         if (stringMap.get("回路终点用电器接口编号") != null) {
                             String endAppPort = stringMap.get("回路终点用电器接口编号");
                             Map<String, String> map1 = (Map<String, String>) objectMap.get(elecName);
-                            appNode.add(map1.get(endAppPort));
+                            if(map1.get(endAppPort) == null){
+                                appNode.add(findNode(elecName, appPositions));
+                            }else{
+                                appNode.add(map1.get(endAppPort));
+                            }  
                         } else {
                             Map<String, String> map1 = (Map<String, String>) objectMap.get(elecName);
                             if (map1 != null) {
@@ -1722,6 +1730,9 @@ public class ProjectCircuitInfoOutput {
             }
             return groupMap;
         }
+        if(groupMap == null){
+            System.out.println("");
+        }
 //      返回中心点最优的那一条信息
         return splicePositionSelect(groupMap);
 
@@ -2006,6 +2017,9 @@ public class ProjectCircuitInfoOutput {
         List<String> points = new ArrayList<>();
         for (Integer point : numberPath) {
             points.add(allPoint.get(point));
+        }
+        if(points == null){
+            System.out.println("");
         }
         return points;
     }
