@@ -15,6 +15,13 @@
               <mainClass>HarnessPackOpti.main</mainClass>
             </manifest>
           </archive>
+          <excludes>
+            <exclude>**/*.properties</exclude>
+            <exclude>**/*.xml</exclude>
+            <exclude>**/*.json</exclude>
+            <exclude>**/*.txt</exclude>
+            <exclude>**/resources/**</exclude>
+          </excludes>
         </configuration>
       </plugin>
       <plugin>
@@ -40,8 +47,10 @@
     </plugins>
   </build>
   <properties>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.source>8</maven.compiler.source>
+    <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
     <maven.compiler.target>8</maven.compiler.target>
+    <maven.compiler.source>8</maven.compiler.source>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
   </properties>
 </project>
