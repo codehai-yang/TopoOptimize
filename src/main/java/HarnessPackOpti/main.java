@@ -12,12 +12,12 @@ public class main {
         public static void main(String[] args) throws Exception {
 
                 // 线束拓扑优化
-                //  File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
-                //  String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
-                //  HarnessBranchTopoOptimize harnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
-                //  harnessBranchTopoOptimize.topoOptimize(jsonContent);
-                //  HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut = new HarnessBranchTopoOptiErrorOutPut();
-                //  harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
+                  File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
+                  String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
+                  HarnessBranchTopoOptimize harnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
+                  harnessBranchTopoOptimize.topoOptimize(jsonContent);
+                  HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut = new HarnessBranchTopoOptiErrorOutPut();
+                  harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
 
                 //用电器位置布局优化
 //                File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\用电器位置布局优化遗传算法样本.txt");
