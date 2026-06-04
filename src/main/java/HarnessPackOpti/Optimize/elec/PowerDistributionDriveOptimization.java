@@ -198,7 +198,7 @@ public class PowerDistributionDriveOptimization {
             } else if ("2".equals(appPosition.get("changeType"))) {
                 elecChangeablePosition.put(appName, new ArrayList<>(allPoint));
             }
-            elecNameId.put(appPosition.get("appId"), appName);
+            elecNameId.put(appPosition.get("id"), appName);
         }
 
         //统计约束list集合，方便后面判断回路是否有约束
