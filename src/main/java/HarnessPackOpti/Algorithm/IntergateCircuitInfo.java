@@ -99,8 +99,10 @@ public class IntergateCircuitInfo {
             avgLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
         //TODO 能量流绕线
-        totalCost.put("能量流绕线长度总值(米)", null);
-        totalCost.put("能量流绕线长度均值(米)", null);
+        totalCost.put("能量流绕路总数量(根)", null);
+        totalCost.put("能量流绕路数量占比", null);
+        totalCost.put("能量流绕路长度总值", null);
+        totalCost.put("能量流绕路长度均值", null);
         totalCost.put("回路长度均值(打断后)",avgLength2);
         totalCost.put("总理论直径",Double.parseDouble( df.format(Math.sqrt(lenght)*1.3)));
         totalCost.put("分支直径RGB坐标",getlengthColor((Double) totalCost.get("总理论直径")));

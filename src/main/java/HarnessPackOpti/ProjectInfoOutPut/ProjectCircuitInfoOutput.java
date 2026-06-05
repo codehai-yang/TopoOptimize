@@ -606,6 +606,11 @@ public class ProjectCircuitInfoOutput {
 
         List<Map<String, Object>> circuitInfo = new LinkedList<>();
         IntergateCircuitInfo circuitInfoIntergation = new IntergateCircuitInfo();
+        // 回路绕线长度计算
+        circuitCoilingLength(loopdetails, edges, adjacencyMatrixGraphConnector, projectInfo);
+        // 所有回路信息的总和
+        Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails);
+
         for (Map<String, Object> loopInfo : loopInfos) {
             Map<String, Object> objectMap = (Map<String, Object>) loopdetails.get(loopInfo.get("回路id").toString());
             List<String> list = new ArrayList<>();
@@ -619,10 +624,6 @@ public class ProjectCircuitInfoOutput {
             objectMap.put("导线单价", price);
             circuitInfo.add(objectMap);
         }
-        // 回路绕线长度计算
-        circuitCoilingLength(loopdetails, edges, adjacencyMatrixGraphConnector, projectInfo);
-        // 所有回路信息的总和
-        Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails);
         // 对分支进行计算
         Set<String> systemMapset = systemMap.keySet();
 
@@ -740,14 +741,14 @@ public class ProjectCircuitInfoOutput {
             objectMap.put("回路数量(打断后)",circuitNum);
             objectMap.put("回路数量(打断前)",1);
             objectMap.put("回路长度均值(打断前)",objectMap.get("回路长度"));
-            objectMap.put("回路长度均值(打断后)",Double.parseDouble(df.format(Double.parseDouble(objectMap.get("回路总长度").toString()) / circuitNum)));
+            objectMap.put("回路长度均值(打断后)",Double.parseDouble(df.format(Double.parseDouble(objectMap.get("回路长度").toString()) / circuitNum)));
             double coilingLength = Double.parseDouble(objectMap.get("回路绕线长度").toString());
             Integer coiling = coilingLength > 0 ? 1:0;
             objectMap.put("回路绕线数量",coiling);
             double coilingPercent = (double)coiling / 1 * 100;
             objectMap.put("回路绕线数量占比",df.format(coilingPercent) + "%");
-            objectMap.put("回路打断数量占比",Double.parseDouble(df.format(Double.parseDouble(objectMap.get("回路打断次数").toString()) / 1 * 100)) + "%");
-            objectMap.put("回路打断成本代价均值",Double.parseDouble(df.format(Double.parseDouble(objectMap.get("回路打断成本").toString()) / 1 * 100)) + "%");
+            objectMap.put("回路打断数量占比", df.format(Double.parseDouble(objectMap.get("回路打断次数").toString()) / 1 * 100) + "%");
+            objectMap.put("回路打断成本代价均值",df.format(Double.parseDouble(objectMap.get("回路打断成本").toString()) / 1));
         }
     }
 
@@ -1297,8 +1298,10 @@ public class ProjectCircuitInfoOutput {
         Double totalDiameter = Math.sqrt(lenght) * 1.3;
         // 数模直径
         Double mathematicalDiameter = totalDiameter * 1.14;
-        totalCost.put("能量流绕线长度总值(米)", null);
-        totalCost.put("能量流绕线长度均值(米)", null);
+        totalCost.put("能量流绕路总数量(根)", null);
+        totalCost.put("能量流绕路数量占比", null);
+        totalCost.put("能量流绕路长度总值", null);
+        totalCost.put("能量流绕路长度均值", null);
         totalCost.put("回路长度均值(打断后)", avgLength2);
         totalCost.put("总理论直径", Double.parseDouble(df.format(totalDiameter)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
@@ -1413,8 +1416,10 @@ public class ProjectCircuitInfoOutput {
         if (count > 0) {
             vagLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
-        totalCost.put("能量流绕线长度总值(米)", null);
-        totalCost.put("能量流绕线长度均值(米)", null);
+        totalCost.put("能量流绕路总数量(根)", null);
+        totalCost.put("能量流绕路数量占比", null);
+        totalCost.put("能量流绕路长度总值", null);
+        totalCost.put("能量流绕路长度均值", null);
         totalCost.put("回路长度均值(打断后)", vagLength2);
         totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * 1.3)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
