@@ -49,7 +49,7 @@ public class ProjectCircuitInfoOutput {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\logs.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         // 去掉外层可能存在的双引号（JSON被双重转义的情况）
         jsonContent = jsonContent.trim();
@@ -172,14 +172,14 @@ public class ProjectCircuitInfoOutput {
         }
 
         ClassifyCircuit classifyCircuit = new ClassifyCircuit();
-        // 根据直连接口找出所有可变位置点对所有回路进行分类，固定回路，可变回路，成本低于5块的回路不进行分组
+        // 根据直连接口找出所有可变位置点对所有回路进行分类，固定回路，可变回路，成本低于4块的回路不进行分组
         Map<String, Object> group = group(projectInfo, electricalSet, elecFixedLocationLibrary, functionPointSet,
                 adjacencyMatrixGraph, appposition, edges, projectInfo);
         // 固定回路，这里包含焊点回路
         List<Map<String, Object>> fixedLoops = (List<Map<String, Object>>) group.get("fixedLoops");
         // 不固定回路进行分组，根据可变用电器(可变位置点和焊点)分好组的回路
         List<List<Map<String, Object>>> grouplists = (List<List<Map<String, Object>>>) group.get("groupLoops");
-        // 不固定回路不参与分组(成本小于5的回路)
+        // 不固定回路不参与分组(成本小于4的回路)
         List<Map<String, Object>> nonfixedNotGroupLoops = (List<Map<String, Object>>) group
                 .get("nonfixedNotGroupLoops");
 
@@ -605,8 +605,12 @@ public class ProjectCircuitInfoOutput {
         Map<String, Object> bundeleRelatedCircuitInfo = new HashMap<>();
 
         List<Map<String, Object>> circuitInfo = new LinkedList<>();
+        IntergateCircuitInfo circuitInfoIntergation = new IntergateCircuitInfo();
         for (Map<String, Object> loopInfo : loopInfos) {
             Map<String, Object> objectMap = (Map<String, Object>) loopdetails.get(loopInfo.get("回路id").toString());
+            List<String> list = new ArrayList<>();
+            //计算单条回路的所有字段
+            calculateCircuit(objectMap);
             Double price = null;
             Object wire = objectMap.get("导线选型");
             if (wire != null) {
@@ -621,7 +625,7 @@ public class ProjectCircuitInfoOutput {
         Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails);
         // 对分支进行计算
         Set<String> systemMapset = systemMap.keySet();
-        IntergateCircuitInfo circuitInfoIntergation = new IntergateCircuitInfo();
+
         for (String name : systemMapset) {
             List<String> list = systemMap.get(name);
             Map<String, Object> objectMap = circuitInfoIntergation.intergateCircuitInfo(list, loopdetails);
@@ -716,6 +720,35 @@ public class ProjectCircuitInfoOutput {
         String json = objectMapper.writeValueAsString(resultMap);// 将Map转换为JSON字符串
         // System.out.println("信息汇总:\n" +json);
         return json;
+    }
+
+    /**
+     * 对单条回路字段进行计算
+     * @param objectMap
+     * @return
+     */
+    public void calculateCircuit(Map<String,Object> objectMap){
+        DecimalFormat df = new DecimalFormat("0.00");
+        if(objectMap != null){
+            objectMap.put("能量流绕路总数量", null);
+            objectMap.put("能量流绕路数量占比", null);
+            objectMap.put("能量流绕路长度总值", null);
+            objectMap.put("能量流绕路长度均值", null);
+            String breakNumb = objectMap.get("回路打断次数").toString();
+            //打断后回路数量
+            Integer circuitNum =  Integer.parseInt(breakNumb) + 1;
+            objectMap.put("回路数量(打断后)",circuitNum);
+            objectMap.put("回路数量(打断前)",1);
+            objectMap.put("回路长度均值(打断前)",objectMap.get("回路长度"));
+            objectMap.put("回路长度均值(打断后)",Double.parseDouble(df.format(Double.parseDouble(objectMap.get("回路总长度").toString()) / circuitNum)));
+            double coilingLength = Double.parseDouble(objectMap.get("回路绕线长度").toString());
+            Integer coiling = coilingLength > 0 ? 1:0;
+            objectMap.put("回路绕线数量",coiling);
+            double coilingPercent = (double)coiling / 1 * 100;
+            objectMap.put("回路绕线数量占比",df.format(coilingPercent) + "%");
+            objectMap.put("回路打断数量占比",Double.parseDouble(df.format(Double.parseDouble(objectMap.get("回路打断次数").toString()) / 1 * 100)) + "%");
+            objectMap.put("回路打断成本代价均值",Double.parseDouble(df.format(Double.parseDouble(objectMap.get("回路打断成本").toString()) / 1 * 100)) + "%");
+        }
     }
 
     /**
@@ -992,7 +1025,7 @@ public class ProjectCircuitInfoOutput {
 
                 degression = length * Double.parseDouble(map1.get("导线单位商务价（元/米）"));
             }
-            if (degression < 5) {
+            if (degression < 4) {
                 withoutRegardIDList.addAll(idList);
             }
         }
