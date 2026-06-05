@@ -59,9 +59,7 @@ public class IntergateCircuitInfo {
             if( Double.parseDouble(objectMap.get("回路绕线长度").toString()) > 0 ){
                 coiling++;
             }
-            if(Double.parseDouble(objectMap.get("回路打断次数").toString()) > 0){
-                circuitBreakNum++;
-            }
+            circuitBreakNum += Double.parseDouble(objectMap.get("回路打断次数").toString());
             //回路打断后计算
             int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
             i += 1;

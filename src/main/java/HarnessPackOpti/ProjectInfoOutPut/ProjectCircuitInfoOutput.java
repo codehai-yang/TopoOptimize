@@ -1209,9 +1209,7 @@ public class ProjectCircuitInfoOutput {
                                 + Double.parseDouble(objectMap.get("回路绕线长度").toString()))));
                 lenght += Double.parseDouble(objectMap.get("回路理论直径").toString())
                         * Double.parseDouble(objectMap.get("回路理论直径").toString());
-                if (Double.parseDouble(objectMap.get("回路打断次数").toString()) > 0) {
-                    circuitBreakNum++;
-                }
+                circuitBreakNum += Double.parseDouble(objectMap.get("回路打断次数").toString());
                 mapList.add(objectMap.get("回路id").toString());
                 // 导线选型与系统统计
                 String wireType = objectMap.get("导线选型").toString();
@@ -1377,9 +1375,7 @@ public class ProjectCircuitInfoOutput {
                             + Double.parseDouble(objectMap.get("回路绕线长度").toString()))));
             lenght += Double.parseDouble(objectMap.get("回路理论直径").toString())
                     * Double.parseDouble(objectMap.get("回路理论直径").toString());
-            if (Double.parseDouble(objectMap.get("回路打断次数").toString()) > 0) {
-                circuitBreakNum++;
-            }
+            circuitBreakNum += Double.parseDouble(objectMap.get("回路打断次数").toString());
             if (Double.parseDouble(objectMap.get("回路绕线长度").toString()) > 0) {
                 coiling++;
             }
