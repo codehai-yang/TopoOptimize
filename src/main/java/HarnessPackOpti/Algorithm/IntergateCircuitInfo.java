@@ -97,7 +97,7 @@ public class IntergateCircuitInfo {
             avgLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
         //TODO 能量流绕线
-        totalCost.put("能量流绕路总数量(根)", null);
+        totalCost.put("能量流绕路总数量", null);
         totalCost.put("能量流绕路数量占比", null);
         totalCost.put("能量流绕路长度总值", null);
         totalCost.put("能量流绕路长度均值", null);
