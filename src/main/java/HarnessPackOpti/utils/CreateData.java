@@ -2,14 +2,13 @@ package HarnessPackOpti.utils;
 
 import java.io.File;
 import java.nio.file.Files;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import HarnessPackOpti.JsonToMap;
+
+import static HarnessPackOpti.utils.GINEInferenceEngine.objectMapper;
 
 /**
  * 测试类，生成测试数据
@@ -23,7 +22,7 @@ public class CreateData {
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
-        List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
+        List<Map<String, Object>> appPositions = (List<Map<String, Object>>) jsonMap.get("appPositions");
         Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
         Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
         Map<String, Object> optimizeRecord = (Map<String, Object>) jsonMap.get("optimizeRecord");
@@ -32,9 +31,14 @@ public class CreateData {
         Map<String, String> projectInfo = (Map<String, String>) jsonMap.get("projectInfo");
         projectInfo.put("optimizeType", "3");
         String[] type = { "用电器", "配电单元", "接地点", "控制器", "储电单元", "发电单元" };
-        for (Map<String, String> appPosition : appPositions) {
-            appPosition.put("elecAttribute", type[random.nextInt(type.length)]);
-            appPosition.put("resourceNumb", new ArrayList<>().toString());
+        List<Map<String, Object>> appPositionCopy = new ArrayList<>();
+        for (Map<String, Object> appPosition : appPositions) {
+            String appName = appPosition.get("appName").toString();
+            if (!appName.startsWith("[")) {
+                appPosition.put("elecAttribute", type[random.nextInt(type.length)]);
+                appPosition.put("resourceNumb", objectMapper.writeValueAsString(Arrays.asList("不限", "不限", "不限")));
+                appPositionCopy.add(appPosition);
+            }
         }
         List<Map<String, String>> loopInfoCopy = new ArrayList<>();
         for (Map<String, String> loopInfos2 : loopInfos) {
@@ -52,7 +56,7 @@ public class CreateData {
         }
 
         // 将修改后的数据转回JSON并保存
-        jsonMap.put("appPositions", appPositions);
+        jsonMap.put("appPositions", appPositionCopy);
         jsonMap.put("loopInfos", loopInfoCopy);
 
         ObjectMapper objectMapper = new ObjectMapper();

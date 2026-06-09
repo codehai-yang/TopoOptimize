@@ -315,6 +315,10 @@ public class PowerDistributionDriveOptimization {
                         String loopId = entry.getKey();
                         String value = entry.getValue();
                         String[] parts = value.split("\\|");
+                        //一根贿赂两个用电器都没有可变回路就采用默认位置
+                        if(parts.length == 2) {
+                            continue;
+                        }
                         String startApp = parts[0];
                         String endApp = parts[1];
                         String startPos = parts[2];
@@ -358,6 +362,9 @@ public class PowerDistributionDriveOptimization {
                     // ========== 修复1：计算成本时使用修改后的方案 ==========
                     String modifiedJson = objectMapper.writeValueAsString(jsonMapCopy);
                     String s = powerProjectCircuitInfoOutput.powerOptimize(modifiedJson);
+                    if(s ==null){
+                        continue;
+                    }
                     Map<String, Object> map = jsonToMap.TransJsonToMap(s);
                     Map<String, Object> projectCircuitInfo = (Map<String, Object>) map.get("projectCircuitInfo");
                     Map<String, Double> projectCost = new HashMap<>();

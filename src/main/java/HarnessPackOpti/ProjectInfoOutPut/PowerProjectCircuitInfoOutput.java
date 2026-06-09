@@ -84,6 +84,9 @@ public class PowerProjectCircuitInfoOutput {
                             entry -> entry.getValue() == null ? "" : entry.getValue().toString()));
             Map<String, Object> twoPointInfo = projectCircuitInfoOutput.findTwoPointInfo(loopInfoStrMap, projectInfo,
                     adjacencyMatrixGraph, elecFixedLocationLibrary, true, null, null, elecBusinessPrice);
+            if(twoPointInfo == null){
+                return null;
+            }
             loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
         }
 
