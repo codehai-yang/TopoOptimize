@@ -158,143 +158,19 @@ public class Normalize {
                 locationPrice.put(startPosition + ":" + endPosition, locationPrice.get(startPosition + ":" + endPosition) + Float.parseFloat(price));
             }
         }
+        
         //塞入matrix
         locationPrice.forEach((k, v) -> {
             String[] split = k.split(":");
             matrix[allNameList.indexOf(split[0])][allNameList.indexOf(split[1])] = v;
         });
-        //统计每个分支点单价总和代替湿区成本
-//        List<Float> rowSums = new ArrayList<>(matrix.length);
-//        for (int i = 0; i < matrix.length; i++) {
-//            float sum = 0;
-//            for (int j = 0; j < matrix[i].length; j++) {
-//                sum += matrix[i][j];
-//            }
-//            rowSums.add(sum);
-//        }
-        // 只收集非0的值
-        double[] nonZeroData = new double[matrix.length * matrix[0].length];
-        int idx = 0;
-        for (int i = 0; i < matrix.length; i++) {
-            for (int j = 0; j < matrix[i].length; j++) {
-                if (matrix[i][j] != 0) {
-                    nonZeroData[idx++] = matrix[i][j];
-                }
-            }
-        }
-        nonZeroData = Arrays.copyOf(nonZeroData, idx);
-
-        // 用非0值算 mean 和 std
-        double mean = Arrays.stream(nonZeroData).average().orElse(0.0);
-        double std = Math.sqrt(
-                Arrays.stream(nonZeroData)
-                        .map(v -> (v - mean) * (v - mean))
-                        .average()
-                        .orElse(0.0)
-        );
-
-        // 只对非0且非对角线的值标准化，0保持不动
-        for (int i = 0; i < matrix.length; i++) {
-            for (int j = 0; j < matrix[i].length; j++) {
-                if (matrix[i][j] != 0) {
-                    matrix[i][j] = (float) ((matrix[i][j] - mean) / std);
-                }
-            }
-        }
-
-        //计算每个分支点对应的湿区成本
-//        long wetTime = System.currentTimeMillis();
-//        float[] originalWetCost = new float[branchPointNameList.size()];
-//        for (Map<String, Object> loopInfo : loopInfos) {
-//            String startApp = loopInfo.get("startApp").toString();
-//            String endApp = loopInfo.get("endApp").toString();
-//
-//            //起点用电器位置
-//            String startAppPosition = null;
-//            String endAppPosition = null;
-//            if (startApp.startsWith("[")) {
-//                startAppPosition = multiLocation.get(startApp);
-//            } else {
-//                startAppPosition = elecPosition.get(startApp).values().iterator().next();
-//            }
-//            if (endApp.startsWith("[")) {
-//                endAppPosition = multiLocation.get(endApp);
-//            } else {
-//                endAppPosition = elecPosition.get(endApp).values().iterator().next();
-//            }
-//            if (result.get(startAppPosition) == null) {
-//                Float v = wetCost(startAppPosition, endAppPosition, loopInfo,pointList);
-//                if(v == 0){
-//                    continue;
-//                }
-//                if (v != null) {
-//                    result.put(startAppPosition, v);
-//                }
-//            } else {
-//                Float v = result.get(startAppPosition);
-//                Float tempV = wetCost(startAppPosition, endAppPosition, loopInfo, pointList);
-//                if(v ==0 && tempV == 0){
-//                    continue;
-//                }
-//                if (tempV != null) {
-//                    result.put(startAppPosition, v + tempV);
-//                }
-//            }
-//        }
-//
-//        result.forEach((k, v) -> originalWetCost[allNameList.indexOf(k)] = v);
-//        System.out.println("湿区成本计算耗时：" + (System.currentTimeMillis() - wetTime));
-//        List<Float> wetCostList = new ArrayList<>();
-//        long normalizationTime1 = System.currentTimeMillis();
-//        result.forEach((k, v) -> wetCostList.add(v));
-        // 计算 result 中非0值的均值和标准差
-        double[] data = result.values().stream()
-                .mapToDouble(Float::doubleValue)
-                .filter(v -> v != 0)
-                .toArray();
-        double wetMean = Arrays.stream(data).average().orElse(0.0);
-
-        double wetStd = Math.sqrt(
-                Arrays.stream(data)
-                        .map(v -> (v - wetMean) * (v - wetMean))
-                        .average()
-                        .orElse(0.0)
-        );
-
-        // 对 result 中非0的数值进行标准化
-        result.replaceAll((k, v) -> {
-            if (v != 0) {
-                if (wetStd > 0) {
-                    return (float) ((v - wetMean) / wetStd);
-                } else {
-                    return 1.0f;
-                }
-            }
-            return v;
-        });
-
-        // 构建 wet 列表：按 allNameList 顺序从 result 中取值
-        List<Float> wet = new ArrayList<>();
-        for (int i = 0; i < allNameList.size(); i++) {
-            Float v = result.get(allNameList.get(i));
-            if (v != null) {
-                wet.add(v);
-            } else {
-                wet.add(0f);
-            }
-        }
 
         long projectCircuitInfoOutputTime = System.currentTimeMillis();
         //拼接175*176矩阵
         int newDim = matrix[0].length + 1;
         float[][] newMatrix = new float[matrix.length][newDim];
 
-        for (int i = 0; i < matrix.length; i++) {
-            // 复制原来的176维
-            System.arraycopy(matrix[i], 0, newMatrix[i], 0, matrix[i].length);
-            // 添加标准化后的湿区成本
-            newMatrix[i][newDim - 1] = wet.get(i); // 每个节点对应的新特征值
-        }
+ 
         System.out.println("拼接矩阵耗时：" + (System.currentTimeMillis() - projectCircuitInfoOutputTime));
         return newMatrix;
     }
