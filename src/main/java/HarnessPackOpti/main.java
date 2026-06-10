@@ -25,7 +25,22 @@ public class main {
     public static void main(String[] args) throws Exception {
 
         //线束拓扑优化
-        InputStream inputStream = main.class.getClassLoader().getResourceAsStream("优化测试后台记录.txt");
+        String filePath;
+        if (args.length > 0) {
+            filePath = args[0];
+        } else {
+            filePath = "优化测试后台记录.txt";
+        }
+        InputStream inputStream;
+        File externalFile = new File(filePath);
+        if (externalFile.exists()) {
+            inputStream = Files.newInputStream(externalFile.toPath());
+        } else {
+            inputStream = main.class.getClassLoader().getResourceAsStream(filePath);
+        }
+        if (inputStream == null) {
+            throw new RuntimeException("找不到资源文件: " + filePath);
+        }
               if (inputStream == null) {
             throw new RuntimeException("找不到资源文件: 优化测试后台记录.txt");
         }
