@@ -16,22 +16,22 @@ public class main {
         public static void main(String[] args) throws Exception {
 
                 // 线束拓扑优化
-//            InputStream inputStream = main.class.getClassLoader().getResourceAsStream("优化测试后台记录.txt");
-//            if (inputStream == null) {
-//                throw new RuntimeException("找不到资源文件: 优化测试后台记录.txt");
-//            }
-//            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
-//            StringBuilder sb = new StringBuilder();
-//            String line;
-//            while ((line = reader.readLine()) != null) {
-//                sb.append(line);
-//            }
-//            reader.close();
-//            String jsonContent = sb.toString();
-//            HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
-//            harnessBranchTopoOptimize.topoOptimize(jsonContent);
-//            HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
-//            harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
+           InputStream inputStream = main.class.getClassLoader().getResourceAsStream("BS4EM初始JSON.txt");
+           if (inputStream == null) {
+               throw new RuntimeException("找不到资源文件: 优化测试后台记录.txt");
+           }
+           BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+           StringBuilder sb = new StringBuilder();
+           String line;
+           while ((line = reader.readLine()) != null) {
+               sb.append(line);
+           }
+           reader.close();
+           String jsonContent = sb.toString();
+           HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
+           harnessBranchTopoOptimize.topoOptimize(jsonContent);
+           HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
+           harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
 
                 //用电器位置布局优化
 //                File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\用电器位置布局优化遗传算法样本.txt");
@@ -40,12 +40,12 @@ public class main {
 //                elecPositionVariantCalculation.elecPositionVariantCalculation(jsonContent);
 
                 // 配电驱动优化
-                File file = new
-                File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM初始JSON.txt");
-                String jsonContent = new
-                String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
-                PowerDistributionDriveOptimization powerDistributionDriveOptimization=new PowerDistributionDriveOptimization();
-                powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
+                // File file = new
+                // File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动优化测试数据.txt");
+                // String jsonContent = new
+                // String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
+                // PowerDistributionDriveOptimization powerDistributionDriveOptimization=new PowerDistributionDriveOptimization();
+                // powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
 
                 // File file = new File("data/DataCoopWithEB/topoTxt/拓扑优化.txt");
                 // String jsonContent = new

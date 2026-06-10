@@ -32,16 +32,16 @@ public class Normalize {
      * @return
      */
     public static float[][] normalizeData(List<Map<String, Object>> serviceableEdge,
-                                          List<Map<String, Object>> loopInfos,
-                                          Map<String, Map<String, String>> elecPosition,
-                                          Map<String, Object> jsonMap,
-                                          List<Map<String, String>> pointList,
-                                          List<String> normList, Map<String, List<String>> multiLoopInfos, Map<String, String> pointMap,
-                                          Integer sampleId) {
+            List<Map<String, Object>> loopInfos,
+            Map<String, Map<String, String>> elecPosition,
+            Map<String, Object> jsonMap,
+            List<Map<String, String>> pointList,
+            List<String> normList, Map<String, List<String>> multiLoopInfos, Map<String, String> pointMap,
+            Integer sampleId) {
         List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
-        //成本信息
+        // 成本信息
         Map<String, Map<String, String>> elecFixedLocationLibrary = ProjectCircuitInfoOutput.elecFixedLocationLibrary;
-        //分支点-湿区成本加成
+        // 分支点-湿区成本加成
         Map<String, Float> result = new HashMap<>();
         Set<String> test = new HashSet<>();
         List<String> startName = new ArrayList<>();
@@ -55,10 +55,10 @@ public class Normalize {
             endPointName.add(edge.get("endPointName").toString());
             test.add(edge.get("startPointName").toString());
             test.add(edge.get("endPointName").toString());
-            //起点xy坐标
+            // 起点xy坐标
             double startXCoordinate = Double.parseDouble(edge.get("startXCoordinate").toString());
             double startYCoordinate = Double.parseDouble(edge.get("startYCoordinate").toString());
-            //终点xy坐标
+            // 终点xy坐标
             double endXCoordinate = Double.parseDouble(edge.get("endXCoordinate").toString());
             double endYCoordinate = Double.parseDouble(edge.get("endYCoordinate").toString());
             coordinateList.add(new Point(startXCoordinate, startYCoordinate));
@@ -74,20 +74,20 @@ public class Normalize {
                 branchBreakList.add(interruptedEdgelist);
             }
         }
-        //获取有向图之间的索引，起点到终点之间的关系
-        GenerateTopoMatrix adjacencyMatrixGraph = new GenerateTopoMatrix(startName, endPointName,branchBreakList);//获取邻接矩阵基本信息
-        adjacencyMatrixGraph.adjacencyMatrix();//构建邻接矩阵列表及数组
-        adjacencyMatrixGraph.addEdge();//为邻接矩阵添加”边“元素
+        // 获取有向图之间的索引，起点到终点之间的关系
+        GenerateTopoMatrix adjacencyMatrixGraph = new GenerateTopoMatrix(startName, endPointName, branchBreakList);// 获取邻接矩阵基本信息
+        adjacencyMatrixGraph.adjacencyMatrix();// 构建邻接矩阵列表及数组
+        adjacencyMatrixGraph.addEdge();// 为邻接矩阵添加”边“元素
         adjacencyMatrixGraph.getAdj();
         Map<String, String> multiLocation = new HashMap<>();
-        //有顺序的分支点名称列表
+        // 有顺序的分支点名称列表
         Set<String> branchPointNameList = new LinkedHashSet<>();
         for (int i = 0; i < normList.size(); i++) {
             for (Map<String, Object> k : serviceableEdge) {
                 if (k.get("id").equals(normList.get(i))) {
                     String startPointName = k.get("startPointName").toString();
                     String endName = k.get("endPointName").toString();
-                    //名称添加
+                    // 名称添加
                     branchPointNameList.add(startPointName);
                     branchPointNameList.add(endName);
                     break;
@@ -95,17 +95,18 @@ public class Normalize {
             }
         }
         List<String> allNameList = new ArrayList<>(branchPointNameList);
-        //焊点位置选择
+        // 焊点位置选择
         multiLoopInfos.forEach((k, v) -> {
-            //寻找焊点最优位置
-//            List<String> centerPoint = findCenterPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint(), v);
+            // 寻找焊点最优位置
+            // List<String> centerPoint = findCenterPoint(adjacencyMatrixGraph.getAdj(),
+            // adjacencyMatrixGraph.getAllPoint(), v);
             Point centerPoint = findCenterPointTwo(v, namePositionMap, coordinateList);
             String s = positionNameMap.get(centerPoint.x + "&" + centerPoint.y);
             if (centerPoint != null) {
                 multiLocation.put(k, s);
             }
         });
-        //更改appposition焊点位置
+        // 更改appposition焊点位置
         appPositions.forEach(k -> {
             String s = k.get("appName");
             if (s.startsWith("[")) {
@@ -115,17 +116,17 @@ public class Normalize {
         });
 
         float[][] matrix = new float[branchPointNameList.size()][branchPointNameList.size()];
-        //位置点-成本总和
+        // 位置点-成本总和
         Map<String, Float> locationPrice = new HashMap<>();
-        //导线选型-单价(体现数量)
+        // 导线选型-单价(体现数量)
         for (Map<String, Object> loopInfo : loopInfos) {
             String loopWireway = loopInfo.get("loopWireway").toString();
-            //读取线径excel文件
+            // 读取线径excel文件
             Map<String, String> materialsMsg = elecFixedLocationLibrary.get(loopWireway);
             String startApp = loopInfo.get("startApp").toString();
             String endApp = loopInfo.get("endApp").toString();
             String price = materialsMsg.get("导线单位商务价（元/米）");
-            //拿到用电器对应的位置
+            // 拿到用电器对应的位置
             String startPosition = null;
             String endPosition = null;
             if (startApp.startsWith("[")) {
@@ -140,37 +141,41 @@ public class Normalize {
             }
             String startParam = getWaterParam(startPosition, pointList);
             String endParam = getWaterParam(endPosition, pointList);
-            if("w".toUpperCase().equals(startParam) || "w".toUpperCase().equals(endParam)){
-                if(result.get(startPosition) == null){
-                    result.put(startPosition,Float.parseFloat( price));
-                }else {
-                    result.put(startPosition,result.get(startPosition) + Float.parseFloat(price));
+            if ("w".toUpperCase().equals(startParam) || "w".toUpperCase().equals(endParam)) {
+                if (result.get(startPosition) == null) {
+                    result.put(startPosition, Float.parseFloat(price));
+                } else {
+                    result.put(startPosition, result.get(startPosition) + Float.parseFloat(price));
                 }
             }
 
             if (allNameList.indexOf(startPosition) == -1 || allNameList.indexOf(endPosition) == -1) {
-//                System.out.println("startApp:" + startApp + ":" + startPosition + ":" +  allNameList.indexOf(startPosition) + "  endApp:" + endPosition + ":" + allNameList.indexOf(endPosition));
+                // System.out.println("startApp:" + startApp + ":" + startPosition + ":" +
+                // allNameList.indexOf(startPosition) + " endApp:" + endPosition + ":" +
+                // allNameList.indexOf(endPosition));
                 continue;
             }
             if (locationPrice.get(startPosition + ":" + endPosition) == null) {
                 locationPrice.put(startPosition + ":" + endPosition, Float.parseFloat(price));
             } else {
-                locationPrice.put(startPosition + ":" + endPosition, locationPrice.get(startPosition + ":" + endPosition) + Float.parseFloat(price));
+                locationPrice.put(startPosition + ":" + endPosition,
+                        locationPrice.get(startPosition + ":" + endPosition) + Float.parseFloat(price));
             }
         }
-        
-        //塞入matrix
+        // 塞入matrix
         locationPrice.forEach((k, v) -> {
             String[] split = k.split(":");
             matrix[allNameList.indexOf(split[0])][allNameList.indexOf(split[1])] = v;
         });
 
         long projectCircuitInfoOutputTime = System.currentTimeMillis();
-        //拼接175*176矩阵
+        // 拼接175*176矩阵
         int newDim = matrix[0].length + 1;
         float[][] newMatrix = new float[matrix.length][newDim];
 
- 
+        result.forEach((k, v) -> {
+            newMatrix[allNameList.indexOf(k)][allNameList.size()] = v;
+        });
         System.out.println("拼接矩阵耗时：" + (System.currentTimeMillis() - projectCircuitInfoOutputTime));
         return newMatrix;
     }
@@ -185,64 +190,74 @@ public class Normalize {
      * @return
      */
     public static Float wetCost(String startAppPosition,
-                                String endAppPosition, Map<String, Object> loopInfo,
-                                List<Map<String, String>> pointList) {
-//        List<Map<String, String>> temp = serviceableEdge.stream()
-//                .map(map -> {
-//                    Map<String, String> stringMap = new HashMap<>();
-//                    map.forEach((k, v) -> {
-//                        if (v != null) {
-//                            stringMap.put(k, v.toString());
-//                        }
-//                    });
-//                    return stringMap;
-//                })
-//                .collect(Collectors.toList());
+            String endAppPosition, Map<String, Object> loopInfo,
+            List<Map<String, String>> pointList) {
+        // List<Map<String, String>> temp = serviceableEdge.stream()
+        // .map(map -> {
+        // Map<String, String> stringMap = new HashMap<>();
+        // map.forEach((k, v) -> {
+        // if (v != null) {
+        // stringMap.put(k, v.toString());
+        // }
+        // });
+        // return stringMap;
+        // })
+        // .collect(Collectors.toList());
         Map<String, Map<String, String>> elecFixedLocationLibrary = ProjectCircuitInfoOutput.elecFixedLocationLibrary;
         String loopWireway = loopInfo.get("loopWireway").toString();
-        //读取线径excel文件
+        // 读取线径excel文件
         Map<String, String> materialsMsg = elecFixedLocationLibrary.get(loopWireway);
         DecimalFormat df = new DecimalFormat("0.00");
 
-//
-//        //如果回路起点或终点不在导线矩阵中，则返回null
-//        if (adjacencyMatrixGraph.getAllPoint().indexOf(startAppPosition) == -1 || adjacencyMatrixGraph.getAllPoint().indexOf(endAppPosition) == -1) {
-//            return null;
-//        }
-//        //拿到回路最短路径索引，通过边数查找
-//        List<Integer> shortestPath = shortestPathSearch.findShortestPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(startAppPosition), adjacencyMatrixGraph.getAllPoint().indexOf(endAppPosition));
-//        //路径数字转换为对应名称
-//        List<String> listname = projectCircuitInfoOutput.convertPathToNumbers(shortestPath, adjacencyMatrixGraph.getAllPoint());
-//        Map<String, Object> MapbranchByNode = findBranchByNode(listname, temp);
-//        List<String> edgeIdList = (List<String>) MapbranchByNode.get("idList");
-//        Map<String, Object> objectMap = calculatePathBreakNumber(edgeIdList, jsonMap);
-//        //分支打断名称
-//        List<String> topologyStatusCodeNameList = (List<String>) objectMap.get("nameList");
-//        Map<String, String> inlineWet = calculateInlineWet(topologyStatusCodeNameList, jsonMap);
-//        int count = 0;
-//        for (Object mapValue : inlineWet.values()) {
-//            if ("w".toUpperCase().equals(mapValue.toString())) {
-//                count++;
-//            }
-//        }
-//        if(startAppPosition.equals("仪表线左侧顶棚inline点")){
-//            System.out.println("仪表线左侧顶棚inline点inline次数：" + count);
-//        }
-//        if(startAppPosition.equals("车身线右前inline点")){
-//            System.out.println("车身线右前inline点inline次数：" + count);
-//        }
-//
-//        //        回路湿区成本
-//        Float connectPrice = Float.parseFloat(materialsMsg.get("湿区成本补偿——连接器塑壳（元/端）"));
-//        Float defensePrice = Float.parseFloat(materialsMsg.get("湿区成本补偿——防水赛（元/个）"));
-//        //inline湿区连接器成本补偿
-//        double connectCost = count * connectPrice * 2;
-//        //inline湿区防水赛成本补偿
-//        double defenseCost = count * defensePrice * 2;
-        //计算回路两端连接器干湿
+        //
+        // //如果回路起点或终点不在导线矩阵中，则返回null
+        // if (adjacencyMatrixGraph.getAllPoint().indexOf(startAppPosition) == -1 ||
+        // adjacencyMatrixGraph.getAllPoint().indexOf(endAppPosition) == -1) {
+        // return null;
+        // }
+        // //拿到回路最短路径索引，通过边数查找
+        // List<Integer> shortestPath =
+        // shortestPathSearch.findShortestPathBetweenTwoPoint(adjacencyMatrixGraph.getAdj(),
+        // adjacencyMatrixGraph.getAllPoint().indexOf(startAppPosition),
+        // adjacencyMatrixGraph.getAllPoint().indexOf(endAppPosition));
+        // //路径数字转换为对应名称
+        // List<String> listname =
+        // projectCircuitInfoOutput.convertPathToNumbers(shortestPath,
+        // adjacencyMatrixGraph.getAllPoint());
+        // Map<String, Object> MapbranchByNode = findBranchByNode(listname, temp);
+        // List<String> edgeIdList = (List<String>) MapbranchByNode.get("idList");
+        // Map<String, Object> objectMap = calculatePathBreakNumber(edgeIdList,
+        // jsonMap);
+        // //分支打断名称
+        // List<String> topologyStatusCodeNameList = (List<String>)
+        // objectMap.get("nameList");
+        // Map<String, String> inlineWet =
+        // calculateInlineWet(topologyStatusCodeNameList, jsonMap);
+        // int count = 0;
+        // for (Object mapValue : inlineWet.values()) {
+        // if ("w".toUpperCase().equals(mapValue.toString())) {
+        // count++;
+        // }
+        // }
+        // if(startAppPosition.equals("仪表线左侧顶棚inline点")){
+        // System.out.println("仪表线左侧顶棚inline点inline次数：" + count);
+        // }
+        // if(startAppPosition.equals("车身线右前inline点")){
+        // System.out.println("车身线右前inline点inline次数：" + count);
+        // }
+        //
+        // // 回路湿区成本
+        // Float connectPrice =
+        // Float.parseFloat(materialsMsg.get("湿区成本补偿——连接器塑壳（元/端）"));
+        // Float defensePrice = Float.parseFloat(materialsMsg.get("湿区成本补偿——防水赛（元/个）"));
+        // //inline湿区连接器成本补偿
+        // double connectCost = count * connectPrice * 2;
+        // //inline湿区防水赛成本补偿
+        // double defenseCost = count * defensePrice * 2;
+        // 计算回路两端连接器干湿
         String startParam = getWaterParam(startAppPosition, pointList);
         String endParam = getWaterParam(endAppPosition, pointList);
-        //            回路两端湿区数量
+        // 回路两端湿区数量
         Integer wetNumber = 0;
         if ("w".toUpperCase().equals(startParam)) {
             wetNumber++;
@@ -250,7 +265,8 @@ public class Normalize {
         if ("w".toUpperCase().equals(endParam)) {
             wetNumber++;
         }
-        return Float.parseFloat(df.format(wetNumber * Float.parseFloat(materialsMsg.get("湿区成本补偿——连接器塑壳（元/端）")) + wetNumber * Float.parseFloat(materialsMsg.get("湿区成本补偿——防水赛（元/个）"))));
+        return Float.parseFloat(df.format(wetNumber * Float.parseFloat(materialsMsg.get("湿区成本补偿——连接器塑壳（元/端）"))
+                + wetNumber * Float.parseFloat(materialsMsg.get("湿区成本补偿——防水赛（元/个）"))));
     }
 
     /**
@@ -274,7 +290,8 @@ public class Normalize {
      * @return
      * @Description 寻找中心点位置
      */
-    public static Point findCenterPointTwo(List<String> v, Map<String, String> namePositionMap, List<Point> coordinateList) {
+    public static Point findCenterPointTwo(List<String> v, Map<String, String> namePositionMap,
+            List<Point> coordinateList) {
         List<Point> tempPoint = new ArrayList<>();
         for (String s : v) {
             String position = namePositionMap.get(s);

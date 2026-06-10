@@ -29,9 +29,9 @@ import java.util.stream.Collectors;
 
 public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
-    public static Integer LessRandomSamleNumber = 100;
+    public static Integer LessRandomSamleNumber = 20;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 200;
+    public static Integer HybridizationLessRandomSamleNumber = 50;
     // top几的数量规定
     public static final Integer TopNumber = 20;
     // 每次迭代最优的成本
@@ -86,7 +86,8 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, String>> loopInfos = (List<Map<String, String>>) jsonMap.get("loopInfos");
         List<Map<String, String>> points = (List<Map<String, String>>) jsonMap.get("points");
         CaseId = caseInfo.get("id").toString();
-        optimizeRecordId = optimizeRecord.get("id").toString();
+        // optimizeRecordId = optimizeRecord.get("id").toString();
+        optimizeRecordId = java.util.UUID.randomUUID().toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
 
         // 整车信息计算
