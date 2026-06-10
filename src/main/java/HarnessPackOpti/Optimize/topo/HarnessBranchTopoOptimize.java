@@ -1626,25 +1626,21 @@ public class HarnessBranchTopoOptimize {
         // 查找每一代最优结果耗时
         long topTenStartTime = System.currentTimeMillis();
         // 接下来就是对simple 进行一个分支闭环的检查
-        // System.out.println("要预测的样本数：" + simple.size());
-        // List<List<String>> lists = predictModel(simple, edges, normList, jsonMap,
-        // edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos,
-        // pointMap);
-        // System.out.println("预测" + simple.size() + "个样本耗时：" +
-        // (System.currentTimeMillis() - topTenStartTime));
+        System.out.println("要预测的样本数：" + simple.size());
+        List<List<String>> lists = new ArrayList<>();
         // 模型粗筛
-        // if(BestCost.size() > 0) {
-        // System.out.println("模型筛选前方案数量：" + simple.size());
-        // lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS,
-        // elecPosition, branchLength, connection, multiLoopInfos, pointMap);
-        // }else {
-        // //第一次迭代不用粗筛
-        // lists = simple;
-        // }
-        // if(lists.size() == 0 || lists == null){
-        // return null;
-        // }
-        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap,
+        if (BestCost.size() > 0) {
+            System.out.println("模型筛选前方案数量：" + simple.size());
+            lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS,
+                    elecPosition, branchLength, connection, multiLoopInfos, pointMap);
+        } else {
+            // 第一次迭代不用粗筛
+            lists = simple;
+        }
+        if (lists.size() == 0 || lists == null) {
+            return null;
+        }
+        List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap);
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
         System.out.println("查找每一代最优结果耗时：" + (System.currentTimeMillis() - topTenStartTime));
@@ -1720,7 +1716,6 @@ public class HarnessBranchTopoOptimize {
                     }
                     branchFeatureList.add(statue);
                 }
-                long addLengthTime = System.currentTimeMillis();
                 for (int i = 0; i < length.size(); i++) {
                     List<Float> integers = branchFeatureList.get(i);
                     integers.add(length.get(i));
@@ -1749,13 +1744,10 @@ public class HarnessBranchTopoOptimize {
                 System.out.println("数据准备以及模型预测总耗时：" + (System.currentTimeMillis() - oneHotTime));
                 System.out.println("模型预测成本：" + predict);
                 Double v = BestCost.get("总成本");
-                //
-                // if(v - (predict / 1.04) > 0){
-                // return strings;
-                // }
-                // return null;
-                // 测试
-                return strings;
+                if (v - (predict / 1.04) > 0) {
+                    return strings;
+                }
+                return null;
             });
         }
         // 线程池提交任务

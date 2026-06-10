@@ -41,7 +41,7 @@ public class main {
 
                 // 配电驱动优化
                 File file = new
-                File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动优化测试数据.txt");
+                File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM初始JSON.txt");
                 String jsonContent = new
                 String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
                 PowerDistributionDriveOptimization powerDistributionDriveOptimization=new PowerDistributionDriveOptimization();
