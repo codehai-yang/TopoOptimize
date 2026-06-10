@@ -91,7 +91,8 @@ public class HarnessBranchTopoOptimize {
         Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
         Map<String, Object> optimizeRecord = (Map<String, Object>) jsonMap.get("optimizeRecord");
         CaseId = caseInfo.get("id").toString();
-        optimizeRecordId = optimizeRecord.get("id").toString();
+        // optimizeRecordId = optimizeRecord.get("id").toString();
+        optimizeRecordId = java.util.UUID.randomUUID().toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
 
         // 整车信息计算
@@ -1793,7 +1794,7 @@ public class HarnessBranchTopoOptimize {
         // 创建文件
         String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS").format(new java.util.Date());
         String fileName = "Samples_" + timestamp;
-        String filePath = "//ssaed410/SD_ID_AI/样本归档/模型训练所用样本/" + fileName;
+        String filePath = "//ssaed410/SD_ID_AI/样本归档/生产环境所用样本/" + fileName;
         // 使用扰动管理器统一执行所有扰动
         long perturbationStartTime = System.currentTimeMillis();
         SamplePerturbationManager perturbationManager = new SamplePerturbationManager();

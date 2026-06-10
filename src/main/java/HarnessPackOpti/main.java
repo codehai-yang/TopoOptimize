@@ -41,7 +41,7 @@ public class main {
         if (inputStream == null) {
             throw new RuntimeException("找不到资源文件: " + filePath);
         }
-              if (inputStream == null) {
+        if (inputStream == null) {
             throw new RuntimeException("找不到资源文件: 优化测试后台记录.txt");
         }
         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
