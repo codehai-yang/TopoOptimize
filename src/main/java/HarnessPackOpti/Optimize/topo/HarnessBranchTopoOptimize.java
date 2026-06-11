@@ -736,8 +736,8 @@ public class HarnessBranchTopoOptimize {
         long generateAiCase = System.currentTimeMillis();
         // 创建文件
         String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS").format(new java.util.Date());
-        String fileName = "Samples_" + timestamp + ".dat";
-        String filePath = "F:\\office\\pythonProjects\\GINEModel\\Samples\\" + fileName;
+        String fileName = "Samples_" + timestamp;
+        String filePath = "//ssaed410/SD_ID_AI/样本归档/生产环境所用样本/" + fileName;
         generateBreakNoise.projectCalculate(normList, WareHouseTemp, edges, jsonMap,
                 ProjectCircuitInfoOutput.elecFixedLocationLibrary, edgeChooseBS, filePath, appPositions, eleclection,
                 mutexMap, chooseOneList, togetherBCList, null);
