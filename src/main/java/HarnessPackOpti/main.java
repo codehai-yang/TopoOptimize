@@ -16,7 +16,7 @@ public class main {
         public static void main(String[] args) throws Exception {
 
                 // 线束拓扑优化
-           InputStream inputStream = main.class.getClassLoader().getResourceAsStream("BS4EM初始JSON.txt");
+           InputStream inputStream = main.class.getClassLoader().getResourceAsStream("BS4EM初始json包含优化设置.txt");
            if (inputStream == null) {
                throw new RuntimeException("找不到资源文件: 优化测试后台记录.txt");
            }
@@ -40,12 +40,12 @@ public class main {
 //                elecPositionVariantCalculation.elecPositionVariantCalculation(jsonContent);
 
                 // 配电驱动优化
-                // File file = new
-                // File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动优化测试数据.txt");
-                // String jsonContent = new
-                // String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
-                // PowerDistributionDriveOptimization powerDistributionDriveOptimization=new PowerDistributionDriveOptimization();
-                // powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
+//                 File file = new
+//                 File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动优化测试数据.txt");
+//                 String jsonContent = new
+//                 String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
+//                 PowerDistributionDriveOptimization powerDistributionDriveOptimization=new PowerDistributionDriveOptimization();
+//                 powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
 
                 // File file = new File("data/DataCoopWithEB/topoTxt/拓扑优化.txt");
                 // String jsonContent = new

@@ -164,7 +164,8 @@ public class PowerDistributionDriveOptimization {
             String appName = appPosition.get("appName");
             if (resourceNum.get(appName) == null) {
                 List<String> list = objectMapper.readValue(
-                        appPosition.get("resourceNumb"), new TypeReference<List<String>>() {});
+                        appPosition.get("resourceNumb"), new TypeReference<List<String>>() {
+                        });
                 resourceNum.put(appName, list);
             }
             if ("1".equals(appPosition.get("changeType"))) {
@@ -316,7 +317,7 @@ public class PowerDistributionDriveOptimization {
                         String value = entry.getValue();
                         String[] parts = value.split("\\|");
                         //一根贿赂两个用电器都没有可变回路就采用默认位置
-                        if(parts.length == 2) {
+                        if (parts.length == 2) {
                             continue;
                         }
                         String startApp = parts[0];
@@ -332,11 +333,11 @@ public class PowerDistributionDriveOptimization {
                         }
 
                         for (Map<String, String> stringStringMap : appPositionsCopy) {
-                            if (stringStringMap.get("appName").equals(startApp)) {
+                            if (stringStringMap.get("appName").equals(startApp) && !startPos.isEmpty()) {
                                 stringStringMap.put("unregularPointName", startPos);
                                 stringStringMap.put("unregularPointId", pointNameId.get(startPos));
                             }
-                            if (stringStringMap.get("appName").equals(endApp)) {
+                            if (stringStringMap.get("appName").equals(endApp) && !endPos.isEmpty()) {
                                 stringStringMap.put("unregularPointName", endPos);
                                 stringStringMap.put("unregularPointId", pointNameId.get(endPos));
                             }
@@ -362,7 +363,7 @@ public class PowerDistributionDriveOptimization {
                     // ========== 修复1：计算成本时使用修改后的方案 ==========
                     String modifiedJson = objectMapper.writeValueAsString(jsonMapCopy);
                     String s = powerProjectCircuitInfoOutput.powerOptimize(modifiedJson);
-                    if(s ==null){
+                    if (s == null) {
                         continue;
                     }
                     Map<String, Object> map = jsonToMap.TransJsonToMap(s);
@@ -620,21 +621,24 @@ public class PowerDistributionDriveOptimization {
                 try {
                     int maxLarge = Integer.parseInt(largeLimit);
                     if (actualLarge > maxLarge) return false;
-                } catch (NumberFormatException e) {}
+                } catch (NumberFormatException e) {
+                }
             }
             String mediumLimit = limits.get(1);
             if (!"不限".equals(mediumLimit) && !mediumLimit.isEmpty()) {
                 try {
                     int maxMedium = Integer.parseInt(mediumLimit);
                     if (actualMedium > maxMedium) return false;
-                } catch (NumberFormatException e) {}
+                } catch (NumberFormatException e) {
+                }
             }
             String smallLimit = limits.get(2);
             if (!"不限".equals(smallLimit) && !smallLimit.isEmpty()) {
                 try {
                     int maxSmall = Integer.parseInt(smallLimit);
                     if (actualSmall > maxSmall) return false;
-                } catch (NumberFormatException e) {}
+                } catch (NumberFormatException e) {
+                }
             }
         }
         return true;
@@ -1066,7 +1070,8 @@ public class PowerDistributionDriveOptimization {
                 Set<String> allowedEndApps = loopElecById.get(loopId);
                 if (allowedEndApps == null || allowedEndApps.isEmpty()) {
                     Map<String, String> lp = loopById.get(loopId);
-                    if (lp != null && lp.get("endApp") != null) allowedEndApps = Collections.singleton(lp.get("endApp"));
+                    if (lp != null && lp.get("endApp") != null)
+                        allowedEndApps = Collections.singleton(lp.get("endApp"));
                     else allowedEndApps = Collections.emptySet();
                 }
                 if (endAppIntersection == null) endAppIntersection = new HashSet<>(allowedEndApps);
@@ -1483,7 +1488,8 @@ public class PowerDistributionDriveOptimization {
                     map.put("appPositions", appPositionsCopy);
                     map.put("schemeIndex", population.size() + 1);
                     population.add(map);
-                    if (population.size() % 10 == 0) System.out.println("已生成 " + population.size() + " 个有效个体...");
+                    if (population.size() % 10 == 0)
+                        System.out.println("已生成 " + population.size() + " 个有效个体...");
                 }
             } catch (Exception e) {
                 System.err.println("方案计算失败，跳过: " + e.getMessage());
@@ -1529,7 +1535,8 @@ public class PowerDistributionDriveOptimization {
                 Set<String> allowedEndApps = loopElecById.get(loopId);
                 if (allowedEndApps == null || allowedEndApps.isEmpty()) {
                     Map<String, String> lp = loopById.get(loopId);
-                    if (lp != null && lp.get("endApp") != null) allowedEndApps = Collections.singleton(lp.get("endApp"));
+                    if (lp != null && lp.get("endApp") != null)
+                        allowedEndApps = Collections.singleton(lp.get("endApp"));
                     else allowedEndApps = Collections.emptySet();
                 }
                 if (endAppIntersection == null) endAppIntersection = new HashSet<>(allowedEndApps);
@@ -1733,10 +1740,12 @@ public class PowerDistributionDriveOptimization {
             List<Map<String, String>> allLoopInfos,
             Map<String, Set<String>> loopElecById) {
         long startTime = System.currentTimeMillis();
+        //回路id-回路信息
         Map<String, Map<String, String>> loopById = new HashMap<>();
         for (Map<String, String> lp : allLoopInfos) loopById.put(lp.get("id"), lp);
 
         Map<String, List<String>> varDomains = new LinkedHashMap<>();
+        //判断哪些回路已经被分组覆盖，哪些是未处理
         Set<String> coveredLoopIds = new HashSet<>();
         for (Map.Entry<String, List<String>> entry : togetherGroup.entrySet()) {
             String groupId = entry.getKey();
@@ -1746,7 +1755,8 @@ public class PowerDistributionDriveOptimization {
                 Set<String> allowedEndApps = loopElecById.get(lid);
                 if (allowedEndApps == null || allowedEndApps.isEmpty()) {
                     Map<String, String> lp = loopById.get(lid);
-                    if (lp != null && lp.get("endApp") != null) allowedEndApps = Collections.singleton(lp.get("endApp"));
+                    if (lp != null && lp.get("endApp") != null)
+                        allowedEndApps = Collections.singleton(lp.get("endApp"));
                     else allowedEndApps = Collections.emptySet();
                 }
                 if (endAppIntersection == null) endAppIntersection = new HashSet<>(allowedEndApps);
@@ -1759,12 +1769,22 @@ public class PowerDistributionDriveOptimization {
         }
         for (Map<String, String> lp : targetLoops) {
             String lid = lp.get("id");
+            //如果回路已经被处理过则跳过这条回路
             if (coveredLoopIds.contains(lid)) continue;
             Set<String> allowedEndApps = loopElecById.get(lid);
             if (allowedEndApps != null && !allowedEndApps.isEmpty()) {
+                //存储这跟回路终点可选用电器列表
                 varDomains.put("E_L_" + lid, new ArrayList<>(allowedEndApps));
-            } else {
-                varDomains.put("E_L_" + lid, Collections.singletonList(lp.get("endApp")));
+            }else {
+                // 如果没有预设的可选端子，检查该回路终点用电器位置是否可变
+                String endApp = lp.get("endApp");
+                if (endApp != null && !endApp.isEmpty()) {
+                    List<String> changeablePositions = elecChangeablePosition.get(endApp);
+                    if (changeablePositions != null && !changeablePositions.isEmpty()) {
+                        // 位置可变，使用当前端子作为唯一选项（位置会在 convertAssignmentToSchemeFormat 中随机选择）
+                        varDomains.put("E_L_" + lid, Collections.singletonList(endApp));
+                    }
+                }
             }
         }
 
@@ -1785,6 +1805,7 @@ public class PowerDistributionDriveOptimization {
                 if (!varList.contains(varKey)) varList.add(varKey);
             }
         }
+        //手机所有受互斥组约束影响的变量，方便后续回溯算法进行约束检查和剪枝
         Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualIds.keySet());
         List<String> varKeys = new ArrayList<>(varDomains.keySet());
         System.out.println("开始回溯枚举，变量数: " + varKeys.size());
@@ -1941,7 +1962,8 @@ public class PowerDistributionDriveOptimization {
                 Set<String> allowedEndApps = loopElecById.get(lid);
                 if (allowedEndApps == null || allowedEndApps.isEmpty()) {
                     Map<String, String> lp = loopById.get(lid);
-                    if (lp != null && lp.get("endApp") != null) allowedEndApps = Collections.singleton(lp.get("endApp"));
+                    if (lp != null && lp.get("endApp") != null)
+                        allowedEndApps = Collections.singleton(lp.get("endApp"));
                     else allowedEndApps = Collections.emptySet();
                 }
                 if (endAppIntersection == null) endAppIntersection = new HashSet<>(allowedEndApps);

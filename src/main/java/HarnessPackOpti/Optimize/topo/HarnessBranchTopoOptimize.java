@@ -29,9 +29,9 @@ import java.util.stream.Collectors;
 
 public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
-    public static Integer LessRandomSamleNumber = 20;
+    public static Integer LessRandomSamleNumber = 15;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 50;
+    public static Integer HybridizationLessRandomSamleNumber = 10;
     // top几的数量规定
     public static final Integer TopNumber = 20;
     // 每次迭代最优的成本
@@ -170,7 +170,7 @@ public class HarnessBranchTopoOptimize {
                 if ((edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S"))
                         || (edge.get("statusC").toString().equals("C") && edge.get("statusS").toString().equals("S"))
                         || (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")
-                                && edge.get("statusC").toString().equals("C"))) {
+                        && edge.get("statusC").toString().equals("C"))) {
                     canChangeS.add(edge.get("id").toString());
                 }
             }
@@ -739,7 +739,7 @@ public class HarnessBranchTopoOptimize {
 
     /**
      * @Description: 对top的方案进行再次变异 结果中分支打断状况为S的 可以变化的进行变化 在总成本小于3的情况下
-     *               选择当前的方案(主要为了降低S的数量)
+     * 选择当前的方案(主要为了降低S的数量)
      * @input: findBest 当前最优的top10 方案
      * @input: singleBCList 分支打断可选BC的集合
      * @input: singleSCList 分支打断可选SC的集合
@@ -755,17 +755,17 @@ public class HarnessBranchTopoOptimize {
      * @Return: 返回修改后的top的方案
      */
     public List<Map<String, Object>> bestOptionVariation(List<Map<String, Object>> findBest,
-            List<String> singleBCList,
-            List<String> singleSCList,
-            List<String> singleBSList,
-            List<String> singleBSCList,
-            List<String> normList,
-            Map<String, Object> jsonMap,
-            Map<String, String> eleclection,
-            List<String> wearId,
-            Map<String, Map<String, List<String>>> mutexMap,
-            List<Map<String, List<String>>> chooseOneList,
-            List<List<String>> togetherBCList, Boolean whetherOnLoop) throws Exception {
+                                                         List<String> singleBCList,
+                                                         List<String> singleSCList,
+                                                         List<String> singleBSList,
+                                                         List<String> singleBSCList,
+                                                         List<String> normList,
+                                                         Map<String, Object> jsonMap,
+                                                         Map<String, String> eleclection,
+                                                         List<String> wearId,
+                                                         Map<String, Map<String, List<String>>> mutexMap,
+                                                         List<Map<String, List<String>>> chooseOneList,
+                                                         List<List<String>> togetherBCList, Boolean whetherOnLoop) throws Exception {
         // 状态检查
         if (threadPool.shouldStop()) {
             return null;
@@ -1026,8 +1026,8 @@ public class HarnessBranchTopoOptimize {
     }
 
     /**
-     * 分支长度归一化
-     * 
+     * 分支长度
+     *
      * @param normList 分支排列顺序id
      * @param edges
      * @return
@@ -1069,28 +1069,6 @@ public class HarnessBranchTopoOptimize {
             }
             branchLengthList.add(length);
         }
-
-        // 转数组
-        double[] data = branchLengthList.stream()
-                .mapToDouble(Float::doubleValue)
-                .filter(v -> v != 0) // 如果也是只对非0值统计，保留这行；否则删掉
-                .toArray();
-
-        // 均值和标准差
-        double branchLengthMean = Arrays.stream(data).average().orElse(0.0);
-        double branchLengthStd = Math.sqrt(
-                Arrays.stream(data)
-                        .map(v -> (v - branchLengthMean) * (v - branchLengthMean))
-                        .average()
-                        .orElse(0.0));
-
-        // 标准化
-        branchLengthList.replaceAll(v -> {
-            if (v != 0) {
-                return (float) ((v - branchLengthMean) / branchLengthStd);
-            }
-            return v;
-        });
         result.put("branchLength", branchLengthList);
         return result;
     }
@@ -1135,17 +1113,17 @@ public class HarnessBranchTopoOptimize {
      * @Return: 返回top10的方案，对返回的格式进行了修改
      */
     public List<Map<String, Object>> handleAndShowTop(Map<String, Object> jsonMap,
-            String finishStatue,
-            List<String> singleBCList,
-            List<String> singleSCList,
-            List<String> singleBSList,
-            List<String> singleBSCList,
-            List<String> normList,
-            Map<String, String> eleclection,
-            List<String> wearId,
-            Map<String, Map<String, List<String>>> mutexMap,
-            List<Map<String, List<String>>> chooseOneList,
-            List<List<String>> togetherBCList) throws Exception {
+                                                      String finishStatue,
+                                                      List<String> singleBCList,
+                                                      List<String> singleSCList,
+                                                      List<String> singleBSList,
+                                                      List<String> singleBSCList,
+                                                      List<String> normList,
+                                                      Map<String, String> eleclection,
+                                                      List<String> wearId,
+                                                      Map<String, Map<String, List<String>>> mutexMap,
+                                                      List<Map<String, List<String>>> chooseOneList,
+                                                      List<List<String>> togetherBCList) throws Exception {
         FindBest findBest = new FindBest();
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         ObjectMapper objectMapper = new ObjectMapper();
@@ -1303,30 +1281,30 @@ public class HarnessBranchTopoOptimize {
      * @Return 返回迭代过后的top10
      */
     public List<Map<String, Object>> hybridization(List<Map<String, Object>> findBest,
-            List<String> onlyNameS,
-            List<String> normList,
-            List<String> conformList,
-            List<List<String>> togetherBCList,
-            List<String> canChangeS,
-            List<Map<String, Object>> edges,
-            List<Map<String, String>> appPositions,
-            Map<String, String> eleclection,
-            Map<String, Map<String, List<String>>> mutexMap,
-            int minLoopNumber, int maxLoopNumber,
-            List<String> initialScheme,
-            List<String> wearId,
-            Map<String, Object> jsonMap,
-            List<String> edgeChooseBS,
-            List<Map<String, List<String>>> chooseOneList,
-            List<List<String>> mutexGroupList,
-            Map<String, Map<String, String>> sortedMapExcel,
-            Map<String, Double> sortedMap,
-            List<Map<String, Object>> circuitInfoList,
-            Map<String, Map<String, String>> elecPosition,
-            Map<String, Object> branchLength,
-            List<List<Integer>> connection,
-            Map<String, List<String>> multiLoopInfos,
-            Map<String, String> pointMap) throws Exception {
+                                                   List<String> onlyNameS,
+                                                   List<String> normList,
+                                                   List<String> conformList,
+                                                   List<List<String>> togetherBCList,
+                                                   List<String> canChangeS,
+                                                   List<Map<String, Object>> edges,
+                                                   List<Map<String, String>> appPositions,
+                                                   Map<String, String> eleclection,
+                                                   Map<String, Map<String, List<String>>> mutexMap,
+                                                   int minLoopNumber, int maxLoopNumber,
+                                                   List<String> initialScheme,
+                                                   List<String> wearId,
+                                                   Map<String, Object> jsonMap,
+                                                   List<String> edgeChooseBS,
+                                                   List<Map<String, List<String>>> chooseOneList,
+                                                   List<List<String>> mutexGroupList,
+                                                   Map<String, Map<String, String>> sortedMapExcel,
+                                                   Map<String, Double> sortedMap,
+                                                   List<Map<String, Object>> circuitInfoList,
+                                                   Map<String, Map<String, String>> elecPosition,
+                                                   Map<String, Object> branchLength,
+                                                   List<List<Integer>> connection,
+                                                   Map<String, List<String>> multiLoopInfos,
+                                                   Map<String, String> pointMap) throws Exception {
         // 利用约束变异开始时间
         long constraintStartTime = System.currentTimeMillis();
         List<List<String>> simple = new ArrayList<>();
@@ -1630,14 +1608,14 @@ public class HarnessBranchTopoOptimize {
         System.out.println("要预测的样本数：" + simple.size());
         List<List<String>> lists = new ArrayList<>();
         // 模型粗筛
-        if (BestCost.size() > 0) {
+//        if (BestCost.size() > 0) {
             System.out.println("模型筛选前方案数量：" + simple.size());
             lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS,
                     elecPosition, branchLength, connection, multiLoopInfos, pointMap);
-        } else {
-            // 第一次迭代不用粗筛
-            lists = simple;
-        }
+//        } else {
+//            // 第一次迭代不用粗筛
+//            lists = simple;
+//        }
         if (lists.size() == 0 || lists == null) {
             return null;
         }
@@ -1650,7 +1628,7 @@ public class HarnessBranchTopoOptimize {
 
     /**
      * 预测样本的成本
-     * 
+     *
      * @param simpleList
      * @param edges
      * @param normList
@@ -1663,15 +1641,15 @@ public class HarnessBranchTopoOptimize {
      * @param pointMap
      */
     public List<List<String>> predictModel(List<List<String>> simpleList,
-            List<Map<String, Object>> edges,
-            List<String> normList,
-            Map<String, Object> jsonMap,
-            List<String> edgeChooseBS,
-            Map<String, Map<String, String>> elecPosition,
-            Map<String, Object> branchLength,
-            List<List<Integer>> connection,
-            Map<String, List<String>> multiLoopInfos,
-            Map<String, String> pointMap) throws Exception {
+                                           List<Map<String, Object>> edges,
+                                           List<String> normList,
+                                           Map<String, Object> jsonMap,
+                                           List<String> edgeChooseBS,
+                                           Map<String, Map<String, String>> elecPosition,
+                                           Map<String, Object> branchLength,
+                                           List<List<Integer>> connection,
+                                           Map<String, List<String>> multiLoopInfos,
+                                           Map<String, String> pointMap) throws Exception {
         GINEInferenceEngine gine = new GINEInferenceEngine();
         List<Callable<List<String>>> tasks = new ArrayList<>();
         ObjectMapper mapper = new ObjectMapper();
@@ -1780,7 +1758,7 @@ public class HarnessBranchTopoOptimize {
      * @Return: 根据传入的分支打断情况 创建一个分支详情
      */
     public List<Map<String, Object>> createNewEdges(List<String> edgeStatue, List<Map<String, Object>> edgeDetails,
-            List<String> normList) {
+                                                    List<String> normList) {
         List<Map<String, Object>> newEdges = edgeDetails.stream().collect(Collectors.toList());
         for (Map<String, Object> newEdge : newEdges) {
             String id = (String) newEdge.get("id");
@@ -1792,7 +1770,7 @@ public class HarnessBranchTopoOptimize {
 
     /**
      * @Description: 根据给定的分支打断状况集合（符合要求的） 对他们进行一个分支的闭环检查 修改S 将最终的分支打断情况进行一个计算
-     *               返回最优的是个方案
+     * 返回最优的是个方案
      * @input: simpleList 分支打断情况的集合
      * @input: edges txt中没解析的分支部分
      * @input: normList 分支id的集合
@@ -1803,17 +1781,17 @@ public class HarnessBranchTopoOptimize {
      * @Return: 返回最优的top20方案
      */
     public List<Map<String, Object>> changeAndFindBest(List<List<String>> simpleList,
-            List<Map<String, Object>> edges,
-            List<String> normList,
-            List<String> wearId,
-            List<String> canChangeS,
-            Map<String, Object> jsonMap,
-            List<String> edgeChooseBS,
-            Map<String, Map<String, String>> elecPosition,
-            Map<String, Object> branchLength,
-            List<List<Integer>> connection,
-            Map<String, List<String>> multiLoopInfos,
-            Map<String, String> pointMap) throws Exception {
+                                                       List<Map<String, Object>> edges,
+                                                       List<String> normList,
+                                                       List<String> wearId,
+                                                       List<String> canChangeS,
+                                                       Map<String, Object> jsonMap,
+                                                       List<String> edgeChooseBS,
+                                                       Map<String, Map<String, String>> elecPosition,
+                                                       Map<String, Object> branchLength,
+                                                       List<List<Integer>> connection,
+                                                       Map<String, List<String>> multiLoopInfos,
+                                                       Map<String, String> pointMap) throws Exception {
         GINEInferenceEngine gine = new GINEInferenceEngine();
         Random random = new Random();
         FindBest findBest = new FindBest();
@@ -1833,8 +1811,12 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, Object>> resultList = new ArrayList<>();
         // 创建Callable任务列表
         List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
+        int index = 1;
         for (List<String> strings : simpleList) {
+            ++index;
+            final int currentIndex = index;
             tasks.add(() -> {
+                System.out.println("正在处理第" + currentIndex +"个方案");
                 Map<String, Object> map = new HashMap<>();
                 // if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 // break;
@@ -1950,7 +1932,7 @@ public class HarnessBranchTopoOptimize {
                 if (scrapOrNot) {
                     return null;
                 }
-
+                System.out.println(currentIndex + "方案完成");
                 return map;
             });
         }
@@ -2006,21 +1988,21 @@ public class HarnessBranchTopoOptimize {
      * @Return: 返回随机生成的随机方案
      */
     public List<List<String>> initialOptimize(int minLoopNumber,
-            int maxLoopNumber,
-            List<String> initialScheme,
-            List<List<String>> togetherBCList,
-            List<String> conformList,
-            List<String> normList,
-            List<String> onlyNameS,
-            List<Map<String, Object>> edges,
-            List<Map<String, String>> appPositions,
-            Map<String, String> eleclection,
-            Map<String, Map<String, List<String>>> mutexMap,
-            List<List<String>> mutexGroupList,
-            List<Map<String, List<String>>> chooseOneList,
-            Map<String, Map<String, String>> sortedMapExcel,
-            Map<String, Double> sortedMap,
-            List<Map<String, Object>> circuitInfoList) throws InterruptedException {
+                                              int maxLoopNumber,
+                                              List<String> initialScheme,
+                                              List<List<String>> togetherBCList,
+                                              List<String> conformList,
+                                              List<String> normList,
+                                              List<String> onlyNameS,
+                                              List<Map<String, Object>> edges,
+                                              List<Map<String, String>> appPositions,
+                                              Map<String, String> eleclection,
+                                              Map<String, Map<String, List<String>>> mutexMap,
+                                              List<List<String>> mutexGroupList,
+                                              List<Map<String, List<String>>> chooseOneList,
+                                              Map<String, Map<String, String>> sortedMapExcel,
+                                              Map<String, Double> sortedMap,
+                                              List<Map<String, Object>> circuitInfoList) throws InterruptedException {
         List<List<String>> resultList = Collections.synchronizedList(new ArrayList<>());
         Random random = new Random();
         int totalNumber = 0;
@@ -2209,7 +2191,7 @@ public class HarnessBranchTopoOptimize {
 
     /**
      * @Description: List<String> id 在Map < String, Double>
-     *               breakCostMap中每一个id作为一个key对应的 double最小的一个key
+     * breakCostMap中每一个id作为一个key对应的 double最小的一个key
      * @input: ids id集合
      * @input: breakCostMap 所有分支的打断成本状况
      * @Return: 按照分支打断代价 对id进行一个排序
@@ -2344,10 +2326,10 @@ public class HarnessBranchTopoOptimize {
      * @Return: 根据给定的方案检查 返回是否符合的状态
      */
     public Boolean checkFirstOption(List<String> normList, List<String> changeList, List<Map<String, Object>> edges,
-            List<Map<String, String>> appPositions, Map<String, String> eleclection,
-            Map<String, Map<String, List<String>>> mutexMap,
-            List<Map<String, List<String>>> chooseOneList,
-            List<List<String>> togetherBCList) {
+                                    List<Map<String, String>> appPositions, Map<String, String> eleclection,
+                                    Map<String, Map<String, List<String>>> mutexMap,
+                                    List<Map<String, List<String>>> chooseOneList,
+                                    List<List<String>> togetherBCList) {
         // 组团的检查
         for (List<String> list : togetherBCList) {
             String statue = changeList.get(normList.indexOf(list.get(0)));
@@ -2480,7 +2462,7 @@ public class HarnessBranchTopoOptimize {
      * @Return: 根据给定的方案检查 返回是否符合的状态
      */
     public Boolean checkFirstOption(List<Map<String, Object>> edges, List<Map<String, String>> appPositions,
-            Map<String, String> eleclection) {
+                                    Map<String, String> eleclection) {
 
         List<String> strPointNameList = new ArrayList<>();
         List<String> endPointNameList = new ArrayList<>();
@@ -2542,9 +2524,9 @@ public class HarnessBranchTopoOptimize {
      * @Return: 返回前百分之多少的交集 并集分支 后百分之多少的交集 并集分支
      */
     public Map<String, List<String>> getPercentage(Map<String, Map<String, String>> sortedMapExcel,
-            Map<String, Double> sortedMap,
-            List<Map<String, Object>> circuitInfoList,
-            double number) {
+                                                   Map<String, Double> sortedMap,
+                                                   List<Map<String, Object>> circuitInfoList,
+                                                   double number) {
         Map<String, List<String>> result = new HashMap<>();
         // 后百分之几
         List<String> getLastKeys = getLast25Keys(sortedMap, 1 - number);
@@ -2765,8 +2747,8 @@ public class HarnessBranchTopoOptimize {
 
     /**
      * @Description 获取最优的几条方案（首先找出这些回路中的 回路总成本、回路总量、回路长度的最大值和最小值 然后按照
-     *              （总成本-总成本最小值）/（总成本最大值-总成本最大值）+（回路长度-回路长度最小值）/（回路长度最大值-回路长度最大值）+（回路重量-回路重量最小值）/（回路重量最大值-回路重量最大值）
-     *              其值最小的一条回路 ）
+     * （总成本-总成本最小值）/（总成本最大值-总成本最大值）+（回路长度-回路长度最小值）/（回路长度最大值-回路长度最大值）+（回路重量-回路重量最小值）/（回路重量最大值-回路重量最大值）
+     * 其值最小的一条回路 ）
      * @input radomList:所有路径信息
      * @input name:所有路径信息
      * @Return 最优的几条方案

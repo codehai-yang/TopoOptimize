@@ -172,7 +172,11 @@ public class Normalize {
         // 拼接175*176矩阵
         int newDim = matrix[0].length + 1;
         float[][] newMatrix = new float[matrix.length][newDim];
-
+        for (int i = 0; i < matrix.length; i++) {
+            for (int j = 0; j < matrix[0].length; j++) {
+                newMatrix[i][j] = matrix[i][j];
+            }
+        }
         result.forEach((k, v) -> {
             newMatrix[allNameList.indexOf(k)][allNameList.size()] = v;
         });
