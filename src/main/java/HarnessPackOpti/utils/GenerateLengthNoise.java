@@ -131,7 +131,7 @@ public class GenerateLengthNoise {
                 // 获取回路信息
                 List<Map<String, Object>> circuitList = (List<Map<String, Object>>) stringObjectMap.get("circuitInfo");
                 // 175*176特征
-                float[][] x = new float[allNameList.size()][allNameList.size() + 1];
+                float[][] x = new float[allNameList.size()][200];
                 // 回路单价总和
                 Map<String, Float> circuitPrice = new HashMap<>();
                 // 分支点为湿区的成本

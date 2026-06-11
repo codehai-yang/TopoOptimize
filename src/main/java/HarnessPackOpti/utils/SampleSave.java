@@ -22,6 +22,10 @@ public class SampleSave {
                 DataOutputStream dos = new DataOutputStream(
                         new BufferedOutputStream(new FileOutputStream(filePath,true)))) {
 
+            //写入N,E信息.8字节
+            dos.writeInt(x.length);
+            dos.writeInt(edgeIndex[0].length);
+
             // 1. 写入 edge_index [2, 211]，int32大端
             for (int i = 0; i < edgeIndex.length; i++) {
                 for (int j = 0; j < edgeIndex[i].length; j++) {
@@ -36,7 +40,7 @@ public class SampleSave {
                 }
             }
 
-            // 3. 写入 x [175, 176]，float32大端
+            // 3. 写入 x [175, 176]，float32大端,175->200,节点特征维度长度不够200，用0填充
             for (int i = 0; i < x.length; i++) {
                 for (int j = 0; j < x[i].length; j++) {
                     dos.writeFloat(x[i][j]);
