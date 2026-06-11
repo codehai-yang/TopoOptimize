@@ -22,6 +22,9 @@ public class SampleSave {
                 DataOutputStream dos = new DataOutputStream(
                         new BufferedOutputStream(new FileOutputStream(filePath,true)))) {
 
+            dos.writeInt(x.length);
+            dos.writeInt(edgeIndex[0].length);  //211
+
             // 1. 写入 edge_index [2, 211]，int32大端
             for (int i = 0; i < edgeIndex.length; i++) {
                 for (int j = 0; j < edgeIndex[i].length; j++) {
