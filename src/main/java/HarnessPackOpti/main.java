@@ -23,7 +23,7 @@ public class main {
     public static void main(String[] args) throws Exception {
 
         //线束拓扑优化
-        InputStream inputStream = main.class.getClassLoader().getResourceAsStream("优化测试后台记录.txt");
+        InputStream inputStream = main.class.getClassLoader().getResourceAsStream("BS4EM初始json包含优化设置.txt");
         String jsonContent = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
         HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
         harnessBranchTopoOptimize.topoOptimize(jsonContent);
