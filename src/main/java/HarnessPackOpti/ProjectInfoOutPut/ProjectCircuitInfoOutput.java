@@ -36,7 +36,9 @@ public class ProjectCircuitInfoOutput {
         File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\20250630.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
+        long startTime = System.currentTimeMillis();
         String json = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
+        System.out.println("Project Circuit Info Output Time: " + (System.currentTimeMillis() - startTime));
         File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\output.txt");
         Files.write(outputFile.toPath(), json.getBytes());
         System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());

@@ -1786,7 +1786,16 @@ public class HarnessBranchTopoOptimize {
         long topTenStartTime = System.currentTimeMillis();
         // 接下来就是对simple 进行一个分支闭环的检查
         System.out.println("裂变前AI仓库数量：" + WareHouseAI.size());
-        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap,
+        // 从simple中随机抽取40个方案参与最优查找
+        List<List<String>> randomSimple = new ArrayList<>();
+        if (simple.size() > 40) {
+            List<List<String>> tempSimple = new ArrayList<>(simple);
+            Collections.shuffle(tempSimple);
+            randomSimple = tempSimple.subList(0, 40);
+        } else {
+            randomSimple = new ArrayList<>(simple);
+        }
+        List<Map<String, Object>> mapList = changeAndFindBest(randomSimple, edges, normList, wearId, canChangeS, jsonMap,
                 edgeChooseBS);
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
         System.out.println("查找每一代最优结果耗时：" + (System.currentTimeMillis() - topTenStartTime));
