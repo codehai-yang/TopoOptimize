@@ -89,6 +89,7 @@ public class HarnessBranchTopoOptimize {
         // optimizeRecordId = optimizeRecord.get("id").toString();
         optimizeRecordId = java.util.UUID.randomUUID().toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
+        Boolean whetherAI = true;
 
         // 整车信息计算
         String initializeCaseResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
@@ -668,7 +669,7 @@ public class HarnessBranchTopoOptimize {
                     appPositions, eleclection,
                     mutexMap, minLoopNumber, maxLoopNumber, initialScheme, wearId, jsonMap, edgeChooseBS, chooseOneList,
                     mutexGroupList, sortedMapExcel, sortedMap, circuitInfoList, elecPosition, branchLength, connection,
-                    multiLoopInfos, pointMap);
+                    multiLoopInfos, pointMap,whetherAI);
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 initializeCaseResultMap.put("finishStatue", "abnormal");
                 List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "abnormal", singleBCList, singleSCList,
@@ -1304,7 +1305,7 @@ public class HarnessBranchTopoOptimize {
                                                    Map<String, Object> branchLength,
                                                    List<List<Integer>> connection,
                                                    Map<String, List<String>> multiLoopInfos,
-                                                   Map<String, String> pointMap) throws Exception {
+                                                   Map<String, String> pointMap,Boolean whetherAI) throws Exception {
         // 利用约束变异开始时间
         long constraintStartTime = System.currentTimeMillis();
         List<List<String>> simple = new ArrayList<>();
@@ -1608,14 +1609,16 @@ public class HarnessBranchTopoOptimize {
         System.out.println("要预测的样本数：" + simple.size());
         List<List<String>> lists = new ArrayList<>();
         // 模型粗筛
-//        if (BestCost.size() > 0) {
-            System.out.println("模型筛选前方案数量：" + simple.size());
-            lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS,
-                    elecPosition, branchLength, connection, multiLoopInfos, pointMap);
-//        } else {
-//            // 第一次迭代不用粗筛
-//            lists = simple;
-//        }
+        if(whetherAI) {
+            if (BestCost.size() > 0) {
+                System.out.println("模型筛选前方案数量：" + simple.size());
+                lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS,
+                        elecPosition, branchLength, connection, multiLoopInfos, pointMap);
+            } else {
+                // 第一次迭代不用粗筛
+                lists = simple;
+            }
+        }
         if (lists.size() == 0 || lists == null) {
             return null;
         }

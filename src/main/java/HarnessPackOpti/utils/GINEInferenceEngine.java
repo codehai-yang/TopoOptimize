@@ -25,13 +25,18 @@ public class GINEInferenceEngine {
         CloseableHttpClient httpClient = HttpClientPoolManager.getHttpClient();
         HttpPost httpPost = new HttpPost(PREDICT_URL);
 
+        //获取节点数和边数
+        Integer node_dim = matrix.length;
+        Integer edge_dim = edgeIndex[0].length;
 
         // 计算总字节数
         // edge_index: 2×211×4字节(long) = 1688字节  1880
         // edge_attr:  211×4×4字节(float) = 3376字节  3760
         // x:          175×176×4字节(float) = 123200字节 143640
-        int totalBytes = 1880 + 3760 + 143640;
+        int totalBytes = 8 + (edge_dim * 2 * 4) + (edge_dim * 16) + (node_dim * 200 * 4);
         ByteBuffer buffer = ByteBuffer.allocate(totalBytes).order(ByteOrder.BIG_ENDIAN);
+        buffer.putInt(node_dim);
+        buffer.putInt(edge_dim);
         // 写入edge_index
         for (long[] row : edgeIndex) {
             for (long val : row) {
