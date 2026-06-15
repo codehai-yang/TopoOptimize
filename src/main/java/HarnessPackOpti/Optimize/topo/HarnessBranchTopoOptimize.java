@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 
 public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
-    public static Integer LessRandomSamleNumber = 15;
+    public static Integer LessRandomSamleNumber = 10;
     // 迭代最少样本数量
     public static Integer HybridizationLessRandomSamleNumber = 10;
     // top几的数量规定
