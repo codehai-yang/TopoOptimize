@@ -24,6 +24,11 @@ public class SampleSave {
                 DataOutputStream dos = new DataOutputStream(
                         new BufferedOutputStream(new FileOutputStream("F:\\office\\pythonProjects\\GINEModel\\javaTest\\predict_input.bin",true)))) {
 
+            //获取节点数和边数
+            Integer node_dim = x.length;
+            Integer edge_dim = edgeIndex[0].length;
+            dos.writeInt(node_dim);
+            dos.writeInt(edge_dim);
             // 1. 写入 edge_index [2, 211]，int32大端
             for (int i = 0; i < edgeIndex.length; i++) {
                 for (int j = 0; j < edgeIndex[i].length; j++) {

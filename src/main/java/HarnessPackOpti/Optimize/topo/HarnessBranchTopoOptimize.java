@@ -1610,14 +1610,14 @@ public class HarnessBranchTopoOptimize {
         List<List<String>> lists = new ArrayList<>();
         // 模型粗筛
         if(whetherAI) {
-            if (BestCost.size() > 0) {
+//            if (BestCost.size() > 0) {
                 System.out.println("模型筛选前方案数量：" + simple.size());
                 lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS,
                         elecPosition, branchLength, connection, multiLoopInfos, pointMap);
-            } else {
-                // 第一次迭代不用粗筛
-                lists = simple;
-            }
+//            } else {
+//                // 第一次迭代不用粗筛
+//                lists = simple;
+//            }
         }
         if (lists.size() == 0 || lists == null) {
             return null;
@@ -1720,7 +1720,7 @@ public class HarnessBranchTopoOptimize {
                         edgeAttr[i][j] = branchFeatureList.get(i).get(j);
                     }
                 }
-                // SampleSave.saveSample(edgeIndex,edgeAttr,x);
+//                 SampleSave.saveSample(edgeIndex,edgeAttr,x);
                 // 模型预测
                 float predict = gine.predict(x, edgeIndex, edgeAttr);
                 System.out.println("数据准备以及模型预测总耗时：" + (System.currentTimeMillis() - oneHotTime));
