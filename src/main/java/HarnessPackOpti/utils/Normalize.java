@@ -170,7 +170,6 @@ public class Normalize {
 
         long projectCircuitInfoOutputTime = System.currentTimeMillis();
         // 拼接175*176矩阵
-        int newDim = matrix[0].length + 1;
         float[][] newMatrix = new float[matrix.length][200];
         for (int i = 0; i < matrix.length; i++) {
             for (int j = 0; j < matrix[0].length; j++) {
