@@ -1612,14 +1612,14 @@ public class HarnessBranchTopoOptimize {
         List<List<String>> lists = new ArrayList<>();
         // 模型粗筛
         if(whetherAI) {
-//            if (BestCost.size() > 0) {
+            if (BestCost.size() > 0) {
                 System.out.println("模型筛选前方案数量：" + simple.size());
                 lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS,
                         elecPosition, branchLength, connection, multiLoopInfos, pointMap);
-//            } else {
-//                // 第一次迭代不用粗筛
-//                lists = simple;
-//            }
+            } else {
+                // 第一次迭代不用粗筛
+                lists = simple;
+            }
         }
         if (lists.size() == 0 || lists == null) {
             return null;
