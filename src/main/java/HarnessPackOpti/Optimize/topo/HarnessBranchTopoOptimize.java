@@ -27,9 +27,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
+import static HarnessPackOpti.utils.Normalize.projectCircuitInfoOutput;
+
 public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
-    public static Integer LessRandomSamleNumber = 10;
+    public static Integer LessRandomSamleNumber = 15;
     // 迭代最少样本数量
     public static Integer HybridizationLessRandomSamleNumber = 10;
     // top几的数量规定
@@ -1656,6 +1658,7 @@ public class HarnessBranchTopoOptimize {
         GINEInferenceEngine gine = new GINEInferenceEngine();
         List<Callable<List<String>>> tasks = new ArrayList<>();
         ObjectMapper mapper = new ObjectMapper();
+        JsonToMap jsonToMap = new JsonToMap();
         List<List<String>> resultList = new ArrayList<>();
         List<Float> length = (List<Float>) branchLength.get("branchLength");
         List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) jsonMap.get("loopInfos");
@@ -1676,6 +1679,17 @@ public class HarnessBranchTopoOptimize {
                         mapper.writeValueAsString(jsonMap),
                         Map.class);
                 threadLocalJsonMap.put("edges", serviceableEdge);
+
+                //测试，计算真实成本
+                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput
+                        .projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
+                Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
+                Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
+
+                Map<String, Object> costResultData = new HashMap<>();
+                // 存入map
+                costResultData.put("总成本", projectCircuitInfo.get("总成本"));
+
                 // 分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1],211*4
                 List<List<Float>> branchFeatureList = new ArrayList<>();
                 long oneHotTime = System.currentTimeMillis();
@@ -1724,8 +1738,10 @@ public class HarnessBranchTopoOptimize {
                 // 模型预测
                 float predict = gine.predict(x, edgeIndex, edgeAttr);
                 System.out.println("数据准备以及模型预测总耗时：" + (System.currentTimeMillis() - oneHotTime));
-                System.out.println("模型预测成本：" + predict);
+                System.out.println(Thread.currentThread().getName()  + "模型预测成本：" + predict);
+                System.out.println(Thread.currentThread().getName()  + "真实成本" + projectCircuitInfo.get("总成本"));
                 Double v = BestCost.get("总成本");
+                System.out.println("上一代最优成本" + v);
                 if (v - (predict / 1.04) > 0) {
                     return strings;
                 }

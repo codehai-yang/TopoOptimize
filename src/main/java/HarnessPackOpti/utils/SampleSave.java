@@ -22,7 +22,7 @@ public class SampleSave {
     public static void saveSample(long[][] edgeIndex,float[][] edgeAttr,float[][] x){
         try (
                 DataOutputStream dos = new DataOutputStream(
-                        new BufferedOutputStream(new FileOutputStream("F:\\office\\pythonProjects\\GINEModel\\javaTest\\predict_input.bin",true)))) {
+                        new BufferedOutputStream(new FileOutputStream("F:\\office\\pythonProjects\\GINEModel\\javaTest\\predict_input.bin",false)))) {
 
             //获取节点数和边数
             Integer node_dim = x.length;
