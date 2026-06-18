@@ -1,5 +1,7 @@
 package HarnessPackOpti.Optimize.elec;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -69,6 +71,15 @@ public class PowerDistributionDriveOptimization {
 
     public PowerDistributionDriveOptimization() {
         this.optimizeStopStatusStore = OptimizeStopStatusStore.getInstance();
+    }
+
+    public static void main(String[] args) throws Exception {
+        File file = new
+                File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动优化测试数据.txt");
+        String jsonContent = new
+                String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
+        PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
+        powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
     }
 
     public List<Map<String, Object>> powerDriverOptimize(String jsonContent) throws Exception {
@@ -1464,7 +1475,7 @@ public class PowerDistributionDriveOptimization {
      * 生成唯一指纹（完整版）
      */
     private String generateSchemeFingerprint(List<Map<String, String>> loopInfos,
-            List<Map<String, String>> appPositions) {
+                                             List<Map<String, String>> appPositions) {
         StringBuilder fingerprint = new StringBuilder();
         List<Map<String, String>> sortedLoops = new ArrayList<>(loopInfos);
         sortedLoops.sort((a, b) -> a.get("id").compareTo(b.get("id")));

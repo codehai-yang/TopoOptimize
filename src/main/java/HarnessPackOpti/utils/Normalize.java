@@ -179,7 +179,7 @@ public class Normalize {
         result.forEach((k, v) -> {
             newMatrix[allNameList.indexOf(k)][allNameList.size()] = v;
         });
-        System.out.println("拼接矩阵耗时：" + (System.currentTimeMillis() - projectCircuitInfoOutputTime));
+//        System.out.println("拼接矩阵耗时：" + (System.currentTimeMillis() - projectCircuitInfoOutputTime));
         return newMatrix;
     }
 
