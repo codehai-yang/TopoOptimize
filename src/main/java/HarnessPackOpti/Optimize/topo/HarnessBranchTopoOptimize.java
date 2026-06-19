@@ -638,7 +638,7 @@ public class HarnessBranchTopoOptimize {
         // 对初始生成的方案进行处理和优化，找出最佳方案，通过将闭环中可更改分支状态为s来消除闭环
         // 对上面生成的闭环方案进行计算，计算他们的成本，按价格排序 ，返回成本最优的20条方案
         List<Map<String, Object>> findBest = changeAndFindBest(simpleList, edges, normList, wearId, canChangeS, jsonMap,
-                edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap);
+                edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap,null);
         TopDetail = findBest;
         if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
             initializeCaseResultMap.put("finishStatue", "abnormal");
@@ -720,6 +720,7 @@ public class HarnessBranchTopoOptimize {
                         && Math.abs(BestCost.get("总长度") - costLenth) < 0.000001
                         && Math.abs(BestCost.get("总重量") - costWeight) < 0.000001) {
                     BestRepetitionNumber = BestRepetitionNumber + 1; // 相同则计数器加1
+                    System.out.println("重复次数： " + BestRepetitionNumber);
                 } else if (costTotal < BestCost.get("总成本")) {
                     // 找到更优解，更新并重置计数器
                     BestRepetitionNumber = 0;
@@ -1649,7 +1650,7 @@ public class HarnessBranchTopoOptimize {
         // 查找最优方案
         long findBestStartTime = System.currentTimeMillis();
         List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS, jsonMap,
-                edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap);
+                edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap,findBest);
         long findBestTimeMs = System.currentTimeMillis() - findBestStartTime;
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
         System.out.println("查找每一代最优结果耗时：" + findBestTimeMs);
@@ -1938,7 +1939,7 @@ public class HarnessBranchTopoOptimize {
             Map<String, Object> branchLength,
             List<List<Integer>> connection,
             Map<String, List<String>> multiLoopInfos,
-            Map<String, String> pointMap) throws Exception {
+            Map<String, String> pointMap,List<Map<String, Object>> findBestPre) throws Exception {
         GINEInferenceEngine gine = new GINEInferenceEngine();
         Random random = new Random();
         FindBest findBest = new FindBest();
@@ -2100,6 +2101,12 @@ public class HarnessBranchTopoOptimize {
 
         }
         // 每个方案进行计算
+        //加入上一代最优top3
+        if(findBestPre != null){
+            for (int i = 0; i < 3; i++) {
+                resultList.add(findBestPre.get(i));
+            }
+        }
         List<Map<String, Object>> topBeat = findBest.findBest(resultList, "成本", TopNumber);
 
         for (Map<String, Object> map : topBeat) {

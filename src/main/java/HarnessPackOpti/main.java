@@ -29,7 +29,10 @@ public class main {
            reader.close();
            String jsonContent = sb.toString();
            HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
-           harnessBranchTopoOptimize.topoOptimize(jsonContent);
+           String result = harnessBranchTopoOptimize.topoOptimize(jsonContent);
+            File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\topooutput.txt");
+            Files.write(outputFile.toPath(), result.getBytes());
+            System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
            HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
            harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
 
