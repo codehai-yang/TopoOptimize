@@ -39,11 +39,11 @@ import HarnessPackOpti.utils.ThreadPool;
 
 public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
-    public static Integer LessRandomSamleNumber = 15;
+    public static Integer LessRandomSamleNumber = 200;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 10;
+    public static Integer HybridizationLessRandomSamleNumber = 500;
     // top几的数量规定
-    public static final Integer TopNumber = 20;
+    public static final Integer TopNumber = 100;
     // 每次迭代最优的成本
     public static Map<String, Double> BestCost = new HashMap<>();
     // 最优样本重复次数
@@ -1783,12 +1783,12 @@ public class HarnessBranchTopoOptimize {
         if (lists.size() == 0 || lists == null) {
             return null;
         }
-        // 查找最优方案
+        // 查找最优方案（使用AI预测模型替代整车计算方法）
         long findBestStartTime = System.currentTimeMillis();
-        List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS, jsonMap,
-                edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap,findBest);
+        List<Map<String, Object>> mapList = predictAndFindBest(lists, edges, normList, jsonMap,
+                edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap);
         long findBestTimeMs = System.currentTimeMillis() - findBestStartTime;
-        System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
+        System.out.println("AI预测最优方案数量：" + (mapList != null ? mapList.size() : 0));
         System.out.println("查找每一代最优结果耗时：" + findBestTimeMs);
         // 记录迭代统计到Excel
         if (mapList != null && !mapList.isEmpty()) {
@@ -1799,7 +1799,7 @@ public class HarnessBranchTopoOptimize {
                 double bestWeight = Double.parseDouble(costMap.get("总重量").toString());
                 double bestLength = Double.parseDouble(costMap.get("总长度").toString());
                 String excelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\iteration_stats_"
-                        + "test"
+                        + "testAItrue"
                         + ".xlsx";
                 recordIterationStatsToExcel(
                         hybridizationNumber, generatedCount, aiFilteredCount, filterTimeMs,
