@@ -706,6 +706,7 @@ public class HarnessBranchTopoOptimize {
                 BestCost.put("总成本", costTotal);
                 BestCost.put("总长度", costLenth);
                 BestCost.put("总重量", costWeight);
+                break;
             } else {
                 // 获取当前最优解的各项指标
                 double costTotal = Double
@@ -1023,6 +1024,10 @@ public class HarnessBranchTopoOptimize {
             // 对最终的方案进行一个计算 并且按照格式进行一个返回
             List<Map<String, Object>> finalEdgeresult = createNewEdges(statueList, edges, normList);
             jsonMap.put("edges", finalEdgeresult);
+            List<List<String>> lists = recognizeLoopNew(finalEdgeresult);
+            if(lists.size() != 0){
+                System.out.println("方案中还存在闭环");
+            }
             String optimizeInterfacesresult = projectCircuitInfoOutput
                     .projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
             Map<String, Object> objectMapresult = jsonToMap.TransJsonToMap(optimizeInterfacesresult);
