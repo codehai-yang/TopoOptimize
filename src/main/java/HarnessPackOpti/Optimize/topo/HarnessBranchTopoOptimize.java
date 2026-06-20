@@ -1272,6 +1272,142 @@ public class HarnessBranchTopoOptimize {
     }
 
     /**
+     * @Description: 使用AI预测模型对每个样本预测成本，返回成本最优的topN样本
+     *               替代整车计算方法，直接通过GINE模型预测成本
+     * @input: simpleList 分支打断情况的集合
+     * @input: edges 分支模板
+     * @input: normList 分支id的集合
+     * @input: jsonMap txt内容转为map
+     * @input: edgeChooseBS 分支打断可以选BS的集合
+     * @input: elecPosition 用电器对应的位置
+     * @input: branchLength 分支长度信息
+     * @input: connection 图连接关系
+     * @input: multiLoopInfos 多回路信息
+     * @input: pointMap 点位映射
+     * @Return: 返回AI预测成本最优的topN方案
+     */
+    public List<Map<String, Object>> predictAndFindBest(List<List<String>> simpleList,
+                                                        List<Map<String, Object>> edges,
+                                                        List<String> normList,
+                                                        Map<String, Object> jsonMap,
+                                                        List<String> edgeChooseBS,
+                                                        Map<String, Map<String, String>> elecPosition,
+                                                        Map<String, Object> branchLength,
+                                                        List<List<Integer>> connection,
+                                                        Map<String, List<String>> multiLoopInfos,
+                                                        Map<String, String> pointMap) throws Exception {
+        GINEInferenceEngine gine = new GINEInferenceEngine();
+        ObjectMapper mapper = new ObjectMapper();
+        List<Float> length = (List<Float>) branchLength.get("branchLength");
+        List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) jsonMap.get("loopInfos");
+        List<Map<String, String>> pointsList = (List<Map<String, String>>) jsonMap.get("points");
+        List<Map<String, Object>> resultList = new ArrayList<>();
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
+        int sampleId = 0;
+        for (List<String> strings : simpleList) {
+            final int currentSampleId = ++sampleId;
+            tasks.add(() -> {
+                List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
+                for (int i = 0; i < serviceableStatue.size(); i++) {
+                    if (serviceableStatue.get(i).equals("C") && edgeChooseBS.contains(normList.get(i))) {
+                        serviceableStatue.set(i, "S");
+                    }
+                }
+                List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+                // 深拷贝
+                Map<String, Object> threadLocalJsonMap = mapper.readValue(
+                        mapper.writeValueAsString(jsonMap),
+                        Map.class);
+                threadLocalJsonMap.put("edges", serviceableEdge);
+
+                // 分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1]
+                List<List<Float>> branchFeatureList = new ArrayList<>();
+                for (String s : serviceableStatue) {
+                    List<Float> statue = new ArrayList<>();
+                    switch (s) {
+                        case "B":
+                            statue = new ArrayList<>(Arrays.asList(0.0f, 0.0f, 0.0f));
+                            break;
+                        case "C":
+                            statue = new ArrayList<>(Arrays.asList(0.0f, 1.0f, 0.0f));
+                            break;
+                        case "S":
+                            statue = new ArrayList<>(Arrays.asList(0.0f, 0.0f, 1.0f));
+                            break;
+                        default:
+                            break;
+                    }
+                    branchFeatureList.add(statue);
+                }
+                for (int i = 0; i < length.size(); i++) {
+                    List<Float> integers = branchFeatureList.get(i);
+                    integers.add(length.get(i));
+                }
+                // 标准化特征矩阵
+                float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap,
+                        pointsList, normList, multiLoopInfos, pointMap, currentSampleId);
+                long[][] edgeIndex = new long[2][connection.get(0).size()];
+                for (int i = 0; i < 2; i++) {
+                    for (int j = 0; j < connection.get(i).size(); j++) {
+                        edgeIndex[i][j] = connection.get(i).get(j);
+                    }
+                }
+                float[][] edgeAttr = new float[branchFeatureList.size()][branchFeatureList.get(0).size()];
+                for (int i = 0; i < branchFeatureList.size(); i++) {
+                    for (int j = 0; j < branchFeatureList.get(i).size(); j++) {
+                        edgeAttr[i][j] = branchFeatureList.get(i).get(j);
+                    }
+                }
+                // AI模型预测成本
+                float predict = gine.predict(x, edgeIndex, edgeAttr);
+                System.out.println(Thread.currentThread().getName() + " AI预测成本：" + predict);
+
+                // 构建返回结果，与changeAndFindBest格式保持一致
+                Map<String, Object> costResultData = new HashMap<>();
+                costResultData.put("总成本", (double) predict);
+                // AI模型仅预测成本，重量和长度置为占位值
+                costResultData.put("总重量", 0.0);
+                costResultData.put("总长度", 0.0);
+
+                Map<String, Object> map = new HashMap<>();
+                map.put("成本", costResultData);
+                map.put("serviceableEdges", serviceableEdge);
+                map.put("serviceableStatue", serviceableStatue);
+                return map;
+            });
+        }
+        // 线程池提交任务
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            Future<Map<String, Object>> submit = threadPool.submit(task);
+            futures.add(submit);
+        }
+        // 获取线程池结果
+        for (Future<Map<String, Object>> future : futures) {
+            try {
+                Map<String, Object> result = future.get(600, java.util.concurrent.TimeUnit.SECONDS);
+                if (result != null) {
+                    resultList.add(result);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        // 按AI预测成本排序，取topN
+        FindBest findBest = new FindBest();
+        List<Map<String, Object>> topBeat = findBest.findBest(resultList, "成本", TopNumber);
+
+        for (Map<String, Object> map : topBeat) {
+            List<String> list = (List<String>) map.get("serviceableStatue");
+            if (!containsList(list, WareHouseTop)) {
+                WareHouseTop.add(list);
+                TopCostDetail.add(map);
+            }
+        }
+        return topBeat;
+    }
+
+    /**
      * @Description 根据给定的top10进行一个不断的迭代
      * @input findBest 给定的top10
      * @input onlyNameS 只能为S的分支
