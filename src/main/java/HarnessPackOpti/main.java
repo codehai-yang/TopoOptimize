@@ -30,7 +30,7 @@ public class main {
            String jsonContent = sb.toString();
            HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
            String result = harnessBranchTopoOptimize.topoOptimize(jsonContent);
-            File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\topooutputAI.txt");
+            File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\topooutputAI3.txt");
             Files.write(outputFile.toPath(), result.getBytes());
             System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
            HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
