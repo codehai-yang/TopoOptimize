@@ -39,9 +39,9 @@ import static HarnessPackOpti.utils.GINEInferenceEngine.objectMapper;
 
 public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
-    public static Integer LessRandomSamleNumber = 10;
+    public static Integer LessRandomSamleNumber = 100;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 10;
+    public static Integer HybridizationLessRandomSamleNumber = 200;
     // top几的数量规定
     public static final Integer TopNumber = 20;
     // 每次迭代最优的成本

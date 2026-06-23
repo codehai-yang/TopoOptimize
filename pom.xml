@@ -64,13 +64,9 @@
                             <mainClass>HarnessPackOpti.main</mainClass>
                         </manifest>
                     </archive>
-                    <excludes>
-                        <exclude>**/*.properties</exclude>
-                        <exclude>**/*.xml</exclude>
-                        <exclude>**/*.json</exclude>
-                        <exclude>**/*.txt</exclude>
-                        <exclude>**/resources/**</exclude>
-                    </excludes>
+                    <includes>
+                        <include>**/HarnessOpti.properties</include>
+                    </includes>
                 </configuration>
             </plugin>
             <plugin>
