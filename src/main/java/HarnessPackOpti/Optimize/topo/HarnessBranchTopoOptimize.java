@@ -1239,7 +1239,7 @@ public class HarnessBranchTopoOptimize {
                         continue; // 已处理过的跳过
                     }
                     try {
-                        Map<String, Object> result = future.get(1000, java.util.concurrent.TimeUnit.SECONDS);
+                        Map<String, Object> result = future.get(2400, java.util.concurrent.TimeUnit.SECONDS);
                         synchronized (resultList) {
                             if (result != null) {
                                 resultList.add(result);
@@ -1624,37 +1624,37 @@ public class HarnessBranchTopoOptimize {
         long completeEndTime = System.currentTimeMillis();
         System.out.println("方案补充时间：" + (completeEndTime - completeStartTime));
         // 记录本轮迭代的统计数据
-        int generatedCount = simple.size();
-        int aiFilteredCount = 0;
-        long filterTimeMs = 0;
-        // 接下来就是对simple 进行一个分支闭环的检查
-        System.out.println("要预测的样本数：" + simple.size());
-        // 存储模型过滤后的样本
-        List<List<String>> lists = new ArrayList<>();
-        // 模型粗筛，是否开启ai
-        long filterStartTime = System.currentTimeMillis();
-        if (whetherAI) {
-            if (BestCost.size() > 0) {
-                System.out.println("模型筛选前方案数量：" + simple.size());
-                lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS,
-                        elecPosition, branchLength, connection, multiLoopInfos, pointMap);
-                filterTimeMs = System.currentTimeMillis() - filterStartTime;
-                aiFilteredCount = lists != null ? lists.size() : 0;
-            } else {
-                // 第一次迭代不用粗筛找要和其他代对比的样本
-                lists = simple;
-                aiFilteredCount = lists.size();
-            }
-        } else {
-            lists = simple;
-            aiFilteredCount = lists.size();
-        }
-        if (lists.size() == 0 || lists == null) {
-            return null;
-        }
+//        int generatedCount = simple.size();
+//        int aiFilteredCount = 0;
+//        long filterTimeMs = 0;
+//        // 接下来就是对simple 进行一个分支闭环的检查
+//        System.out.println("要预测的样本数：" + simple.size());
+//        // 存储模型过滤后的样本
+//        List<List<String>> lists = new ArrayList<>();
+//        // 模型粗筛，是否开启ai
+//        long filterStartTime = System.currentTimeMillis();
+//        if (whetherAI) {
+//            if (BestCost.size() > 0) {
+//                System.out.println("模型筛选前方案数量：" + simple.size());
+//                lists = predictModel(simple, edges, normList, jsonMap, edgeChooseBS,
+//                        elecPosition, branchLength, connection, multiLoopInfos, pointMap);
+//                filterTimeMs = System.currentTimeMillis() - filterStartTime;
+//                aiFilteredCount = lists != null ? lists.size() : 0;
+//            } else {
+//                // 第一次迭代不用粗筛找要和其他代对比的样本
+//                lists = simple;
+//                aiFilteredCount = lists.size();
+//            }
+//        } else {
+//            lists = simple;
+//            aiFilteredCount = lists.size();
+//        }
+//        if (lists.size() == 0 || lists == null) {
+//            return null;
+//        }
         // 查找最优方案
         long findBestStartTime = System.currentTimeMillis();
-        List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS, jsonMap,
+        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, findBest);
         long findBestTimeMs = System.currentTimeMillis() - findBestStartTime;
         System.out.println("裂变后AI仓库数量：" + WareHouseAI.size());
@@ -1665,21 +1665,21 @@ public class HarnessBranchTopoOptimize {
 //        Files.write(outputFile.toPath(), s.getBytes());
 //        System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
         // 记录迭代统计到Excel
-        if (mapList != null && !mapList.isEmpty()) {
-            Map<String, Object> bestResult = mapList.get(0);
-            Map<String, Object> costMap = (Map<String, Object>) bestResult.get("成本");
-            if (costMap != null) {
-                double bestCost = Double.parseDouble(costMap.get("总成本").toString());
-                double bestWeight = Double.parseDouble(costMap.get("总重量").toString());
-                double bestLength = Double.parseDouble(costMap.get("总长度").toString());
-                String excelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\iteration_stats_"
-                        + "test"
-                        + ".xlsx";
-                recordIterationStatsToExcel(
-                        hybridizationNumber, generatedCount, aiFilteredCount, filterTimeMs,
-                        bestCost, bestWeight, bestLength, findBestTimeMs, excelPath);
-            }
-        }
+//        if (mapList != null && !mapList.isEmpty()) {
+//            Map<String, Object> bestResult = mapList.get(0);
+//            Map<String, Object> costMap = (Map<String, Object>) bestResult.get("成本");
+//            if (costMap != null) {
+//                double bestCost = Double.parseDouble(costMap.get("总成本").toString());
+//                double bestWeight = Double.parseDouble(costMap.get("总重量").toString());
+//                double bestLength = Double.parseDouble(costMap.get("总长度").toString());
+//                String excelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\iteration_stats_"
+//                        + "test"
+//                        + ".xlsx";
+//                recordIterationStatsToExcel(
+//                        hybridizationNumber, generatedCount, aiFilteredCount, filterTimeMs,
+//                        bestCost, bestWeight, bestLength, findBestTimeMs, excelPath);
+//            }
+//        }
         return mapList;
     }
 
