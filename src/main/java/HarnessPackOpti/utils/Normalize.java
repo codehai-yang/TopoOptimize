@@ -36,8 +36,7 @@ public class Normalize {
             Map<String, Map<String, String>> elecPosition,
             Map<String, Object> jsonMap,
             List<Map<String, String>> pointList,
-            List<String> normList, Map<String, List<String>> multiLoopInfos, Map<String, String> pointMap,
-            Integer sampleId) {
+            List<String> normList, Map<String, List<String>> multiLoopInfos, Map<String, String> pointMap) {
         List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
         // 成本信息
         Map<String, Map<String, String>> elecFixedLocationLibrary = ProjectCircuitInfoOutput.elecFixedLocationLibrary;
@@ -167,8 +166,6 @@ public class Normalize {
             String[] split = k.split(":");
             matrix[allNameList.indexOf(split[0])][allNameList.indexOf(split[1])] = v;
         });
-
-        long projectCircuitInfoOutputTime = System.currentTimeMillis();
         // 拼接175*176矩阵
         float[][] newMatrix = new float[matrix.length][200];
         for (int i = 0; i < matrix.length; i++) {

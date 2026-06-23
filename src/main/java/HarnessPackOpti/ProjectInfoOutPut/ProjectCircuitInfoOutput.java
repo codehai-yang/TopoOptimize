@@ -677,7 +677,6 @@ public class ProjectCircuitInfoOutput {
         for (String s : bundleIdList) {
             Map<String, Object> objectMap = (Map<String, Object>) bundeleRelatedCircuitInfo.get(s);
             List<String> list = (List<String>) objectMap.get("circuitList");
-            CalculateInlineWet calculateInlineWet = new CalculateInlineWet();
             String wet = "";
             // 判断这条分支的干湿
             for (Map<String, String> stringStringMap : edges) {
