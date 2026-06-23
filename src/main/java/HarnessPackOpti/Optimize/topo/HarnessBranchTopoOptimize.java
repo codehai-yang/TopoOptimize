@@ -791,7 +791,7 @@ public class HarnessBranchTopoOptimize {
             List<String> singleBSList,
             List<String> singleBSCList,
             List<String> normList,
-            Map<String, Object> jsonMap,
+            Map<String, Object> jsonMapOrigin,
             Map<String, String> eleclection,
             List<String> wearId,
             Map<String, Map<String, List<String>>> mutexMap,
@@ -803,6 +803,7 @@ public class HarnessBranchTopoOptimize {
         }
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         ObjectMapper objectMapper = new ObjectMapper();
+        Map<String, Object> jsonMap = new HashMap<>(jsonMapOrigin);
         JsonToMap jsonToMap = new JsonToMap();
         List<Map<String, Object>> bestOption = new ArrayList<>();
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
@@ -818,16 +819,18 @@ public class HarnessBranchTopoOptimize {
         restore.addAll(singleBSCList);
 
         for (Map<String, Object> map : findBest) {
+            Map<String, Double> costDetail = (Map<String, Double>) map.get("成本");
+            double costTotal = costDetail.get("总成本");
             List<String> statueList = (List<String>) map.get("serviceableStatue");
 
             // 首先进行一个分支打断代价计算，将当中S的打断代价为0并且在符合分支拓扑约束的条件下 将S改为B
             List<Map<String, Object>> firstEdgesDetail = createNewEdges(statueList, edges, normList);
             jsonMap.put("edges", firstEdgesDetail);
-            Map<String, Object> betweenprojectCircuitInfo1 = (Map<String, Object>) map
-                    .get("成本");
-            Double costTotal = (Double) betweenprojectCircuitInfo1.get("总成本");
+            String firstoptimizeInterface = projectCircuitInfoOutput
+                    .projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+            Map<String, Object> firstObjectMap = jsonToMap.TransJsonToMap(firstoptimizeInterface);
             // 计算每一个分支的打断代价
-            Map<String, Object> firstbundeleRelatedCircuitInfo = (Map<String, Object>) map
+            Map<String, Object> firstbundeleRelatedCircuitInfo = (Map<String, Object>) firstObjectMap
                     .get("bundeleRelatedCircuitInfo");
             Map<String, Double> firstbreakCostMap = new HashMap<>();
             for (String s : firstbundeleRelatedCircuitInfo.keySet()) {
@@ -2091,7 +2094,6 @@ public class HarnessBranchTopoOptimize {
                         break;
                     }
                 }
-                map.put("bundeleRelatedCircuitInfo",bundeleRelatedCircuitInfo);
                 // 这里先按null返回，因为如果跳出大的循环，则其余方案无法检测到
                 if (scrapOrNot) {
                     return null;
