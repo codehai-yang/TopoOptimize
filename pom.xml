@@ -65,6 +65,7 @@
                         </manifest>
                     </archive>
                     <includes>
+                        <include>**/*.class</include>
                         <include>**/HarnessOpti.properties</include>
                     </includes>
                 </configuration>
