@@ -1835,7 +1835,14 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 枚举所有可行方案（保持不变）
+     * 枚举所有可行方案
+     * @param targetLoops
+     * @param elecChangeablePosition
+     * @param togetherGroup
+     * @param mutualGroup
+     * @param allLoopInfos
+     * @param loopElecById  回路终点可连接的
+     * @param loopElecByIdStart
      */
     private void enumerateAllSchemes(
             List<Map<String, String>> targetLoops,
@@ -1856,7 +1863,7 @@ public class PowerDistributionDriveOptimization {
         Set<String> coveredLoopIds = new HashSet<>();
         for (Map.Entry<String, List<String>> entry : togetherGroup.entrySet()) {
             String groupId = entry.getKey();
-            List<String> memberLoopIds = entry.getValue();
+            List<String> memberLoopIds = entry.getValue();      //该组组团一起变的分支id
             Set<String> endAppIntersection = null;
             for (String lid : memberLoopIds) {
                 Set<String> allowedEndApps = loopElecById.get(lid);
