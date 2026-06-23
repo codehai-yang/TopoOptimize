@@ -1412,8 +1412,9 @@ public class HarnessBranchTopoOptimize {
         }
         // 按AI预测成本排序，取topN
         FindBest findBest = new FindBest();
+        int preCount = Math.max(1, (int) (findBestPre.size() * 0.1));
         if(findBestPre != null) {
-            for (int i = 0; i < 20; i++) {
+            for (int i = 0; i < preCount; i++) {
                 resultList.add(findBestPre.get(i));
             }
         }
