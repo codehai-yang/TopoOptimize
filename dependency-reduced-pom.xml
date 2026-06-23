@@ -7,24 +7,6 @@
   <build>
     <plugins>
       <plugin>
-        <artifactId>maven-jar-plugin</artifactId>
-        <version>3.3.0</version>
-        <configuration>
-          <archive>
-            <manifest>
-              <mainClass>HarnessPackOpti.main</mainClass>
-            </manifest>
-          </archive>
-          <excludes>
-            <exclude>**/*.properties</exclude>
-            <exclude>**/*.xml</exclude>
-            <exclude>**/*.json</exclude>
-            <exclude>**/*.txt</exclude>
-            <exclude>**/resources/**</exclude>
-          </excludes>
-        </configuration>
-      </plugin>
-      <plugin>
         <artifactId>maven-shade-plugin</artifactId>
         <version>3.5.1</version>
         <executions>
@@ -38,8 +20,17 @@
                 <transformer>
                   <mainClass>HarnessPackOpti.main</mainClass>
                 </transformer>
-                <transformer />
               </transformers>
+              <filters>
+                <filter>
+                  <includes>
+                    <include>**/*.class</include>
+                    <include>**/HarnessOpti.properties</include>
+                    <include>**/ElecFixedLocationLibrary.xlsx</include>
+                    <include>**/WireInfo.xlsx</include>
+                  </includes>
+                </filter>
+              </filters>
             </configuration>
           </execution>
         </executions>
