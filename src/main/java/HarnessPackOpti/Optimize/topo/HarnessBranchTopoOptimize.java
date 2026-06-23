@@ -51,7 +51,7 @@ public class HarnessBranchTopoOptimize {
     // 最优样本重复次数
     public static Integer BestRepetitionNumber = 0;
     // 迭代重复的次数限值
-    public static Integer IterationRestrictNumber = 20;
+    public static Integer IterationRestrictNumber = 1;
     // 定义一个仓库
     public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
     // 变异的次数
@@ -747,6 +747,7 @@ public class HarnessBranchTopoOptimize {
                 List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS, jsonMap,
                         edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, findBest);
                 TopCostDetail = mapList;
+                System.out.println("有效方案数：" + mapList.size());
                 System.out.println("迭代次数达到限制，后续与上一代结果相同达到30次");
                 break;
             }
@@ -823,7 +824,7 @@ public class HarnessBranchTopoOptimize {
             List<Map<String, Object>> firstEdgesDetail = createNewEdges(statueList, edges, normList);
             jsonMap.put("edges", firstEdgesDetail);
             Map<String, Object> betweenprojectCircuitInfo1 = (Map<String, Object>) map
-                    .get("projectCircuitInfo");
+                    .get("成本");
             Double costTotal = (Double) betweenprojectCircuitInfo1.get("总成本");
             // 计算每一个分支的打断代价
             Map<String, Object> firstbundeleRelatedCircuitInfo = (Map<String, Object>) map
@@ -1177,11 +1178,12 @@ public class HarnessBranchTopoOptimize {
                             singleBSList, singleBSCList, normList, jsonMap, eleclection, wearId, mutexMap,
                             chooseOneList, togetherBCList, whetherOnLoop);
                     System.out.println("方案变异时间:" + (System.currentTimeMillis() - startTime));
-                    Map<String, Object> objectMap = new HashMap<>();
-                    if (handleList.size() == 0 ||handleList == null) {
+                    Map<String, Object> objectMap;
+                    if ( handleList == null ||handleList.size() == 0) {
                         objectMap = sortcostMap;
+                    }else {
+                        objectMap = handleList.get(0);
                     }
-                     objectMap = handleList.get(0);
                     // 变异后分支状态
                     Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
                     if (costDeail.contains(cost)) {
@@ -1247,7 +1249,7 @@ public class HarnessBranchTopoOptimize {
                         continue; // 已处理过的跳过
                     }
                     try {
-                        Map<String, Object> result = future.get(240, java.util.concurrent.TimeUnit.SECONDS);
+                        Map<String, Object> result = future.get(2400, java.util.concurrent.TimeUnit.SECONDS);
                         synchronized (resultList) {
                             if (result != null) {
                                 resultList.add(result);
@@ -1260,6 +1262,7 @@ public class HarnessBranchTopoOptimize {
                             break;
                         }
                     } catch (Exception e) {
+                        e.printStackTrace();
                         synchronized (resultList) {
                             completeFutures.add(future); // 异常也算完成，添加到已完成列表
                         }
@@ -1407,7 +1410,7 @@ public class HarnessBranchTopoOptimize {
         // 按AI预测成本排序，取topN
         FindBest findBest = new FindBest();
         if(findBestPre != null) {
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < 20; i++) {
                 resultList.add(findBestPre.get(i));
             }
         }
@@ -1796,8 +1799,13 @@ public class HarnessBranchTopoOptimize {
                     mapper.writeValueAsString(jsonMap),
                     Map.class);
             threadLocalJsonMap.put("edges", serviceableEdge);
-            String betweenoptimizeInterfacesresult = projectCircuitInfoOutput
-                    .projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap));
+            String betweenoptimizeInterfacesresult = null;
+            try {
+                 betweenoptimizeInterfacesresult = projectCircuitInfoOutput
+                        .projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap));
+            }catch (Exception e) {
+                return findBest;
+            }
             Map<String, Object> betweenobjectMapresult = jsonToMap.TransJsonToMap(betweenoptimizeInterfacesresult);
             Map<String, Object> betweenprojectCircuitInfo = (Map<String, Object>) betweenobjectMapresult
                     .get("projectCircuitInfo");
@@ -2083,6 +2091,7 @@ public class HarnessBranchTopoOptimize {
                         break;
                     }
                 }
+                map.put("bundeleRelatedCircuitInfo",bundeleRelatedCircuitInfo);
                 // 这里先按null返回，因为如果跳出大的循环，则其余方案无法检测到
                 if (scrapOrNot) {
                     return null;
