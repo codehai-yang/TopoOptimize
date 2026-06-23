@@ -7,6 +7,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
+import HarnessPackOpti.ErrorOutput.CircuitErrorOutput;
 import HarnessPackOpti.ErrorOutput.HarnessBranchTopoOptiErrorOutPut;
 import HarnessPackOpti.Optimize.elec.ElecPositionVariantCalculation;
 import HarnessPackOpti.Optimize.elec.PowerDistributionDriveOptimization;
@@ -16,25 +17,25 @@ public class main {
         public static void main(String[] args) throws Exception {
 
                 // 线束拓扑优化
-           InputStream inputStream = main.class.getClassLoader().getResourceAsStream("BS4EM初始json包含优化设置.txt");
-           if (inputStream == null) {
-               throw new RuntimeException("找不到资源文件: 优化测试后台记录.txt");
-           }
-           BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
-           StringBuilder sb = new StringBuilder();
-           String line;
-           while ((line = reader.readLine()) != null) {
-               sb.append(line);
-           }
-           reader.close();
-           String jsonContent = sb.toString();
-           HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
-           String result = harnessBranchTopoOptimize.topoOptimize(jsonContent);
-            File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\topooutput.txt");
-            Files.write(outputFile.toPath(), result.getBytes());
-            System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
-           HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
-           harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
+//           InputStream inputStream = main.class.getClassLoader().getResourceAsStream("BS4EM初始json包含优化设置.txt");
+//           if (inputStream == null) {
+//               throw new RuntimeException("找不到资源文件: 优化测试后台记录.txt");
+//           }
+//           BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+//           StringBuilder sb = new StringBuilder();
+//           String line;
+//           while ((line = reader.readLine()) != null) {
+//               sb.append(line);
+//           }
+//           reader.close();
+//           String jsonContent = sb.toString();
+//           HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
+//           String result = harnessBranchTopoOptimize.topoOptimize(jsonContent);
+//            File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\topooutput.txt");
+//            Files.write(outputFile.toPath(), result.getBytes());
+//            System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
+//           HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();
+//           harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
 
                 //用电器位置布局优化
 //                File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\用电器位置布局优化遗传算法样本.txt");
@@ -112,12 +113,12 @@ public class main {
                 //
                 //
                 // 整车信息计算
-                // File file1 = new
-                // File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\circuitInfo.txt");
-                // String jsonContent1 = new
-                // String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
-                // CircuitErrorOutput circuitErrorOutput=new CircuitErrorOutput();
-                // circuitErrorOutput.circuitErrorOutput(jsonContent1);
+                 File file1 = new
+                 File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\circuitInfo.txt");
+                 String jsonContent1 = new
+                 String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
+                 CircuitErrorOutput circuitErrorOutput=new CircuitErrorOutput();
+                 circuitErrorOutput.circuitErrorOutput(jsonContent1);
 
                 // File file2 = new File("data/DataCoopWithEB/123.txt");
                 // File file2 = new File("data/DataCoopWithEB/用电器位置.txt");
