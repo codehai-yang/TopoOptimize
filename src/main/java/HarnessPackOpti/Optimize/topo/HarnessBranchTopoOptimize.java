@@ -706,7 +706,6 @@ public class HarnessBranchTopoOptimize {
                 BestCost.put("总成本", costTotal);
                 BestCost.put("总长度", costLenth);
                 BestCost.put("总重量", costWeight);
-                break;
             } else {
                 // 获取当前最优解的各项指标
                 double costTotal = Double
