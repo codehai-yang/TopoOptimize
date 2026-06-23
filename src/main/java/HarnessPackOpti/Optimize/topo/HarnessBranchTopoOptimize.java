@@ -776,7 +776,7 @@ public class HarnessBranchTopoOptimize {
             List<String> singleBSList,
             List<String> singleBSCList,
             List<String> normList,
-            Map<String, Object> jsonMap,
+            Map<String, Object> jsonMapOrigin,
             Map<String, String> eleclection,
             List<String> wearId,
             Map<String, Map<String, List<String>>> mutexMap,
@@ -789,6 +789,7 @@ public class HarnessBranchTopoOptimize {
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         ObjectMapper objectMapper = new ObjectMapper();
         JsonToMap jsonToMap = new JsonToMap();
+        Map<String, Object> jsonMap = new HashMap<>(jsonMapOrigin);
         List<Map<String, Object>> bestOption = new ArrayList<>();
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
         List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
