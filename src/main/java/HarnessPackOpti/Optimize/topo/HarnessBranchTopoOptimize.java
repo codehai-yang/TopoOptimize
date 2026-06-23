@@ -45,7 +45,7 @@ public class HarnessBranchTopoOptimize {
     // top几的数量规定
     public static final Integer TopNumber = 100;
     //最后返回前端的方案数量
-    public static final Integer LastNumber = 20;
+    public static final Integer LastNumber = 1;
     // 每次迭代最优的成本
     public static Map<String, Double> BestCost = new HashMap<>();
     // 最优样本重复次数
