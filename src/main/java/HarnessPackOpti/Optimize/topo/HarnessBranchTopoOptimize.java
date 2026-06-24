@@ -37,7 +37,7 @@ public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
     public static Integer LessRandomSamleNumber = 1000;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 2000;
+    public static Integer HybridizationLessRandomSamleNumber = 4000;
     // top几的数量规定
     public static final Integer TopNumber = 100;
     // 最后返回前端的方案数量
@@ -1789,7 +1789,6 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, Object>> mapList = predictAndFindBest(simple, edges, normList, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, findBest);
         long findBestTimeMs = System.currentTimeMillis() - findBestStartTime;
-        System.out.println("AI预测最优方案数量：" + (mapList != null ? mapList.size() : 0));
         System.out.println("查找每一代最优结果耗时：" + findBestTimeMs);
         // 记录迭代统计到Excel
         ObjectMapper mapper = new ObjectMapper();

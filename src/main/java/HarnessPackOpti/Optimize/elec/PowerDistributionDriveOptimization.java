@@ -1867,7 +1867,7 @@ public class PowerDistributionDriveOptimization {
             Set<String> endAppIntersection = null;
             for (String lid : memberLoopIds) {
                 Set<String> allowedEndApps = loopElecById.get(lid);
-                if (allowedEndApps == null || allowedEndApps.isEmpty()) {
+                if (allowedEndApps == null || allowedEndApps.isEmpty()) {   //找回路可连接的终点用电器，如果为null
                     Map<String, String> lp = loopById.get(lid);
                     if (lp != null && lp.get("endApp") != null)
                         allowedEndApps = Collections.singleton(lp.get("endApp"));
@@ -1877,7 +1877,7 @@ public class PowerDistributionDriveOptimization {
                 if (endAppIntersection == null)
                     endAppIntersection = new HashSet<>(allowedEndApps);
                 else
-                    endAppIntersection.retainAll(allowedEndApps);
+                    endAppIntersection.retainAll(allowedEndApps);       //组团一起变的取交集
                 coveredLoopIds.add(lid);
             }
             if (endAppIntersection != null && !endAppIntersection.isEmpty()) {
@@ -1942,6 +1942,7 @@ public class PowerDistributionDriveOptimization {
         }
 
         Map<String, List<String>> varKeyToMutualIds = new LinkedHashMap<>();
+        //遍历所有目标回路，找出哪些变量受到互斥约束
         for (Map<String, String> lp : targetLoops) {
             String lid = lp.get("id");
             String mutual = lp.get("mutualExclusion");
@@ -1951,6 +1952,7 @@ public class PowerDistributionDriveOptimization {
             String vk = (together != null && !together.isEmpty()) ? "E_G_" + together : "E_L_" + lid;
             varKeyToMutualIds.computeIfAbsent(vk, k -> new ArrayList<>()).add(mutual);
         }
+        //建立互斥组->变量列表的反向映射，组团和互斥约束只对终点连接关系的回路生效
         Map<String, List<String>> mutualIdToVarKeys = new LinkedHashMap<>();
         for (Map.Entry<String, List<String>> e : varKeyToMutualIds.entrySet()) {
             String varKey = e.getKey();
@@ -1961,11 +1963,11 @@ public class PowerDistributionDriveOptimization {
             }
         }
         // 收集所有受互斥组约束影响的变量，方便后续回溯算法进行约束检查和剪枝
-        Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualIds.keySet());
-        List<String> varKeys = new ArrayList<>(varDomains.keySet());
+        Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualIds.keySet());       //记录哪些变量参与了互斥约束，回溯时检查
+        List<String> varKeys = new ArrayList<>(varDomains.keySet());    //所有待复制的变量列表
         System.out.println("开始回溯枚举，变量数: " + varKeys.size());
-        Map<String, String> currentAssignment = new LinkedHashMap<>();
-        Set<String> usedEndApps = new HashSet<>();
+        Map<String, String> currentAssignment = new LinkedHashMap<>();  //当前赋值状态
+        Set<String> usedEndApps = new HashSet<>();      //已被使用的终点用电器集合(用于互斥剪枝)
         enumerateSchemesByBacktrack(
                 varDomains, mutualIdToVarKeys, varsInAnyMutualGroup,
                 0, varKeys, currentAssignment, usedEndApps,
