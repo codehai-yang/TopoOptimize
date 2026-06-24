@@ -1,9 +1,6 @@
 package HarnessPackOpti.Optimize.topo;
 
 import static HarnessPackOpti.utils.Normalize.projectCircuitInfoOutput;
-
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -27,7 +24,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Algorithm.FindBest;
-import HarnessPackOpti.Algorithm.FindShortestPath;
 import HarnessPackOpti.Algorithm.FindTopoBreak;
 import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
 import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
@@ -41,17 +37,17 @@ public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
     public static Integer LessRandomSamleNumber = 1000;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 3000;
+    public static Integer HybridizationLessRandomSamleNumber = 2000;
     // top几的数量规定
     public static final Integer TopNumber = 100;
-    //最后返回前端的方案数量
-    public static final Integer LastNumber = 1;
+    // 最后返回前端的方案数量
+    public static final Integer LastNumber = 20;
     // 每次迭代最优的成本
     public static Map<String, Double> BestCost = new HashMap<>();
     // 最优样本重复次数
     public static Integer BestRepetitionNumber = 0;
     // 迭代重复的次数限值
-    public static Integer IterationRestrictNumber = 1;
+    public static Integer IterationRestrictNumber = 30;
     // 定义一个仓库
     public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
     // 变异的次数
@@ -639,8 +635,10 @@ public class HarnessBranchTopoOptimize {
 
         // 对初始生成的方案进行处理和优化，找出最佳方案，通过将闭环中可更改分支状态为s来消除闭环
         // 对上面生成的闭环方案进行计算，计算他们的成本，按价格排序 ，返回成本最优的20条方案
-//        List<Map<String, Object>> findBest = changeAndFindBest(simpleList, edges, normList, wearId, canChangeS, jsonMap,
-//                edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, null);
+        // List<Map<String, Object>> findBest = changeAndFindBest(simpleList, edges,
+        // normList, wearId, canChangeS, jsonMap,
+        // edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos,
+        // pointMap, null);
         List<Map<String, Object>> findBest = predictAndFindBest(simpleList, edges, normList, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, null);
         TopDetail = findBest;
@@ -737,14 +735,15 @@ public class HarnessBranchTopoOptimize {
                 }
             }
             if (BestRepetitionNumber == IterationRestrictNumber) {
-                //对最后一代的top100进行精确计算，给后续优化
+                // 对最后一代的top100进行精确计算，给后续优化
                 System.out.println("开始计算遗传算法最优的Top100");
                 List<List<String>> lists = new ArrayList<>();
                 for (Map<String, Object> stringObjectMap : findBest) {
                     List<String> serviceableStatue = (List<String>) stringObjectMap.get("serviceableStatue");
                     lists.add(serviceableStatue);
                 }
-                List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS, jsonMap,
+                List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS,
+                        jsonMap,
                         edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, findBest);
                 TopCostDetail = mapList;
                 System.out.println("有效方案数：" + mapList.size());
@@ -1182,9 +1181,9 @@ public class HarnessBranchTopoOptimize {
                             chooseOneList, togetherBCList, whetherOnLoop);
                     System.out.println("方案变异时间:" + (System.currentTimeMillis() - startTime));
                     Map<String, Object> objectMap;
-                    if ( handleList == null ||handleList.size() == 0) {
+                    if (handleList == null || handleList.size() == 0) {
                         objectMap = sortcostMap;
-                    }else {
+                    } else {
                         objectMap = handleList.get(0);
                     }
                     // 变异后分支状态
@@ -1412,10 +1411,12 @@ public class HarnessBranchTopoOptimize {
         }
         // 按AI预测成本排序，取topN
         FindBest findBest = new FindBest();
-        int preCount = Math.max(1, (int) (findBestPre.size() * 0.1));
         if(findBestPre != null) {
-            for (int i = 0; i < preCount; i++) {
-                resultList.add(findBestPre.get(i));
+            int preCount = Math.max(1, (int) (findBestPre.size() * 0.1));
+            if (findBestPre != null) {
+                for (int i = 0; i < preCount; i++) {
+                    resultList.add(findBestPre.get(i));
+                }
             }
         }
         List<Map<String, Object>> topBeat = findBest.findBest(resultList, "成本", TopNumber);
@@ -1805,9 +1806,9 @@ public class HarnessBranchTopoOptimize {
             threadLocalJsonMap.put("edges", serviceableEdge);
             String betweenoptimizeInterfacesresult = null;
             try {
-                 betweenoptimizeInterfacesresult = projectCircuitInfoOutput
+                betweenoptimizeInterfacesresult = projectCircuitInfoOutput
                         .projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap));
-            }catch (Exception e) {
+            } catch (Exception e) {
                 return findBest;
             }
             Map<String, Object> betweenobjectMapresult = jsonToMap.TransJsonToMap(betweenoptimizeInterfacesresult);
@@ -1916,7 +1917,6 @@ public class HarnessBranchTopoOptimize {
             e.printStackTrace();
         }
     }
-
 
     /**
      * @Description: 根据传入的分支打断状况 返回一条新的分支详情
@@ -2138,6 +2138,7 @@ public class HarnessBranchTopoOptimize {
         }
         return topBeat;
     }
+
     /**
      * @Description: 生成随机方案
      * @input: minLoopNumber B的最小个数
@@ -2378,114 +2379,191 @@ public class HarnessBranchTopoOptimize {
         return validIds;
     }
 
-    /**
-     * @Description: 分支闭环数量检查
-     * @input: edges 分支详情
-     * @Return: 返回每一个闭环详情
-     */
     public List<List<String>> recognizeLoopNew(List<Map<String, Object>> edges) {
+        // 1. 收集C状态分支，建立"点-点" -> 边id双向映射
+        Map<String, String> pairToEdgeId = new HashMap<>();
+        for (Map<String, Object> edge : edges) {
+            String code = edge.get("topologyStatusCode") != null
+                    ? edge.get("topologyStatusCode").toString()
+                    : "";
+            if ("B".equalsIgnoreCase(code) || "S".equalsIgnoreCase(code)) {
+                continue;
+            }
+            String start = (String) edge.get("startPointName");
+            String end = (String) edge.get("endPointName");
+            String edgeId = edge.get("id") != null ? edge.get("id").toString() : (start + "-" + end);
+            pairToEdgeId.put(start + "-" + end, edgeId);
+            pairToEdgeId.put(end + "-" + start, edgeId);
+        }
+        if (pairToEdgeId.isEmpty()) {
+            return new ArrayList<>();
+        }
 
-        List<String> strPointNameList = new ArrayList<>();
-        List<String> endPointNameList = new ArrayList<>();
-        // 统计B，S状态，打断的分支
-        List<List<String>> branchBreakList = new ArrayList<>();
-        // 获取起点名称和终点名称
-        for (Map<String, Object> k : edges) {
-            strPointNameList.add((String) k.get("startPointName"));
-            endPointNameList.add((String) k.get("endPointName"));
+        // 2. 节点去重并建立索引映射
+        Set<String> pointSet = new LinkedHashSet<>();
+        for (Map<String, Object> edge : edges) {
+            String code = edge.get("topologyStatusCode") != null
+                    ? edge.get("topologyStatusCode").toString()
+                    : "";
+            if ("B".equalsIgnoreCase(code) || "S".equalsIgnoreCase(code)) {
+                continue;
+            }
+            pointSet.add((String) edge.get("startPointName"));
+            pointSet.add((String) edge.get("endPointName"));
+        }
+        List<String> pointList = new ArrayList<>(pointSet);
+        Map<String, Integer> pointToIndex = new HashMap<>();
+        for (int i = 0; i < pointList.size(); i++) {
+            pointToIndex.put(pointList.get(i), i);
+        }
+        int n = pointList.size();
+
+        // 3. 构建邻接表（并行数组：邻接点索引 + 对应边id）
+        List<List<Integer>> adjNodes = new ArrayList<>(n);
+        List<List<String>> adjEdgeIds = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            adjNodes.add(new ArrayList<>());
+            adjEdgeIds.add(new ArrayList<>());
         }
         for (Map<String, Object> edge : edges) {
-            if (edge.get("topologyStatusCode").equals("B") || edge.get("topologyStatusCode").equals("S")) {
-                List<String> interruptedEdgelist = new ArrayList<>();
-                interruptedEdgelist.add(edge.get("startPointName").toString());
-                interruptedEdgelist.add(edge.get("endPointName").toString());
-                branchBreakList.add(interruptedEdgelist);
+            String code = edge.get("topologyStatusCode") != null
+                    ? edge.get("topologyStatusCode").toString()
+                    : "";
+            if ("B".equalsIgnoreCase(code) || "S".equalsIgnoreCase(code)) {
+                continue;
+            }
+            int u = pointToIndex.get((String) edge.get("startPointName"));
+            int v = pointToIndex.get((String) edge.get("endPointName"));
+            String eid = pairToEdgeId.get(pointList.get(u) + "-" + pointList.get(v));
+            adjNodes.get(u).add(v);
+            adjEdgeIds.get(u).add(eid);
+            adjNodes.get(v).add(u);
+            adjEdgeIds.get(v).add(eid);
+        }
+
+        // 4. DFS显式栈构建生成树，收集非树边
+        // parent[i]: -1=未访问, -2=根节点, >=0=父节点索引
+        int[] parent = new int[n];
+        Arrays.fill(parent, -1);
+        List<Integer> nonTreeU = new ArrayList<>();
+        List<Integer> nonTreeV = new ArrayList<>();
+        List<String> nonTreeEid = new ArrayList<>();
+        int[][] stack = new int[n * 2][2];
+
+        for (int start = 0; start < n; start++) {
+            if (parent[start] != -1) {
+                continue;
+            }
+            parent[start] = -2;
+            int stackSize = 0;
+            stack[stackSize][0] = start;
+            stack[stackSize][1] = 0;
+            stackSize++;
+
+            while (stackSize > 0) {
+                int[] top = stack[stackSize - 1];
+                int u = top[0];
+                int ni = top[1];
+                List<Integer> neighbors = adjNodes.get(u);
+
+                if (ni < neighbors.size()) {
+                    top[1]++;
+                    int v = neighbors.get(ni);
+                    int p = parent[u];
+
+                    if (parent[v] == -1) {
+                        parent[v] = u;
+                        stack[stackSize][0] = v;
+                        stack[stackSize][1] = 0;
+                        stackSize++;
+                    } else if (v != p && p != -2) {
+                        if (v < u) {
+                            nonTreeU.add(v);
+                            nonTreeV.add(u);
+                            nonTreeEid.add(adjEdgeIds.get(u).get(ni));
+                        }
+                    }
+                } else {
+                    stackSize--;
+                }
             }
         }
-        GenerateTopoMatrix adjacencyMatrixGraph = new GenerateTopoMatrix(strPointNameList, endPointNameList,
-                branchBreakList);// 获取邻接矩阵基本信息
-        adjacencyMatrixGraph.adjacencyMatrix();// 构建邻接矩阵列表及数组
-        adjacencyMatrixGraph.addEdge();// 为邻接矩阵添加”边“元素
-        adjacencyMatrixGraph.getAdj();
 
-        List<String> allPoint = adjacencyMatrixGraph.getAllPoint();
-        List<List<Integer>> adj = adjacencyMatrixGraph.getAdj();
+        // 5. 对每条非树边，通过LCA找到基础环并转换为边id列表
+        List<List<String>> result = new ArrayList<>();
+        Set<String> cycleFingerprint = new HashSet<>();
 
-        List<List<String>> recognizeLoop = new ArrayList<>();
-        // 记录已经处理过的边id，避免同一闭环被重复检测
-        Set<String> processedEdgeIds = new HashSet<>();
-        // 对分支进行循环
-        for (Map<String, Object> objectMap : edges) {
-            if (objectMap.get("topologyStatusCode").toString().equalsIgnoreCase("B")
-                    || objectMap.get("topologyStatusCode").toString().equalsIgnoreCase("S")) {
+        for (int k = 0; k < nonTreeU.size(); k++) {
+            int u = nonTreeU.get(k);
+            int v = nonTreeV.get(k);
+
+            // 收集u到根的所有祖先
+            Set<Integer> uAncestors = new HashSet<>();
+            int cur = u;
+            while (cur >= 0) {
+                uAncestors.add(cur);
+                cur = (parent[cur] >= 0) ? parent[cur] : -1;
+            }
+
+            // 从v向上找LCA
+            cur = v;
+            int lca = -1;
+            while (cur >= 0) {
+                if (uAncestors.contains(cur)) {
+                    lca = cur;
+                    break;
+                }
+                cur = (parent[cur] >= 0) ? parent[cur] : -1;
+            }
+            if (lca == -1) {
                 continue;
             }
-            // 获取到分支起点和分支终点
-            String startPointName = (String) objectMap.get("startPointName");
-            String endPointName = (String) objectMap.get("endPointName");
-            // 判断分支起点或者分支终点是否存在在allpoint里面 不存在直接跳出当前循环
-            if (!allPoint.contains(startPointName) || !allPoint.contains(endPointName)) {
-                continue;
+
+            // 构建环节点序列: u -> ... -> lca -> ... -> v
+            List<Integer> cycleNodes = new ArrayList<>();
+            cur = u;
+            while (cur != lca) {
+                cycleNodes.add(cur);
+                cur = parent[cur];
             }
-            // 跳过已经处理过的边，避免同一闭环被多次报告
-            String currentEdgeId = objectMap.get("id") != null ? objectMap.get("id").toString() : null;
-            if (currentEdgeId != null && processedEdgeIds.contains(currentEdgeId)) {
-                continue;
+            cycleNodes.add(lca);
+
+            List<Integer> vToLca = new ArrayList<>();
+            cur = v;
+            while (cur != lca) {
+                vToLca.add(cur);
+                cur = parent[cur];
             }
-            Integer startPointNumber = allPoint.indexOf(startPointName);
-            Integer endPointNumber = allPoint.indexOf(endPointName);
-            // 拷贝一份adj
-            List<List<Integer>> copyAdj = new ArrayList<>();
-            for (List<Integer> row : adj) {
-                copyAdj.add(new ArrayList<>(row)); // 深拷贝每一行
+            for (int i = vToLca.size() - 1; i >= 0; i--) {
+                cycleNodes.add(vToLca.get(i));
             }
-            // 删除当前与他有关的分支有关的路劲关系
-            copyAdj.get(startPointNumber).remove(endPointNumber);
-            copyAdj.get(endPointNumber).remove(startPointNumber);
-            // 查看删除后的adj的是否存在最短路劲的状况
-            FindShortestPath findShortestPath = new FindShortestPath();
-            List<Integer> shortestPathBetweenTwoPoint = findShortestPath.findShortestPathBetweenTwoPoint(copyAdj,
-                    startPointNumber, endPointNumber);
-            if (shortestPathBetweenTwoPoint != null) {
-                List<String> loopEdges = findPathLoop(allPoint, shortestPathBetweenTwoPoint, edges);
-                recognizeLoop.add(loopEdges);
-                // 记录该闭环包含的边id，后续遇到时跳过，避免重复报告
-                processedEdgeIds.addAll(loopEdges);
+
+            // 节点序列转换为边id列表
+            List<String> cycleEdgeIds = new ArrayList<>();
+            int m = cycleNodes.size();
+            for (int i = 0; i < m; i++) {
+                int from = cycleNodes.get(i);
+                int to = cycleNodes.get((i + 1) % m);
+                String key = pointList.get(from) + "-" + pointList.get(to);
+                String eid = pairToEdgeId.get(key);
+                if (eid != null && !cycleEdgeIds.contains(eid)) {
+                    cycleEdgeIds.add(eid);
+                }
+            }
+
+            // 指纹去重
+            if (cycleEdgeIds.size() >= 2) {
+                List<String> sorted = new ArrayList<>(cycleEdgeIds);
+                Collections.sort(sorted);
+                String fp = String.join(",", sorted);
+                if (cycleFingerprint.add(fp)) {
+                    result.add(cycleEdgeIds);
+                }
             }
         }
-        return recognizeLoop;
+        return result;
     }
 
-    // 将对应的点数字编号转为名称
-    public List<String> findPathLoop(List<String> allPoints, List<Integer> path, List<Map<String, Object>> edges) {
-        List<String> list = new ArrayList<>();
-        for (Integer integer : path) {
-            list.add(allPoints.get(integer));
-        }
-
-        Set<String> set = new HashSet<>();
-
-        for (int i = 0; i < list.size(); i++) {
-            if (i != list.size() - 1) {
-                set.add(list.get(i) + "-" + list.get(i + 1));
-                set.add(list.get(i + 1) + "-" + list.get(i));
-            } else {
-                set.add(list.get(i) + "-" + list.get(0));
-                set.add(list.get(0) + "-" + list.get(i));
-            }
-        }
-        List<String> edgeNameList = new ArrayList<>();
-        for (Map<String, Object> edge : edges) {
-            String startPointName = (String) edge.get("startPointName");
-            String endPointName = (String) edge.get("endPointName");
-            String name = (String) edge.get("edgeName");
-            if (set.contains(name)) {
-                String edgeName = edge.get("id").toString();
-                edgeNameList.add(edgeName);
-            }
-        }
-        return edgeNameList;
-    }
 
     // 根据提供的list从中随机选取是个id进行返回
     public List<String> selectId(List<String> edgeId, int selectnumber) {
