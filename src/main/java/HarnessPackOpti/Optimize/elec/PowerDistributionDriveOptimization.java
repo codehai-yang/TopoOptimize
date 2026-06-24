@@ -74,10 +74,8 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new
-                File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动优化测试数据.txt");
-        String jsonContent = new
-                String(Files.readAllBytes(file.toPath()));//将文件中内容转为字符串
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动优化测试数据.txt");
+        String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
     }
@@ -1475,7 +1473,7 @@ public class PowerDistributionDriveOptimization {
      * 生成唯一指纹（完整版）
      */
     private String generateSchemeFingerprint(List<Map<String, String>> loopInfos,
-                                             List<Map<String, String>> appPositions) {
+            List<Map<String, String>> appPositions) {
         StringBuilder fingerprint = new StringBuilder();
         List<Map<String, String>> sortedLoops = new ArrayList<>(loopInfos);
         sortedLoops.sort((a, b) -> a.get("id").compareTo(b.get("id")));
@@ -1836,12 +1834,13 @@ public class PowerDistributionDriveOptimization {
 
     /**
      * 枚举所有可行方案
+     * 
      * @param targetLoops
      * @param elecChangeablePosition
      * @param togetherGroup
      * @param mutualGroup
      * @param allLoopInfos
-     * @param loopElecById  回路终点可连接的
+     * @param loopElecById           回路终点可连接的
      * @param loopElecByIdStart
      */
     private void enumerateAllSchemes(
@@ -1863,11 +1862,11 @@ public class PowerDistributionDriveOptimization {
         Set<String> coveredLoopIds = new HashSet<>();
         for (Map.Entry<String, List<String>> entry : togetherGroup.entrySet()) {
             String groupId = entry.getKey();
-            List<String> memberLoopIds = entry.getValue();      //该组组团一起变的分支id
+            List<String> memberLoopIds = entry.getValue(); // 该组组团一起变的分支id
             Set<String> endAppIntersection = null;
             for (String lid : memberLoopIds) {
                 Set<String> allowedEndApps = loopElecById.get(lid);
-                if (allowedEndApps == null || allowedEndApps.isEmpty()) {   //找回路可连接的终点用电器，如果为null
+                if (allowedEndApps == null || allowedEndApps.isEmpty()) { // 找回路可连接的终点用电器，如果为null
                     Map<String, String> lp = loopById.get(lid);
                     if (lp != null && lp.get("endApp") != null)
                         allowedEndApps = Collections.singleton(lp.get("endApp"));
@@ -1877,7 +1876,7 @@ public class PowerDistributionDriveOptimization {
                 if (endAppIntersection == null)
                     endAppIntersection = new HashSet<>(allowedEndApps);
                 else
-                    endAppIntersection.retainAll(allowedEndApps);       //组团一起变的取交集
+                    endAppIntersection.retainAll(allowedEndApps); // 组团一起变的取交集
                 coveredLoopIds.add(lid);
             }
             if (endAppIntersection != null && !endAppIntersection.isEmpty()) {
@@ -1942,7 +1941,7 @@ public class PowerDistributionDriveOptimization {
         }
 
         Map<String, List<String>> varKeyToMutualIds = new LinkedHashMap<>();
-        //遍历所有目标回路，找出哪些变量受到互斥约束
+        // 遍历所有目标回路，找出哪些变量受到互斥约束
         for (Map<String, String> lp : targetLoops) {
             String lid = lp.get("id");
             String mutual = lp.get("mutualExclusion");
@@ -1952,7 +1951,7 @@ public class PowerDistributionDriveOptimization {
             String vk = (together != null && !together.isEmpty()) ? "E_G_" + together : "E_L_" + lid;
             varKeyToMutualIds.computeIfAbsent(vk, k -> new ArrayList<>()).add(mutual);
         }
-        //建立互斥组->变量列表的反向映射，组团和互斥约束只对终点连接关系的回路生效
+        // 建立互斥组->变量列表的反向映射，组团和互斥约束只对终点连接关系的回路生效
         Map<String, List<String>> mutualIdToVarKeys = new LinkedHashMap<>();
         for (Map.Entry<String, List<String>> e : varKeyToMutualIds.entrySet()) {
             String varKey = e.getKey();
@@ -1963,11 +1962,19 @@ public class PowerDistributionDriveOptimization {
             }
         }
         // 收集所有受互斥组约束影响的变量，方便后续回溯算法进行约束检查和剪枝
-        Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualIds.keySet());       //记录哪些变量参与了互斥约束，回溯时检查
-        List<String> varKeys = new ArrayList<>(varDomains.keySet());    //所有待复制的变量列表
+        Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualIds.keySet()); // 记录哪些变量参与了互斥约束，回溯时检查
+        List<String> varKeys = new ArrayList<>(varDomains.keySet()); // 所有待复制的变量列表
+
+        // 当没有回路连接关系变化时，检查是否有仅用电器位置变化的方案
+        if (varKeys.isEmpty()) {
+            generatePositionOnlySchemes(targetLoops, loopById, elecChangeablePosition);
+            System.out.println("枚举完成（仅位置变化），耗时: " + (System.currentTimeMillis() - startTime) + "ms");
+            return;
+        }
+
         System.out.println("开始回溯枚举，变量数: " + varKeys.size());
-        Map<String, String> currentAssignment = new LinkedHashMap<>();  //当前赋值状态
-        Set<String> usedEndApps = new HashSet<>();      //已被使用的终点用电器集合(用于互斥剪枝)
+        Map<String, String> currentAssignment = new LinkedHashMap<>(); // 当前赋值状态
+        Set<String> usedEndApps = new HashSet<>(); // 已被使用的终点用电器集合(用于互斥剪枝)
         enumerateSchemesByBacktrack(
                 varDomains, mutualIdToVarKeys, varsInAnyMutualGroup,
                 0, varKeys, currentAssignment, usedEndApps,
@@ -2080,13 +2087,7 @@ public class PowerDistributionDriveOptimization {
             if (selectedStartApp == null)
                 selectedStartApp = originalStartApp;
 
-            // 只存改变的回路：起点用电器或终点用电器发生变化
-            boolean startChanged = !Objects.equals(selectedStartApp, originalStartApp);
-            boolean endChanged = !Objects.equals(selectedEndApp, originalEndApp);
-            if (!startChanged && !endChanged) {
-                continue;
-            }
-
+            // 计算位置（先算位置，再判断是否需要存入方案）
             String startPos = appPositionCache.get(selectedStartApp);
             if (startPos == null && selectedStartApp != null) {
                 List<String> positions = elecChangeablePosition.get(selectedStartApp);
@@ -2105,10 +2106,141 @@ public class PowerDistributionDriveOptimization {
                 } else
                     endPos = "";
             }
+
+            // 只存改变的回路：起点用电器或终点用电器发生变化，或位置发生变化
+            boolean startChanged = !Objects.equals(selectedStartApp, originalStartApp);
+            boolean endChanged = !Objects.equals(selectedEndApp, originalEndApp);
+            boolean positionChanged = (startPos != null && !startPos.isEmpty())
+                    || (endPos != null && !endPos.isEmpty());
+            if (!startChanged && !endChanged && !positionChanged) {
+                continue;
+            }
+
             String value = (selectedStartApp != null ? selectedStartApp : "") + "|"
                     + (selectedEndApp != null ? selectedEndApp : "") + "|"
                     + (startPos != null ? startPos : "") + "|"
                     + (endPos != null ? endPos : "");
+            scheme.put(loopId, value);
+        }
+        return scheme;
+    }
+
+    /**
+     * 当没有回路连接关系变化时，生成仅用电器位置变化的方案
+     * 枚举所有可变位置组合，每个组合生成一个方案
+     */
+    private void generatePositionOnlySchemes(
+            List<Map<String, String>> targetLoops,
+            Map<String, Map<String, String>> loopById,
+            Map<String, List<String>> elecChangeablePosition) {
+        // 收集目标回路中所有有可变位置的用电器
+        Map<String, List<String>> appPositionDomains = new LinkedHashMap<>();
+        Set<String> processedApps = new HashSet<>();
+
+        for (Map<String, String> loop : targetLoops) {
+            String startApp = loop.get("startApp");
+            String endApp = loop.get("endApp");
+            addAppIfPositionChangeable(startApp, elecChangeablePosition, appPositionDomains, processedApps);
+            addAppIfPositionChangeable(endApp, elecChangeablePosition, appPositionDomains, processedApps);
+        }
+
+        if (appPositionDomains.isEmpty()) {
+            return;
+        }
+
+        System.out.println("仅位置变化方案枚举，可变位置用电器数: " + appPositionDomains.size());
+        List<String> appNames = new ArrayList<>(appPositionDomains.keySet());
+        Map<String, String> currentPositions = new LinkedHashMap<>();
+        enumeratePositionCombinations(appPositionDomains, appNames, 0, currentPositions, targetLoops, loopById);
+    }
+
+    private void addAppIfPositionChangeable(String appName,
+            Map<String, List<String>> elecChangeablePosition,
+            Map<String, List<String>> appPositionDomains,
+            Set<String> processedApps) {
+        if (appName != null && !appName.isEmpty() && !processedApps.contains(appName)) {
+            List<String> positions = elecChangeablePosition.get(appName);
+            if (positions != null && !positions.isEmpty()) {
+                appPositionDomains.put(appName, positions);
+            }
+            processedApps.add(appName);
+        }
+    }
+
+    /**
+     * 回溯枚举所有用电器位置组合
+     */
+    private void enumeratePositionCombinations(
+            Map<String, List<String>> appPositionDomains,
+            List<String> appNames,
+            int index,
+            Map<String, String> currentPositions,
+            List<Map<String, String>> targetLoops,
+            Map<String, Map<String, String>> loopById) {
+        if (enumeratedSchemes.size() >= caseNumbe) {
+            return;
+        }
+        if (index == appNames.size()) {
+            Map<String, String> scheme = buildPositionOnlyScheme(currentPositions, targetLoops, loopById);
+            if (!scheme.isEmpty()) {
+                enumeratedSchemes.add(scheme);
+                if (enumeratedSchemes.size() % 100 == 0) {
+                    System.out.println("已枚举 " + enumeratedSchemes.size() + " 个方案（仅位置变化）...");
+                }
+            }
+            return;
+        }
+        String appName = appNames.get(index);
+        List<String> positions = appPositionDomains.get(appName);
+        for (String pos : positions) {
+            currentPositions.put(appName, pos);
+            enumeratePositionCombinations(appPositionDomains, appNames, index + 1, currentPositions,
+                    targetLoops, loopById);
+            if (enumeratedSchemes.size() >= caseNumbe) {
+                break;
+            }
+        }
+        currentPositions.remove(appName);
+    }
+
+    /**
+     * 根据当前位置组合构建方案Map
+     * 格式: 回路ID -> "起点用电器|终点用电器|起点位置|终点位置"
+     */
+    private Map<String, String> buildPositionOnlyScheme(
+            Map<String, String> currentPositions,
+            List<Map<String, String>> targetLoops,
+            Map<String, Map<String, String>> loopById) {
+        Map<String, String> scheme = new LinkedHashMap<>();
+        Set<String> affectedLoopIds = new HashSet<>();
+        for (Map<String, String> loop : targetLoops) {
+            affectedLoopIds.add(loop.get("id"));
+        }
+
+        for (String loopId : affectedLoopIds) {
+            Map<String, String> loop = loopById.get(loopId);
+            if (loop == null) {
+                continue;
+            }
+
+            String startApp = loop.get("startApp");
+            String endApp = loop.get("endApp");
+            String startPos = currentPositions.get(startApp);
+            String endPos = currentPositions.get(endApp);
+
+            if (startPos == null)
+                startPos = "";
+            if (endPos == null)
+                endPos = "";
+
+            // 至少有一个位置变化才加入方案
+            if (startPos.isEmpty() && endPos.isEmpty()) {
+                continue;
+            }
+
+            String value = (startApp != null ? startApp : "") + "|"
+                    + (endApp != null ? endApp : "") + "|"
+                    + startPos + "|" + endPos;
             scheme.put(loopId, value);
         }
         return scheme;
@@ -2270,6 +2402,9 @@ public class PowerDistributionDriveOptimization {
                 String startApp = lp.get("startApp");
                 if (startApp != null && !startApp.isEmpty())
                     allPossibleApps.add(startApp);
+                String endApp = lp.get("endApp");
+                if (endApp != null && !endApp.isEmpty())
+                    allPossibleApps.add(endApp);
             }
             for (List<String> domain : varDomains.values())
                 allPossibleApps.addAll(domain);

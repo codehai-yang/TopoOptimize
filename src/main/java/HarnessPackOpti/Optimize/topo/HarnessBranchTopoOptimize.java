@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections4.map.LinkedMap;
@@ -1251,7 +1252,7 @@ public class HarnessBranchTopoOptimize {
                         continue; // 已处理过的跳过
                     }
                     try {
-                        Map<String, Object> result = future.get(2400, java.util.concurrent.TimeUnit.SECONDS);
+                        Map<String, Object> result = future.get(2, TimeUnit.HOURS);
                         synchronized (resultList) {
                             if (result != null) {
                                 resultList.add(result);
