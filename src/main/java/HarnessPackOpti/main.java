@@ -8,15 +8,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
 import HarnessPackOpti.ErrorOutput.HarnessBranchTopoOptiErrorOutPut;
-import HarnessPackOpti.Optimize.elec.ElecPositionVariantCalculation;
-import HarnessPackOpti.Optimize.elec.PowerDistributionDriveOptimization;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 
 public class main {
         public static void main(String[] args) throws Exception {
 
                 // 线束拓扑优化
-           InputStream inputStream = main.class.getClassLoader().getResourceAsStream("BS4EM初始json包含优化设置.txt");
+           InputStream inputStream = main.class.getClassLoader().getResourceAsStream("BS4EM项目json优化设置.txt");
            if (inputStream == null) {
                throw new RuntimeException("找不到资源文件: 优化测试后台记录.txt");
            }
@@ -30,7 +28,7 @@ public class main {
            String jsonContent = sb.toString();
            HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
            String result = harnessBranchTopoOptimize.topoOptimize(jsonContent);
-            File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\允许闭环结果.txt");
+            File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\最新.txt");
             Files.write(outputFile.toPath(), result.getBytes());
             System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
            HarnessBranchTopoOptiErrorOutPut harnessBranchTopoOptiErrorOutPut=new HarnessBranchTopoOptiErrorOutPut();

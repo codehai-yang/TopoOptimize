@@ -1,6 +1,7 @@
 package HarnessPackOpti.Optimize.topo;
 
 import static HarnessPackOpti.utils.Normalize.projectCircuitInfoOutput;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -36,11 +37,11 @@ import HarnessPackOpti.utils.ThreadPool;
 
 public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
-    public static Integer LessRandomSamleNumber = 1000;
+    public static Integer LessRandomSamleNumber = 100;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 4000;
+    public static Integer HybridizationLessRandomSamleNumber = 200;
     // top几的数量规定
-    public static final Integer TopNumber = 100;
+    public static final Integer TopNumber = 20;
     // 最后返回前端的方案数量
     public static final Integer LastNumber = 20;
     // 每次迭代最优的成本
@@ -48,7 +49,7 @@ public class HarnessBranchTopoOptimize {
     // 最优样本重复次数
     public static Integer BestRepetitionNumber = 0;
     // 迭代重复的次数限值
-    public static Integer IterationRestrictNumber = 30;
+    public static Integer IterationRestrictNumber = 20;
     // 定义一个仓库
     public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
     // 变异的次数
@@ -870,7 +871,8 @@ public class HarnessBranchTopoOptimize {
                 List<Map<String, Object>> edgesDetail = createNewEdges(newEdges, edges, normList);
                 // 对当前的方案进行一个检查
                 // 这里只消除了存在穿腔的闭环回路
-                while (true) {
+                int loopIterationLimit = 300; // 防止死循环：最多打断 100 次
+                while (loopIterationLimit-- > 0) {
                     // 闭环检测
                     List<List<String>> lists = recognizeLoopNew(edgesDetail);
                     Set<String> loopList = new HashSet<>();
@@ -894,7 +896,17 @@ public class HarnessBranchTopoOptimize {
                     loopList.retainAll(canChangeToB);
                     Map<String, Double> costMap = new HashMap<>();
                     if (loopList.size() == 0) {
-                        statueList.set(normList.indexOf(s), "C");
+                        // 区分两种情况：
+                        // (a) lists 为空：图中没有任何闭环，可以安全还原
+                        // (b) lists 不为空但 loopList 为空：存在闭环，但所有闭环分支都不可改为 B
+                        // 这种情况必须保持 S 状态（特别是含 wearId 的闭环）
+                        if (lists.isEmpty()) {
+                            statueList.set(normList.indexOf(s), "C");
+                        } else {
+                            System.out.println("警告：闭环存在但无可打断分支，保持 S 状态。canRestoreid=" + s
+                                    + ", lists.size=" + lists.size());
+                            statueList.set(normList.indexOf(s), "S");
+                        }
                         break;
                     }
 
@@ -943,7 +955,14 @@ public class HarnessBranchTopoOptimize {
                             statueList.set(normList.indexOf(s), "S");
                             break;
                         }
+                    } else {
+                        // 闭环存在但没有可打断分支，保持原 S 状态
+                        statueList.set(normList.indexOf(s), "S");
+                        break;
                     }
+                }
+                if (loopIterationLimit <= 0) {
+                    System.out.println("闭环打断达到最大次数限制，强制退出 while 循环");
                 }
             }
             List<Map<String, Object>> EdgesDetail = createNewEdges(statueList, edges, normList);
@@ -1038,6 +1057,38 @@ public class HarnessBranchTopoOptimize {
 
             // 对最终的方案进行一个计算 并且按照格式进行一个返回
             List<Map<String, Object>> finalEdgeresult = createNewEdges(statueList, edges, normList);
+            // 输出前进行最终的闭环校验：含 wearId 的闭环不能存在，开启消除闭环时也不能存在
+            List<List<String>> finalLoopList = recognizeLoopNew(finalEdgeresult);
+            boolean hasUnresolvedLoop = false;
+            for (List<String> loop : finalLoopList) {
+                boolean containsWearId = false;
+                for (String s1 : wearId) {
+                    if (loop.contains(s1)) {
+                        containsWearId = true;
+                        break;
+                    }
+                }
+                if (containsWearId) {
+                    hasUnresolvedLoop = true;
+                    System.out.println("警告：最终方案仍存在含 wearId 的闭环！" + loop);
+                    break;
+                }
+                if (whetherOnLoop) {
+                    hasUnresolvedLoop = true;
+                    System.out.println("警告：最终方案仍存在闭环（whetherOnLoop=true）！" + loop);
+                    break;
+                }
+            }
+            if (hasUnresolvedLoop) {
+                // 仍有未消除的闭环，尝试最后一轮强制打断（从闭环中选 cost 最小的 B 打断）
+                boolean broken = forceBreakLoops(statueList, edges, normList, wearId, canChangeToB, whetherOnLoop,
+                        appPositions, eleclection, mutexMap, chooseOneList, togetherBCList,
+                        projectCircuitInfoOutput, objectMapper, jsonMap, jsonToMap);
+                if (broken) {
+                    // 重新计算最终边
+                    finalEdgeresult = createNewEdges(statueList, edges, normList);
+                }
+            }
             jsonMap.put("edges", finalEdgeresult);
             String optimizeInterfacesresult = projectCircuitInfoOutput
                     .projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
@@ -1055,6 +1106,99 @@ public class HarnessBranchTopoOptimize {
             bestOption.add(finalResult);
         }
         return bestOption;
+    }
+
+    /**
+     * 强制打断未消除的闭环。
+     * 对未消除的闭环（含 wearId 或 whetherOnLoop 开启），迭代打断，直到闭环全部消除或无法继续。
+     *
+     * @return true 表示至少打断了一个分支
+     */
+    private boolean forceBreakLoops(
+            List<String> statueList,
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            List<String> wearId,
+            List<String> canChangeToB,
+            boolean whetherOnLoop,
+            List<Map<String, String>> appPositions,
+            Map<String, String> eleclection,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
+            ObjectMapper objectMapper,
+            Map<String, Object> jsonMap,
+            JsonToMap jsonToMap) {
+        boolean anyBroken = false;
+        int maxIterations = 100;
+        while (maxIterations-- > 0) {
+            List<Map<String, Object>> currentEdges = createNewEdges(statueList, edges, normList);
+            List<List<String>> lists = recognizeLoopNew(currentEdges);
+            if (lists.isEmpty()) {
+                break;
+            }
+            // 找出需处理的闭环：含 wearId 的，或 whetherOnLoop=true 时的所有闭环
+            List<List<String>> targetLoops = new ArrayList<>();
+            for (List<String> loop : lists) {
+                boolean containsWearId = false;
+                for (String w : wearId) {
+                    if (loop.contains(w)) {
+                        containsWearId = true;
+                        break;
+                    }
+                }
+                if (containsWearId) {
+                    targetLoops.add(loop);
+                } else if (whetherOnLoop) {
+                    targetLoops.add(loop);
+                }
+            }
+            if (targetLoops.isEmpty()) {
+                break;
+            }
+            // 收集所有目标闭环中可打断的分支
+            Set<String> breakableIds = new LinkedHashSet<>();
+            for (List<String> loop : targetLoops) {
+                for (String id : loop) {
+                    if (canChangeToB.contains(id) && !id.isEmpty()) {
+                        breakableIds.add(id);
+                    }
+                }
+            }
+            if (breakableIds.isEmpty()) {
+                System.out.println("forceBreakLoops: 无可打断分支，停止");
+                break;
+            }
+            // 选一个打断（优先选 wearId 闭环中的分支）
+            String pickId = null;
+            for (List<String> loop : targetLoops) {
+                for (String id : loop) {
+                    if (breakableIds.contains(id)) {
+                        pickId = id;
+                        break;
+                    }
+                }
+                if (pickId != null)
+                    break;
+            }
+            if (pickId == null) {
+                break;
+            }
+            // 验证打断后方案合法
+            statueList.set(normList.indexOf(pickId), "B");
+            List<Map<String, Object>> afterEdges = createNewEdges(statueList, edges, normList);
+            Boolean ok = checkFirstOption(normList, statueList, afterEdges, appPositions, eleclection, mutexMap,
+                    chooseOneList, togetherBCList);
+            if (!ok) {
+                System.out.println("forceBreakLoops: 打断 " + pickId + " 后方案不合法，回滚");
+                statueList.set(normList.indexOf(pickId), "S"); // 回滚到 S（保留原状态的最佳猜测）
+                break;
+            }
+            System.out.println("forceBreakLoops: 已强制打断 " + pickId);
+            anyBroken = true;
+        }
+        return anyBroken;
     }
 
     /**
@@ -1202,6 +1346,21 @@ public class HarnessBranchTopoOptimize {
                         costDeail.add(cost);
                     }
                     List<Map<String, Object>> mapList = (List<Map<String, Object>>) objectMap.get("serviceableEdges");
+                    // 输出前最终闭环校验：含 wearId 的闭环不允许存在；whetherOnLoop=true 时不允许任何闭环
+                    List<List<String>> outputLoopList = recognizeLoopNew(mapList);
+                    for (List<String> loop : outputLoopList) {
+                        boolean containsWearId = false;
+                        for (String s1 : wearId) {
+                            if (loop.contains(s1)) {
+                                containsWearId = true;
+                                break;
+                            }
+                        }
+                        if (containsWearId || whetherOnLoop) {
+                            System.out.println("handleAndShowTop: 输出前发现未消除闭环！" + loop
+                                    + (containsWearId ? "[含 wearId]" : "[whetherOnLoop=true]"));
+                        }
+                    }
                     // 保持线程安全 浅拷贝一份
                     HashMap<String, Object> newJsonMap = new HashMap<>(jsonMap);
                     newJsonMap.put("edges", mapList);
@@ -1412,7 +1571,7 @@ public class HarnessBranchTopoOptimize {
         }
         // 按AI预测成本排序，取topN
         FindBest findBest = new FindBest();
-        if(findBestPre != null) {
+        if (findBestPre != null) {
             int preCount = Math.max(1, (int) (findBestPre.size() * 0.1));
             if (findBestPre != null) {
                 for (int i = 0; i < preCount; i++) {
@@ -2563,7 +2722,6 @@ public class HarnessBranchTopoOptimize {
         }
         return result;
     }
-
 
     // 根据提供的list从中随机选取是个id进行返回
     public List<String> selectId(List<String> edgeId, int selectnumber) {
