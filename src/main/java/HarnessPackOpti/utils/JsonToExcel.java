@@ -44,7 +44,7 @@ public class JsonToExcel {
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
 
         // 读取topooutputAI.json，导出第一个方案的Excel
-        InputStream topoInputStream = main.class.getClassLoader().getResourceAsStream("闭环报错日志结果.json");
+        InputStream topoInputStream = main.class.getClassLoader().getResourceAsStream("最新.json");
         if (topoInputStream == null) {
             throw new RuntimeException("找不到资源文件: topooutputAI.json");
         }
@@ -57,7 +57,7 @@ public class JsonToExcel {
         topoReader.close();
         String topoJsonContent = topoSb.toString();
 
-        String outputExcelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\闭环报错日志结果.xlsx";
+        String outputExcelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM闭环算法时间优化结果.xlsx";
         exportTopoResultToExcel(topoJsonContent, edges, outputExcelPath);
         System.out.println("Excel导出完成: " + outputExcelPath);
     }

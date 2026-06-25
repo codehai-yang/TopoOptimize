@@ -555,8 +555,10 @@ public class HarnessBranchTopoOptimize {
                 // 计算当前方案的分支闭合数量 对应的数量进行一个添加
                 // 计算当前方案是否存在断点，true：不存在断点，所有分支都可以联通
                 if (sonSate) {
+                    long starttime =  System.currentTimeMillis();
                     // 传入新的方案,计算新的方案的平均闭环数
                     List<List<String>> lists = recognizeLoopNew(coppysonedges);
+                    System.out.println("闭环检测耗时：" +  (System.currentTimeMillis() - starttime));
                     // 样本成功数
                     simpleSuccess++;
                     // 方案闭环数量
