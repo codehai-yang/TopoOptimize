@@ -37,9 +37,9 @@ import HarnessPackOpti.utils.ThreadPool;
 
 public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
-    public static Integer LessRandomSamleNumber = 1000;
+    public static Integer LessRandomSamleNumber = 20;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 5000;
+    public static Integer HybridizationLessRandomSamleNumber = 30;
     // top几的数量规定
     public static final Integer TopNumber = 100;
     // 最后返回前端的方案数量
@@ -49,7 +49,7 @@ public class HarnessBranchTopoOptimize {
     // 最优样本重复次数
     public static Integer BestRepetitionNumber = 0;
     // 迭代重复的次数限值
-    public static Integer IterationRestrictNumber = 20;
+    public static Integer IterationRestrictNumber = 10;
     // 定义一个仓库
     public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
     // 变异的次数
@@ -555,10 +555,10 @@ public class HarnessBranchTopoOptimize {
                 // 计算当前方案的分支闭合数量 对应的数量进行一个添加
                 // 计算当前方案是否存在断点，true：不存在断点，所有分支都可以联通
                 if (sonSate) {
-                    long starttime =  System.currentTimeMillis();
+                    long starttime = System.currentTimeMillis();
                     // 传入新的方案,计算新的方案的平均闭环数
                     List<List<String>> lists = recognizeLoopNew(coppysonedges);
-                    System.out.println("闭环检测耗时：" +  (System.currentTimeMillis() - starttime));
+                    System.out.println("闭环检测耗时：" + (System.currentTimeMillis() - starttime));
                     // 样本成功数
                     simpleSuccess++;
                     // 方案闭环数量
@@ -752,7 +752,7 @@ public class HarnessBranchTopoOptimize {
         long startTime = System.currentTimeMillis();
         List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "normal", singleBCList, singleSCList,
                 singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
-        System.out.println("找" + TopDetail.size() + "个方案总耗时：" +  (System.currentTimeMillis() - startTime));
+        System.out.println("找" + TopDetail.size() + "个方案总耗时：" + (System.currentTimeMillis() - startTime));
         initializeCaseResultMap.put("finishStatue", "normal");
         mapList.add(initializeCaseResultMap);
         String s = objectMapper.writeValueAsString(mapList);
@@ -799,7 +799,13 @@ public class HarnessBranchTopoOptimize {
         Map<String, Object> jsonMap = new HashMap<>(jsonMapOrigin);
         JsonToMap jsonToMap = new JsonToMap();
         List<Map<String, Object>> bestOption = new ArrayList<>();
-        List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
+        // 深拷贝 edges，避免多线程并发时修改共享边对象导致状态不一致
+        List<Map<String, Object>> edgesOrigin = (List<Map<String, Object>>) jsonMap.get("edges");
+        List<Map<String, Object>> edges = new ArrayList<>();
+        for (Map<String, Object> edge : edgesOrigin) {
+            edges.add(new HashMap<>(edge));
+        }
+        jsonMap.put("edges", edges);
         List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
         // 可打B的分支
         List<String> canChangeToB = new ArrayList<>();
@@ -1382,11 +1388,7 @@ public class HarnessBranchTopoOptimize {
                                     + (containsWearId ? "[含 wearId]" : "[whetherOnLoop=true]"));
                         }
                     }
-                    // 保持线程安全 浅拷贝一份
-                    HashMap<String, Object> newJsonMap = new HashMap<>(jsonMap);
-                    newJsonMap.put("edges", mapList);
-                    String s = projectCircuitInfoOutput
-                            .projectCircuitInfoOutput(objectMapper.writeValueAsString(newJsonMap));
+                    // 先构建 topoOptimizeResult，确保与后续成本计算使用同一批边状态
                     List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
                     for (Map<String, Object> map : mapList) {
                         Map<String, String> result = new HashMap<>();
@@ -1394,6 +1396,11 @@ public class HarnessBranchTopoOptimize {
                         result.put("statue", map.get("topologyStatusCode").toString());
                         topoOptimizeResult.add(result);
                     }
+                    // 保持线程安全 浅拷贝一份
+                    HashMap<String, Object> newJsonMap = new HashMap<>(jsonMap);
+                    newJsonMap.put("edges", mapList);
+                    String s = projectCircuitInfoOutput
+                            .projectCircuitInfoOutput(objectMapper.writeValueAsString(newJsonMap));
                     Map<String, Object> map = jsonToMap.TransJsonToMap(s);
                     Map<String, Object> projectCircuitInfo = (Map<String, Object>) map.get("projectCircuitInfo");
                     Map<String, Double> projectCost = new HashMap<>();

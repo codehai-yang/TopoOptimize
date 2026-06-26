@@ -81,7 +81,7 @@ public class PowerDistributionDriveOptimization {
         powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
     }
 
-    public List<Map<String, Object>> powerDriverOptimize(String jsonContent) throws Exception {
+    public String powerDriverOptimize(String jsonContent) throws Exception {
         // ========== 修复3：重置静态状态，避免多任务干扰 ==========
         WareHouse.clear();
         BestRepetitionNumber = 0;
@@ -406,7 +406,7 @@ public class PowerDistributionDriveOptimization {
             System.out.println("重复方案数: " + duplicateCount);
             System.out.println("有效方案数: " + validSchemeCount);
             List<Map<String, Object>> topBest = findBest.findBest(resultList, "成本", TopNumber);
-            return topBest;
+            return objectMapper.writeValueAsString(topBest);
         }
 
         // 开始生成初代样本
@@ -583,7 +583,7 @@ public class PowerDistributionDriveOptimization {
         }
 
         System.out.println("遗传算法完成，共迭代 " + hybridizationNumber + " 代");
-        return currentTopBest;
+        return objectMapper.writeValueAsString(currentTopBest);
     }
 
     /**
