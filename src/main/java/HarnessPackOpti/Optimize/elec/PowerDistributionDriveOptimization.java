@@ -233,6 +233,7 @@ public class PowerDistributionDriveOptimization {
             String s = loopInfo.get("endSpecifyPoints");
             if (s != null && !s.isEmpty()) {
                 for (String part : s.split(",")) {
+                    //TODO 找用电器有问题
                     String pointName = findNameById(part, points);
                     loopElecById.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(pointName);
                 }

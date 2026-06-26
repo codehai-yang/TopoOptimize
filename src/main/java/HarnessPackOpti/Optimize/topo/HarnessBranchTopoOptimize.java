@@ -744,11 +744,13 @@ public class HarnessBranchTopoOptimize {
                     List<String> serviceableStatue = (List<String>) stringObjectMap.get("serviceableStatue");
                     lists.add(serviceableStatue);
                 }
+                long topTime = System.currentTimeMillis();
                 List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS,
                         jsonMap,
                         edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, findBest);
                 TopCostDetail = mapList;
                 System.out.println("有效方案数：" + mapList.size());
+                System.out.println("top100迭代完成耗时:" + (System.currentTimeMillis() - topTime));
                 System.out.println("迭代次数达到限制，后续与上一代结果相同达到30次");
                 break;
             }

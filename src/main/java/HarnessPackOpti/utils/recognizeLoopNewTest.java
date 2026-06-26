@@ -24,7 +24,7 @@ public class recognizeLoopNewTest {
         JsonToMap jsonToMap = new JsonToMap();
         ObjectMapper objectMapper = new ObjectMapper();
 
-        InputStream inputStream = main.class.getClassLoader().getResourceAsStream("BS4EM初始json包含优化设置.txt");
+        InputStream inputStream = main.class.getClassLoader().getResourceAsStream("BS4EM项目json优化设置.txt");
         if (inputStream == null) {
             throw new RuntimeException("找不到资源文件: BS4EM初始json包含优化设置.txt");
         }
@@ -40,7 +40,7 @@ public class recognizeLoopNewTest {
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
         ObjectMapper mapper = new ObjectMapper();
 
-        InputStream topoInputStream = main.class.getClassLoader().getResourceAsStream("允许闭环结果.json");
+        InputStream topoInputStream = main.class.getClassLoader().getResourceAsStream("500数据测试bs4em.json");
         if (topoInputStream == null) {
             throw new RuntimeException("找不到资源文件: topooutputAI.json");
         }
@@ -59,6 +59,9 @@ public class recognizeLoopNewTest {
                 });
         List<String> edgeStute = new ArrayList<>();
         for (int i = 0; i < solutionList.size(); i++) {
+            if(i != 0){
+                continue;
+            }
             Map<String, Object> solution = solutionList.get(i);
             List<Map<String, String>> topoOptimizeResult = (List<Map<String, String>>) solution
                     .get("topoOptimizeResult");
