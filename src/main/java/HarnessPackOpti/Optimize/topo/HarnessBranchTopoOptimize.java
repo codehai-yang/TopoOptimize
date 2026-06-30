@@ -445,7 +445,7 @@ public class HarnessBranchTopoOptimize {
                 elecPosition.put(appName, appPositionMap);
             }
         }
-        // 分支长度归一化
+        // 长度统计
         Map<String, Object> branchLength = getBranchLength(normList, edges);
         // 连接关系索引构建
         List<List<Integer>> connection = connection(edges, normList);
