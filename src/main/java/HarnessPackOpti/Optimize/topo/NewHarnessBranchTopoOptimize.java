@@ -2,7 +2,17 @@ package HarnessPackOpti.Optimize.topo;
 
 import java.io.File;
 import java.nio.file.Files;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -10,19 +20,20 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-import HarnessPackOpti.Algorithm.FindBest;
-import HarnessPackOpti.utils.GINEInferenceEngine;
-import HarnessPackOpti.utils.Normalize;
+import org.apache.commons.collections4.map.LinkedMap;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import HarnessPackOpti.JsonToMap;
+import HarnessPackOpti.Algorithm.FindBest;
 import HarnessPackOpti.Algorithm.FindTopoBreak;
 import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
 import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
+import HarnessPackOpti.utils.GINEInferenceEngine;
+import HarnessPackOpti.utils.Normalize;
 import HarnessPackOpti.utils.ThreadPool;
-import org.apache.commons.collections4.map.LinkedMap;
 
 /**
  * 新的topo优化遗传算法
@@ -31,7 +42,7 @@ public class NewHarnessBranchTopoOptimize {
     // 初代样本最低生成数量
     public static Integer LessRandomSamleNumber = 1000;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 30;
+    public static Integer HybridizationLessRandomSamleNumber = 2000;
     // top几的数量规定
     public static final Integer TopNumber = 100;
     // 最后返回前端的方案数量
@@ -546,24 +557,83 @@ public class NewHarnessBranchTopoOptimize {
         List<List<String>> initialSchemes = generateInitialSchemes(
                 edges, canBreakToBSet, initialScheme,
                 appPositions, eleclection,
-                bestBreakCount, breakCostMap, survivalRateByK,normList,
-                 mutexMap,
-                 chooseOneList, togetherBCList);
-        System.out.println("初代方案生成" + LessRandomSamleNumber + "个方案耗时：" + (System.currentTimeMillis() - initTime));
-        //TODO 模型预测成本
+                bestBreakCount, breakCostMap, survivalRateByK, normList,
+                mutexMap,
+                chooseOneList, togetherBCList);
+        System.out.println("初代方案生成" + initialSchemes.size() + "个方案耗时：" + (System.currentTimeMillis() - initTime));
+        // 模型预测成本
         long predictTime = System.currentTimeMillis();
         List<Map<String, Object>> findBest = predictAndFindBest(initialSchemes, edges, normList, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, null);
         System.out.println("预测" + initialSchemes.size() + "个样本耗时：" + (System.currentTimeMillis() - predictTime));
-        List<Map<String,Object>> resultList = new ArrayList<>();
-        for (int i = 0; i < 3; i++) {
-            List<String> strings = initialSchemes.get(i);
-            List<Map<String, Object>> newEdges = createNewEdges(strings, edges, normList);
-            //测试成本
-            jsonMap.put("edges", newEdges);
-            String s = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
-            Map<String, Object> map = jsonToMap.TransJsonToMap(s);
-            resultList.add(map);
+
+        // 将初始化方案也放入到迭代中去
+        Map<String, Object> addtoMap = new HashMap<>();
+        addtoMap.put("serviceableStatue", primeList);
+        findBest.add(addtoMap);
+        // 遗传算法第一代的父本=初代预测 Top 100 + 初始方案
+        // 阶段一以 TopDetail[0](初代最优)为基准变异,不再使用 initialScheme
+        TopDetail = findBest;
+        int hybridizationNumber = 1;
+        // 遗传算法
+        while (true) {
+            System.out.println("第" + hybridizationNumber + "代迭代开始");
+            long startTime = System.currentTimeMillis();
+            // 只有当迭代的结果top10都是同一个值的时候 才结束迭代
+            // 两阶段变异:① 同时+概率变异(复用 generateInitialSchemes) ② 两两交叉变异
+            // 精英保留:把上一代 top 30% 注入候选池,保证新一代最优只可能持平或更低
+            findBest = hybridization(
+                    edges, canBreakToBSet, initialScheme, appPositions, eleclection,
+                    bestBreakCount, breakCostMap, survivalRateByK, normList,
+                    mutexMap, chooseOneList, togetherBCList,
+                    jsonMap, edgeChooseBS, elecPosition, branchLength,
+                    connection, multiLoopInfos, pointMap, hybridizationNumber);
+            if (findBest == null || findBest.size() == 0) {
+                break;
+            }
+            TopDetail = findBest;
+            System.out.println("第" + hybridizationNumber + "代迭代结束，耗时：" + (System.currentTimeMillis() - startTime));
+            if (hybridizationNumber == 1) {
+                double costTotal = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总成本").toString());
+                double costLenth = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总长度").toString());
+                double costWeight = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总重量").toString());
+                BestCost.put("总成本", costTotal);
+                BestCost.put("总长度", costLenth);
+                BestCost.put("总重量", costWeight);
+            } else {
+                // 获取当前最优解的各项指标
+                double costTotal = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总成本").toString());
+                double costLenth = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总长度").toString());
+                double costWeight = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总重量").toString());
+                // 当前最优解中的长度判断当前的成本、长度、重量是都一样
+                // 判断是否与历史最优解基本相同（允许微小误差)
+                if (Math.abs(BestCost.get("总成本") - costTotal) < 0.000001
+                        && Math.abs(BestCost.get("总长度") - costLenth) < 0.000001
+                        && Math.abs(BestCost.get("总重量") - costWeight) < 0.000001) {
+                    BestRepetitionNumber = BestRepetitionNumber + 1; // 相同则计数器加1
+                    System.out.println("重复次数： " + BestRepetitionNumber);
+                } else if (costTotal < BestCost.get("总成本")) {
+                    // 找到更优解，更新并重置计数器
+                    BestRepetitionNumber = 0;
+                    BestCost.put("总成本", costTotal);
+                    BestCost.put("总长度", costLenth);
+                    BestCost.put("总重量", costWeight);
+                } else {
+                    // 当前最优更差，不更新历史最优，但计数器+1（因为和最优解不同）
+                    BestRepetitionNumber++;
+                }
+            }
+            if (BestRepetitionNumber == IterationRestrictNumber) {
+                System.out.println("迭代次数达到限制，后续与上一代结果相同达到30次");
+                break;
+            }
+            hybridizationNumber++;
         }
 
         // 14) 构造最终输出
@@ -575,6 +645,435 @@ public class NewHarnessBranchTopoOptimize {
         finalResult.put("bestBreakCount", bestBreakCount);
         finalResult.put("initialSchemes", initialSchemes);
         return objectMapper.writeValueAsString(finalResult);
+    }
+
+    /**
+     * @Description: 遗传算法主体(单代)。
+     *               分两阶段变异:
+     *               ① 复用 generateInitialSchemes(同时变异 + 按概率变异)以 initialScheme
+     *               为基准生成阶段一方案;
+     *               ② 以 TopDetail(上一代最优)为父本,两两配对交叉变异,每对各取 1 个 mutation 叠加,生成阶段二方案;
+     *               两阶段合并后做 4 关 + checkFirstOption 约束 + WareHouse 去重,再注入上一代 top
+     *               30%(精英保留),
+     *               最后 AI 预测成本并取 TopNumber 方案返回。
+     *               整体保证:新一代最优成本 ≤ 上一代最优成本(单调不增)。
+     *
+     * @input: 13+ 参数,分别为 generateInitialSchemes 和 predictAndFindBest 的全部入参
+     * @Return: 新一代 TopNumber 个最优方案(含 serviceableStatue / 成本 / serviceableEdges)
+     * @Complexity: O(P1 + P2 + E) 阶段一/二生成 + 精英注入;P1 受 generateInitialSchemes
+     *              内部线程池限制。
+     */
+    public List<Map<String, Object>> hybridization(
+            List<Map<String, Object>> edges,
+            Set<String> canBreakToBSet,
+            List<String> initialScheme,
+            List<Map<String, String>> appPositions,
+            Map<String, String> eleclection,
+            int bestBreakCount,
+            Map<String, Double> breakCostMap,
+            Map<Integer, Double> survivalRateByK,
+            List<String> normList,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList,
+            Map<String, Object> jsonMap,
+            List<String> edgeChooseBS,
+            Map<String, Map<String, String>> elecPosition,
+            Map<String, Object> branchLength,
+            List<List<Integer>> connection,
+            Map<String, List<String>> multiLoopInfos,
+            Map<String, String> pointMap, int hybridizationNumber) throws Exception {
+        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
+
+        // 0) 兜底:没有上一代父本,直接退出
+        if (TopDetail == null || TopDetail.isEmpty()) {
+            return null;
+        }
+
+        // 1) 提取父本状态列表(从上一代 TopDetail 中取出 serviceableStatue)
+        List<List<String>> parentStatues = new ArrayList<>();
+        for (Map<String, Object> detail : TopDetail) {
+            @SuppressWarnings("unchecked")
+            List<String> statue = (List<String>) detail.get("serviceableStatue");
+            if (statue != null && initialScheme != null && statue.size() == initialScheme.size()) {
+                parentStatues.add(statue);
+            }
+        }
+        if (parentStatues.isEmpty()) {
+            return null;
+        }
+
+        // 2) 阶段一:对 TopDetail 中每个父本都调用 generateInitialSchemes 做变异
+        // 早停优化:累计够 perGenTarget 个就跳出 for,不再遍历剩余父本
+        // (你实测 1000 个方案 ≈ 800ms,100 个父本全遍历会到 10w+,没必要)
+        final int perGenTarget = HybridizationLessRandomSamleNumber;
+        long phase1Time = System.currentTimeMillis();
+        List<List<String>> phase1 = new ArrayList<>();
+        for (List<String> parent : parentStatues) {
+            if (phase1.size() >= perGenTarget) {
+                System.out.println("[hybridization] 阶段一早停:累计 " + phase1.size());
+                break;
+            }
+            List<List<String>> variants = generateInitialSchemes(
+                    edges, canBreakToBSet, parent, appPositions, eleclection,
+                    bestBreakCount, breakCostMap, survivalRateByK, normList,
+                    mutexMap, chooseOneList, togetherBCList);
+            phase1.addAll(variants);
+        }
+        System.out.println("[hybridization] 阶段一累计 " + phase1.size() + " 个有效方案,耗时 "
+                + (System.currentTimeMillis() - phase1Time) + " ms");
+
+        // 3) 阶段二:交叉变异(以 TopDetail 父本为基准,两两配对各取 1 mutation)
+        long phase2Time = System.currentTimeMillis();
+        int crossTarget = Math.max(HybridizationLessRandomSamleNumber, parentStatues.size() * 2);
+        List<List<String>> phase2Raw = crossoverMutation(
+                parentStatues, initialScheme, normList, crossTarget);
+        System.out.println("[hybridization] 阶段二原始生成 " + phase2Raw.size() + " 个,耗时 "
+                + (System.currentTimeMillis() - phase2Time) + " ms");
+
+        // 4) 阶段二约束检查 + 入仓(generateInitialSchemes 已对阶段一做过去重,这里只补阶段二)
+        long phase2CheckTime = System.currentTimeMillis();
+        List<List<String>> phase2Valid = new ArrayList<>();
+        for (List<String> child : phase2Raw) {
+            if (validateAndAddToWarehouse(child, edges, normList, appPositions, eleclection,
+                    mutexMap, chooseOneList, togetherBCList)) {
+                phase2Valid.add(child);
+            }
+        }
+        System.out.println("[hybridization] 阶段二通过约束 " + phase2Valid.size() + " 个,耗时 "
+                + (System.currentTimeMillis() - phase2CheckTime) + " ms");
+
+        // 5) 合并两阶段方案(阶段一已入仓,阶段二已入仓,这里只做候选池聚合)
+        List<List<String>> allSchemes = new ArrayList<>(phase1.size() + phase2Valid.size());
+        allSchemes.addAll(phase1);
+        allSchemes.addAll(phase2Valid);
+
+        // 6) 注入上一代 top 30%(精英保留,确保新一代最优 ≤ 上一代最优)
+        int eliteCount = Math.max(1, (int) Math.ceil(TopDetail.size() * 0.3));
+        int eliteAdded = 0;
+        for (int i = 0; i < eliteCount && i < TopDetail.size(); i++) {
+            @SuppressWarnings("unchecked")
+            List<String> eliteStatue = (List<String>) TopDetail.get(i).get("serviceableStatue");
+            if (eliteStatue != null && eliteStatue.size() == initialScheme.size()) {
+                allSchemes.add(eliteStatue);
+                eliteAdded++;
+            }
+        }
+
+        // 6.5) 补偿:如果两阶段+精英仍不够每代目标,对 TopDetail 每个父本再调 generateInitialSchemes 补充
+        // 防止极端情况下方案数不足以让 AI 选出 TopNumber 个好样本
+        // perGenTarget 沿用阶段一里的 final 声明
+        final int maxCompensationRounds = AutoCompleteNumber;
+        int compensationRound = 0;
+        while (allSchemes.size() < perGenTarget && compensationRound < maxCompensationRounds) {
+            compensationRound++;
+            int beforeCount = allSchemes.size();
+            for (List<String> parent : parentStatues) {
+                if (allSchemes.size() >= perGenTarget) {
+                    break;
+                }
+                List<List<String>> more = generateInitialSchemes(
+                        edges, canBreakToBSet, parent, appPositions, eleclection,
+                        bestBreakCount, breakCostMap, survivalRateByK, normList,
+                        mutexMap, chooseOneList, togetherBCList);
+                allSchemes.addAll(more);
+            }
+            int added = allSchemes.size() - beforeCount;
+            System.out.println("[hybridization] 补偿第 " + compensationRound + " 轮:新增 " + added
+                    + " 个");
+        }
+
+        if (allSchemes.isEmpty()) {
+            return null;
+        }
+
+        // 7) AI 预测 + 排序取 TopNumber
+        // findBestPre 传 null 避免 predictAndFindBest 内部再注入 10%(精英由本方法统一控制)
+        long predTime = System.currentTimeMillis();
+        List<Map<String, Object>> mapList = predictAndFindBest(allSchemes, edges, normList, jsonMap,
+                edgeChooseBS, elecPosition, branchLength, connection,
+                multiLoopInfos, pointMap, null);
+        long findBestTimeMs = System.currentTimeMillis() - predTime;
+        System.out.println("预测" + allSchemes.size() + "个样本成本耗时：" + findBestTimeMs);
+        // 记录迭代统计到Excel
+        int generatedCount = allSchemes.size();
+        int aiFilteredCount = 0;
+        long filterTimeMs = 0;
+        ObjectMapper mapper = new ObjectMapper();
+        JsonToMap jsonToMap = new JsonToMap();
+        if (mapList != null && !mapList.isEmpty()) {
+            Map<String, Object> bestResult = mapList.get(0);
+            Map<String, Object> costMap = (Map<String, Object>) bestResult.get("成本");
+            // 计算每轮迭代的最优成本，加到excel预测成本的后一列
+            List<String> serviceableStatue = (List<String>) bestResult.get("serviceableStatue");
+            List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+            Map<String, Object> threadLocalJsonMap = mapper.readValue(
+                    mapper.writeValueAsString(jsonMap),
+                    Map.class);
+            threadLocalJsonMap.put("edges", serviceableEdge);
+            String betweenoptimizeInterfacesresult = null;
+            try {
+                betweenoptimizeInterfacesresult = projectCircuitInfoOutput
+                        .projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap));
+            } catch (Exception e) {
+                return TopDetail;
+            }
+            Map<String, Object> betweenobjectMapresult = jsonToMap.TransJsonToMap(betweenoptimizeInterfacesresult);
+            Map<String, Object> betweenprojectCircuitInfo = (Map<String, Object>) betweenobjectMapresult
+                    .get("projectCircuitInfo");
+            Double betweencurrentalCost = (Double) betweenprojectCircuitInfo.get("总成本");
+            if (costMap != null) {
+                double bestCost = Double.parseDouble(costMap.get("总成本").toString());
+                double bestWeight = Double.parseDouble(costMap.get("总重量").toString());
+                double bestLength = Double.parseDouble(costMap.get("总长度").toString());
+                String excelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\iteration_stats_"
+                        + "testAItrue"
+                        + ".xlsx";
+                recordIterationStatsToExcel(
+                        hybridizationNumber, generatedCount, aiFilteredCount, filterTimeMs,
+                        bestCost, bestWeight, bestLength, findBestTimeMs, excelPath, betweencurrentalCost);
+            }
+        }
+        return mapList;
+    }
+
+    /**
+     * 记录迭代统计数据到Excel表格
+     * 每轮迭代一行，表头：迭代轮次、生成样本数、AI过滤后样本数、过滤耗时、最优成本、最优重量、最优长度、找最优耗时
+     * 每轮之间空两行
+     *
+     * @param iterationRound  迭代轮次
+     * @param generatedCount  生成样本数
+     * @param aiFilteredCount AI过滤后样本数
+     * @param filterTimeMs    过滤耗时(毫秒)
+     * @param bestCost        最优总成本
+     * @param bestWeight      最优总重量
+     * @param bestLength      最优总长度
+     * @param findBestTimeMs  找最优耗时(毫秒)
+     * @param excelFilePath   Excel文件路径
+     */
+    public void recordIterationStatsToExcel(
+            int iterationRound,
+            int generatedCount,
+            int aiFilteredCount,
+            long filterTimeMs,
+            double bestCost,
+            double bestWeight,
+            double bestLength,
+            long findBestTimeMs,
+            String excelFilePath, Double betweencurrentalCost) {
+        try {
+            org.apache.poi.ss.usermodel.Workbook workbook;
+            org.apache.poi.ss.usermodel.Sheet sheet;
+            java.io.File file = new java.io.File(excelFilePath);
+
+            // 如果文件已存在，读取它；否则新建
+            if (file.exists()) {
+                java.io.FileInputStream fis = new java.io.FileInputStream(file);
+                workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(fis);
+                fis.close();
+                if (workbook.getNumberOfSheets() > 0) {
+                    sheet = workbook.getSheetAt(0);
+                } else {
+                    sheet = workbook.createSheet("迭代统计");
+                }
+            } else {
+                workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
+                sheet = workbook.createSheet("迭代统计");
+                // 写入表头
+                org.apache.poi.ss.usermodel.Row headerRow = sheet.createRow(0);
+                String[] headers = { "迭代轮次", "每代生成样本数", "AI过滤后样本数", "过滤耗时(ms)",
+                        "预测成本", "真实成本", "最优重量", "最优长度", "找最优耗时(ms)" };
+                for (int i = 0; i < headers.length; i++) {
+                    org.apache.poi.ss.usermodel.Cell cell = headerRow.createCell(i);
+                    cell.setCellValue(headers[i]);
+                }
+            }
+
+            // 找到最后一行，空两行后写入新数据
+            int lastRowNum = sheet.getLastRowNum();
+            int nextRowNum = lastRowNum + 3; // 空两行
+            org.apache.poi.ss.usermodel.Row dataRow = sheet.createRow(nextRowNum);
+
+            // 写入数据
+            int col = 0;
+            dataRow.createCell(col++).setCellValue(iterationRound);
+            dataRow.createCell(col++).setCellValue(generatedCount);
+            dataRow.createCell(col++).setCellValue(aiFilteredCount);
+            dataRow.createCell(col++).setCellValue(filterTimeMs);
+            dataRow.createCell(col++).setCellValue(bestCost);
+            dataRow.createCell(col++).setCellValue(betweencurrentalCost);
+            dataRow.createCell(col++).setCellValue(bestWeight);
+            dataRow.createCell(col++).setCellValue(bestLength);
+            dataRow.createCell(col++).setCellValue(findBestTimeMs);
+
+            // 自动调整列宽
+            for (int i = 0; i < 9; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            // 写入文件
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(excelFilePath);
+            workbook.write(fos);
+            fos.close();
+            workbook.close();
+
+            System.out.println("迭代统计已写入Excel: " + excelFilePath);
+        } catch (Exception e) {
+            System.err.println("写入Excel失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * @Description: 交叉变异。两两随机配对父本,各取 1 个 mutation 位置叠加到子代,
+     *               生成 2-mutation 子代方案集合。
+     *               父本均来自上一代 TopDetail,其"突变位置"=相对 initialScheme 被改 B 的位置。
+     * @input: parentStatues 父本状态列表(长度 = normList.size())
+     * @input: baseScheme 基准状态(initialScheme)
+     * @input: normList 分支 id 按顺序排列
+     * @input: targetCount 目标生成数(实际可能因去重略少)
+     * @Return: 子代状态列表(已去重,未做约束检查,由调用方统一校验)
+     * @Complexity: O(targetCount * parents)
+     */
+    private List<List<String>> crossoverMutation(
+            List<List<String>> parentStatues,
+            List<String> baseScheme,
+            List<String> normList,
+            int targetCount) {
+        List<List<String>> result = new ArrayList<>();
+        if (parentStatues == null || parentStatues.size() < 2) {
+            return result;
+        }
+        if (baseScheme == null || normList == null || baseScheme.size() != normList.size()) {
+            return result;
+        }
+        if (targetCount <= 0) {
+            return result;
+        }
+
+        Random rnd = new Random();
+        Set<String> seen = new HashSet<>();
+        int maxAttempts = targetCount * 10 + 100;
+        int attempts = 0;
+        final int n = baseScheme.size();
+
+        while (result.size() < targetCount && attempts < maxAttempts) {
+            attempts++;
+            int idx1 = rnd.nextInt(parentStatues.size());
+            int idx2 = rnd.nextInt(parentStatues.size());
+            if (idx1 == idx2) {
+                continue;
+            }
+            List<String> p1 = parentStatues.get(idx1);
+            List<String> p2 = parentStatues.get(idx2);
+            if (p1.size() != n || p2.size() != n) {
+                continue;
+            }
+
+            // 提取每个父本相对 base 的 mutation 位置(被改 B 的位置)
+            List<Integer> muts1 = new ArrayList<>();
+            List<Integer> muts2 = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                if (!"B".equals(baseScheme.get(i)) && "B".equals(p1.get(i))) {
+                    muts1.add(i);
+                }
+                if (!"B".equals(baseScheme.get(i)) && "B".equals(p2.get(i))) {
+                    muts2.add(i);
+                }
+            }
+            if (muts1.isEmpty() || muts2.isEmpty()) {
+                continue;
+            }
+
+            // 各取 1 个(随机选)
+            int pos1 = muts1.get(rnd.nextInt(muts1.size()));
+            int pos2 = muts2.get(rnd.nextInt(muts2.size()));
+            if (pos1 == pos2) {
+                // 同位置不构成有效交叉
+                continue;
+            }
+
+            // 以 p1 为基底,叠加 p2 的 mutation → 子代必有 2 个 mutation
+            List<String> child = new ArrayList<>(p1);
+            child.set(pos2, "B");
+
+            // 去重签名(按 normList 顺序,不排序)
+            String sig = String.join(",", child);
+            if (seen.add(sig)) {
+                result.add(child);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * @Description: 统计方案相对 base 改 B 的位置数(即该方案相对 base 的 mutation 数量)。
+     *               用于日志展示阶段一基准的"进化深度"。
+     */
+    private int countMutation(List<String> scheme, List<String> base) {
+        if (scheme == null || base == null || scheme.size() != base.size()) {
+            return 0;
+        }
+        int cnt = 0;
+        for (int i = 0; i < scheme.size(); i++) {
+            if (!"B".equals(base.get(i)) && "B".equals(scheme.get(i))) {
+                cnt++;
+            }
+        }
+        return cnt;
+    }
+
+    /**
+     * @Description: 公共约束检查 + 入仓。4 关 + checkFirstOption + WareHouse 去重,全过才入仓并返回
+     *               true。
+     *               true。
+     *               阶段二(交叉变异)产生的原始子代通过本方法统一校验入仓。
+     * @input: fullStatus 完整状态列表(长度 = normList.size(),顺序与 normList 一致)
+     * @Return: 是否通过校验并成功入仓
+     * @Complexity: O(E) E = edges.size()
+     */
+    private boolean validateAndAddToWarehouse(
+            List<String> fullStatus,
+            List<Map<String, Object>> originalEdges,
+            List<String> normList,
+            List<Map<String, String>> appPositions,
+            Map<String, String> eleclection,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList) {
+        if (fullStatus == null || originalEdges == null || normList == null
+                || fullStatus.size() != normList.size()) {
+            return false;
+        }
+
+        // 1) 构造 statusMap(id -> status)
+        Map<String, String> statusMap = new LinkedHashMap<>();
+        for (int i = 0; i < normList.size(); i++) {
+            statusMap.put(normList.get(i), fullStatus.get(i));
+        }
+
+        // 2) 4 关 isValidScheme
+        if (!isValidScheme(originalEdges, statusMap, appPositions, eleclection)) {
+            return false;
+        }
+
+        // 3) checkFirstOption(回路/互斥/组团)
+        List<Map<String, Object>> copyEdges = createNewEdges(fullStatus, originalEdges, normList);
+        Boolean bool = checkFirstOption(normList, fullStatus, copyEdges, appPositions, eleclection,
+                mutexMap, chooseOneList, togetherBCList);
+        if (!bool) {
+            return false;
+        }
+
+        // 4) WareHouse 去重(线程安全)
+        synchronized (WareHouse) {
+            if (containsList(fullStatus, WareHouse)) {
+                return false;
+            }
+            WareHouse.add(fullStatus);
+        }
+        return true;
     }
 
     // 找到所有同电器对应的位置点
@@ -895,21 +1394,6 @@ public class NewHarnessBranchTopoOptimize {
      *               线程池使用 class 字段 threadPool，每个任务独立 Random 避免共享冲突。
      *               外层 while 多轮循环：当 result.size() < minCount 时持续生成新批次，
      *               每轮重新计算"还差多少"作为本轮目标，直到达到 minCount 或达到 maxRounds 兜底。
-     * @input:
-     *         originalEdges 原始分支列表
-     *         canBreakToBSet 可打断为B的分支id集合
-     *         baseStatusList 基础状态列表（按 edges 顺序，与 topoOptimize 的 initialScheme 一致）。
-     *         非空时直接用作 baseStatusMap；空时用旧逻辑：可打断的设 C，其他用原状态
-     *         appPositions 用电器位置信息
-     *         eleclection 用电器->位置点映射
-     *         bestBreakCount 来自 calcSurvivalRateByBreakCount 排第一的 breakCount
-     *         breakCostMap 打断代价降序排序的 Map（用于策略 B 计算概率表），可空
-     *         survivalRateByK k → 存活率 Map（来自 calcSurvivalRateByBreakCount），可空
-     *         minSurvivalRate 存活率阈值（默认 0.30），低于此值的 k 视为无效
-     *         minCount 最少生成多少个有效方案（≤0 用 LessRandomSamleNumber 默认值）
-     * @Return: List<List<String>> 每个 List<String> 是一个方案的完整状态列表（按 normList 顺序）
-     * @Complexity: O(minCount * E * R / 11)，E=edges数量，R=实际生成轮数（≤maxRounds=10），
-     *              通过 11 线程并行缩短耗时
      */
     public List<List<String>> generateInitialSchemes(
             List<Map<String, Object>> originalEdges,
@@ -923,6 +1407,7 @@ public class NewHarnessBranchTopoOptimize {
             Map<String, Map<String, List<String>>> mutexMap,
             List<Map<String, List<String>>> chooseOneList, List<List<String>> togetherBCList) {
         List<List<String>> result = new ArrayList<>();
+        // 最终目标方案数
         final int finalMinCount = LessRandomSamleNumber;
         final double finalMinSurvivalRate = MinSurvivalRate;
 
@@ -971,21 +1456,74 @@ public class NewHarnessBranchTopoOptimize {
         }
         final int finalMaxValidK = maxValidK;
 
-        // 5) 计算概率表（用于策略 B 按概率独立掷骰子）
+        // 5) 计算概率表（用于抽样支按权重加权采样）
         // breakCostMap 为空时使用均匀概率
-        Map<String, Double> probMap;
+        final Map<String, Double> probMap;
         if (breakCostMap != null && !breakCostMap.isEmpty()) {
             probMap = calcBreakProbabilityByCost(breakCostMap, canBreakToBSet, MaxProbability, WeightFactor);
         } else {
             // 没有代价信息时，均匀概率
-            probMap = new HashMap<>();
+            Map<String, Double> uniform = new HashMap<>();
             for (String id : breakableIds) {
-                probMap.put(id, MaxProbability);
+                uniform.put(id, MaxProbability);
             }
+            probMap = uniform;
         }
 
+        // 5.5) 预枚举：枚举支固定 k=1, k=2 两轮（防栈深/执行时间问题）
+        // 其余 k 一律走抽样支 → 线程池并行抽
+        // 安全兜底：C(N,k) ≤ 1000 才走枚举（防 N 特别大时 k=2 枚举爆炸）
+        // 枚举阈值参考 calcSurvivalRateByBreakCount 保持一致
+        final int maxEnumerateCombinations = 1000;
+        List<Integer> sampleKList = new ArrayList<>();
+        for (int k = 1; k <= adjustedBestBreakCount; k++) {
+            long totalComb = combination(breakableIds.size(), k);
+            // k ≤ 2 且组合数 ≤ 1000 → 枚举；否则抽样
+            boolean shouldEnumerate = (k <= 2) && (totalComb <= maxEnumerateCombinations);
+            if (shouldEnumerate) {
+                // 枚举支：单线程预枚举 → 4 道关 → 入仓库 + 入 result
+                List<List<String>> allComb = new ArrayList<>();
+                enumerateCombinations(breakableIds, k, 0, new ArrayList<>(), allComb);
+                for (List<String> chosen : allComb) {
+                    Map<String, String> statusMap = buildStatusMap(baseStatusMap, chosen);
+                    if (!isValidScheme(originalEdges, statusMap, appPositions, eleclection)) {
+                        continue;
+                    }
+                    List<String> fullStatus = new ArrayList<>();
+                    for (String id : baseStatusMap.keySet()) {
+                        fullStatus.add(statusMap.get(id));
+                    }
+                    List<Map<String, Object>> coppysonedges = createNewEdges(fullStatus, originalEdges, normList);
+                    Boolean bool = checkFirstOption(normList, fullStatus, coppysonedges, appPositions,
+                            eleclection, mutexMap, chooseOneList, togetherBCList);
+                    if (!bool) {
+                        continue;
+                    }
+                    synchronized (WareHouse) {
+                        if (!containsList(fullStatus, WareHouse)) {
+                            WareHouse.add(fullStatus);
+                            result.add(fullStatus);
+                        }
+                    }
+                }
+            } else {
+                // 抽样支：放进 sampleKList，留给线程池并行抽
+                sampleKList.add(k);
+            }
+        }
+        // 预枚举完已够数 → 早退
+        if (result.size() >= finalMinCount) {
+            return result;
+        }
+        // 没有抽样支 → 枚举完没够数，直接返回（兜底防死循环）
+        if (sampleKList.isEmpty()) {
+            return result;
+        }
+        // 抽样支的 k 总和（用于 perKTarget 加权）
+        final int totalKSum = sampleKList.stream().mapToInt(Integer::intValue).sum();
+
         // 6) 多轮并行生成：每轮目标 = "还差多少"；外层 while 一直循环到 result.size() ≥ finalMinCount
-        // 设置 maxRounds 兜底，防止存活率极低或持续重复时死循环
+        // 任务数上限，线程池里提交的任务
         final int baseTaskCount = Math.min(11, Math.max(1, finalMinCount / 50));
         final int maxRounds = finalMinCount * 2;
         int round = 0;
@@ -995,10 +1533,8 @@ public class NewHarnessBranchTopoOptimize {
             int remaining = finalMinCount - result.size();
             // 本轮任务数：剩余数较少时适当缩减
             int taskCount = Math.min(baseTaskCount, Math.max(1, remaining / 50 + 1));
-            // 每任务目标：剩余数量摊到每个任务
+            // 每任务目标：剩余数量摊到每个任务，每个任务本轮目标产出
             int targetPerTask = Math.max(1, (remaining + taskCount - 1) / taskCount);
-            // 每任务最大尝试次数：兜底，防止本轮存活率 0% 时死循环
-            int maxAttemptsPerTask = Math.max(100, targetPerTask * 10);
             // 跨任务共享本轮生成数（早退优化）
             AtomicInteger roundGenerated = new AtomicInteger(0);
 
@@ -1007,8 +1543,9 @@ public class NewHarnessBranchTopoOptimize {
             try {
                 for (int t = 0; t < taskCount; t++) {
                     final int taskId = t;
+                    // 这个任务本轮要产出的有效方案总数
                     final int localTarget = targetPerTask;
-                    final int localMaxAttempts = maxAttemptsPerTask;
+                    // 本轮全员总目标
                     final int roundTarget = remaining;
                     futures.add(threadPool.submit(() -> {
                         // 每个任务独立 Random，避免共享冲突
@@ -1016,86 +1553,57 @@ public class NewHarnessBranchTopoOptimize {
                         // 本地结果集：避免共享 result 的锁竞争，任务结束返回再合并
                         List<List<String>> localResult = new ArrayList<>();
                         int localGenerated = 0;
-                        int localAttempts = 0;
-                        // 单策略目标 = 总目标 / 2
-                        int singleStrategyTarget = (localTarget + 1) / 2;
-                        // 单策略最大尝试次数
-                        int singleStrategyMax = Math.max(50, localMaxAttempts / 2);
 
-                        // 策略 A：按 bestBreakCount 同时变 k 个
-                        // 循环条件：本地生成数 < 单策略目标 且 总尝试 < 单策略最大
-                        // 一旦本轮生成数达到 remaining，所有线程也会快速退出
-                        while (localGenerated < singleStrategyTarget
-                                && localAttempts < singleStrategyMax
-                                && roundGenerated.get() < roundTarget) {
-                            localAttempts++;
-                            List<String> chosen = randomPickSingle(breakableIds, adjustedBestBreakCount, rnd);
-                            if (chosen == null || chosen.isEmpty()) {
-                                continue;
-                            }
-                            // 1) 构造完整状态map
-                            Map<String, String> statusMap = buildStatusMap(baseStatusMap, chosen);
-                            // 2) 验证约束
-                            if (!isValidScheme(originalEdges, statusMap, appPositions, eleclection)) {
-                                continue;
-                            }
-                            // 3) 构造完整状态列表（按 baseStatusMap key 顺序 = normList 顺序）
-                            List<String> fullStatus = new ArrayList<>();
-                            for (String id : baseStatusMap.keySet()) {
-                                fullStatus.add(statusMap.get(id));
-                            }
-                            // 检查生成的方案是否符合约束
-                            List<Map<String, Object>> coppysonedges = createNewEdges(fullStatus, originalEdges,
-                                    normList);
-                            Boolean bool = checkFirstOption(normList, fullStatus, coppysonedges, appPositions,
-                                    eleclection,
-                                    mutexMap, chooseOneList, togetherBCList);
-                            if (!bool) {
-                                continue;
-                            }
-                            synchronized (WareHouse) {
-                                // 检查之前是否生成过该方案
-                                if (!containsList(fullStatus, WareHouse)) {
-                                    WareHouse.add(fullStatus);
-                                    localResult.add(fullStatus);
-                                    localGenerated++;
-                                    roundGenerated.incrementAndGet();
+                        // 按 sampleKList 循环（k 越大抽越多）
+                        // 抽样数 = localTarget * k / totalKSum，所有 k 抽样数总和 ≈ localTarget
+                        // 命中 localTarget 或 roundTarget 后快速退出
+                        for (int k : sampleKList) {
+                            if (localGenerated >= localTarget)
+                                break;
+                            if (roundGenerated.get() >= roundTarget)
+                                break;
+
+                            // 单 k 抽样目标
+                            int perKTarget = Math.max(1, (localTarget * k + totalKSum - 1) / totalKSum);
+
+                            // 抽样支：按 probMap 加权随机抽（低代价分支更易被选中）
+                            List<List<String>> pickedCombinations = weightedSampleCombinations(breakableIds, k,
+                                    perKTarget, probMap, rnd);
+
+                            for (List<String> chosen : pickedCombinations) {
+                                if (localGenerated >= localTarget)
+                                    break;
+                                if (roundGenerated.get() >= roundTarget)
+                                    break;
+
+                                // 1) 构造完整状态map
+                                Map<String, String> statusMap = buildStatusMap(baseStatusMap, chosen);
+                                // 2) 验证约束
+                                if (!isValidScheme(originalEdges, statusMap, appPositions, eleclection)) {
+                                    continue;
                                 }
-                            }
-                        }
-
-                        // 策略 B：按概率独立掷骰子
-                        while (localGenerated < localTarget
-                                && localAttempts < localMaxAttempts
-                                && roundGenerated.get() < roundTarget) {
-                            localAttempts++;
-                            List<String> chosen = pickByProbability(breakableIds, probMap, rnd);
-                            if (chosen == null || chosen.isEmpty()) {
-                                continue;
-                            }
-                            Map<String, String> statusMap = buildStatusMap(baseStatusMap, chosen);
-                            if (!isValidScheme(originalEdges, statusMap, appPositions, eleclection)) {
-                                continue;
-                            }
-                            List<String> fullStatus = new ArrayList<>();
-                            for (String id : baseStatusMap.keySet()) {
-                                fullStatus.add(statusMap.get(id));
-                            }
-                             List<Map<String, Object>> coppysonedges = createNewEdges(fullStatus, originalEdges,
-                                    normList);
-                            Boolean bool = checkFirstOption(normList, fullStatus, coppysonedges, appPositions,
-                                    eleclection,
-                                    mutexMap, chooseOneList, togetherBCList);
-                            if (!bool) {
-                                continue;
-                            }
-                            synchronized (WareHouse) {
-                                // 检查之前是否生成过该方案
-                                if (!containsList(fullStatus, WareHouse)) {
-                                    WareHouse.add(fullStatus);
-                                    localResult.add(fullStatus);
-                                    localGenerated++;
-                                    roundGenerated.incrementAndGet();
+                                // 3) 构造完整状态列表（按 baseStatusMap key 顺序 = normList 顺序）
+                                List<String> fullStatus = new ArrayList<>();
+                                for (String id : baseStatusMap.keySet()) {
+                                    fullStatus.add(statusMap.get(id));
+                                }
+                                // 检查生成的方案是否符合约束
+                                List<Map<String, Object>> coppysonedges = createNewEdges(fullStatus, originalEdges,
+                                        normList);
+                                Boolean bool = checkFirstOption(normList, fullStatus, coppysonedges, appPositions,
+                                        eleclection,
+                                        mutexMap, chooseOneList, togetherBCList);
+                                if (!bool) {
+                                    continue;
+                                }
+                                synchronized (WareHouse) {
+                                    // 检查之前是否生成过该方案
+                                    if (!containsList(fullStatus, WareHouse)) {
+                                        WareHouse.add(fullStatus);
+                                        localResult.add(fullStatus);
+                                        localGenerated++;
+                                        roundGenerated.incrementAndGet();
+                                    }
                                 }
                             }
                         }
@@ -1262,6 +1770,61 @@ public class NewHarnessBranchTopoOptimize {
             Collections.sort(picked);
             String key = String.join(",", picked);
             if (seen.add(key)) {
+                result.add(picked);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * @Description: 按 probMap 加权随机抽 count 个 k-组合（不重复）
+     *               算法：每个分支按权重生成"加权随机键" key = random^(1/weight)，
+     *               按 key 降序取前 k 个分支，组成一个组合
+     *               权重高的分支更易排前，权重全相等时退化为均匀随机
+     *               多次重复+去重，得到 count 个不同组合
+     *               时间复杂度：O(count * n * log n)，n = breakableIds.size()
+     */
+    private List<List<String>> weightedSampleCombinations(List<String> list, int k,
+            int count, Map<String, Double> probMap, Random random) {
+        List<List<String>> result = new ArrayList<>();
+        int n = list.size();
+        if (k <= 0 || k > n) {
+            return result;
+        }
+        long totalComb = combination(n, k);
+        int target = (int) Math.min((long) count, totalComb);
+        Set<String> seen = new HashSet<>();
+        // 尝试上限：目标的10倍 + 100，避免极端情况死循环
+        int maxAttempts = target * 10 + 100;
+        int attempts = 0;
+        while (result.size() < target && attempts < maxAttempts) {
+            attempts++;
+            // 算每个分支的"加权随机键"
+            double[] keys = new double[n];
+            for (int i = 0; i < n; i++) {
+                double w = probMap.getOrDefault(list.get(i), 0.0);
+                if (w <= 0) {
+                    // 权重为 0 几乎不可能被选中，给个极小兜底避免 Math.pow 异常
+                    w = 1e-9;
+                }
+                double u = random.nextDouble();
+                // key 越大排序越靠前；w 大 → 1/w 小 → u^(1/w) 接近 1（排前）
+                keys[i] = Math.pow(u, 1.0 / w);
+            }
+            // 按 key 降序排前 k 个
+            Integer[] order = new Integer[n];
+            for (int i = 0; i < n; i++) {
+                order[i] = i;
+            }
+            Arrays.sort(order, (a, b) -> Double.compare(keys[b], keys[a]));
+            List<String> picked = new ArrayList<>();
+            for (int i = 0; i < k; i++) {
+                picked.add(list.get(order[i]));
+            }
+            // 排序后做签名，保证同一组合不同顺序视为相同
+            Collections.sort(picked);
+            String sig = String.join(",", picked);
+            if (seen.add(sig)) {
                 result.add(picked);
             }
         }
@@ -1533,15 +2096,15 @@ public class NewHarnessBranchTopoOptimize {
      * @Return: 返回AI预测成本最优的topN方案
      */
     public List<Map<String, Object>> predictAndFindBest(List<List<String>> simpleList,
-                                                        List<Map<String, Object>> edges,
-                                                        List<String> normList,
-                                                        Map<String, Object> jsonMap,
-                                                        List<String> edgeChooseBS,
-                                                        Map<String, Map<String, String>> elecPosition,
-                                                        Map<String, Object> branchLength,
-                                                        List<List<Integer>> connection,
-                                                        Map<String, List<String>> multiLoopInfos,
-                                                        Map<String, String> pointMap, List<Map<String, Object>> findBestPre) throws Exception {
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            Map<String, Object> jsonMap,
+            List<String> edgeChooseBS,
+            Map<String, Map<String, String>> elecPosition,
+            Map<String, Object> branchLength,
+            List<List<Integer>> connection,
+            Map<String, List<String>> multiLoopInfos,
+            Map<String, String> pointMap, List<Map<String, Object>> findBestPre) throws Exception {
         GINEInferenceEngine gine = new GINEInferenceEngine();
         ObjectMapper mapper = new ObjectMapper();
         List<Float> length = (List<Float>) branchLength.get("branchLength");

@@ -234,7 +234,7 @@ public class PowerDistributionDriveOptimization {
             if (s != null && !s.isEmpty()) {
                 for (String part : s.split(",")) {
                     //TODO 找用电器有问题
-                    String pointName = findNameById(part, points);
+                    String pointName = findAppNameById(part, appPositions);
                     loopElecById.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(pointName);
                 }
             }
@@ -242,7 +242,7 @@ public class PowerDistributionDriveOptimization {
             String start = loopInfo.get("startSpecifyPoints");
             if (start != null && !start.isEmpty()) {
                 for (String part : start.split(",")) {
-                    String pointName = findNameById(part, points);
+                    String pointName = findAppNameById(part, appPositions);
                     loopElecByIdStart.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(pointName);
                 }
             }
@@ -319,8 +319,6 @@ public class PowerDistributionDriveOptimization {
                 // 执行枚举
                 enumerateAllSchemes(targetLoops, elecChangeablePosition, togetherGroup, mutualGroup, loopInfos,
                         loopElecById, loopElecByIdStart);
-
-                System.out.println("枚举耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
 
                 // 每个方案格式: Map<回路ID, "起点用电器|终点用电器|起点位置|终点位置">
                 // 遍历所有方案
@@ -407,6 +405,7 @@ public class PowerDistributionDriveOptimization {
             System.out.println("重复方案数: " + duplicateCount);
             System.out.println("有效方案数: " + validSchemeCount);
             List<Map<String, Object>> topBest = findBest.findBest(resultList, "成本", TopNumber);
+            System.out.println("枚举总耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
             return objectMapper.writeValueAsString(topBest);
         }
 
@@ -2426,10 +2425,21 @@ public class PowerDistributionDriveOptimization {
         return count;
     }
 
+    //找用电器位置名称
     public String findNameById(String id, List<Map<String, Object>> points) {
         for (Map<String, Object> point : points) {
             if (point.get("id").toString().equals(id)) {
                 return point.get("pointName").toString();
+            }
+        }
+        return "";
+    }
+
+    //找用电器名称根据id
+    public String findAppNameById(String id, List<Map<String, String>> apppositions) {
+        for (Map<String, String> app : apppositions) {
+            if (app.get("id").equals(id)) {
+                return app.get("appName");
             }
         }
         return "";
