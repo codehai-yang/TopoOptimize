@@ -1,5 +1,7 @@
 package HarnessPackOpti.Optimize.topo;
 
+import static HarnessPackOpti.utils.GINEInferenceEngine.objectMapper;
+
 import java.io.File;
 import java.nio.file.Files;
 import java.text.DecimalFormat;
@@ -23,7 +25,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
-import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import org.apache.commons.collections4.map.LinkedMap;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,6 +36,7 @@ import HarnessPackOpti.Algorithm.FindTopoBreak;
 import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
 import HarnessPackOpti.Algorithm.GenerateTopoMatrixConnector;
 import HarnessPackOpti.CircuitInfoCalculate.CalculateCircuitInfo;
+import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
@@ -42,18 +44,16 @@ import HarnessPackOpti.utils.GINEInferenceEngine;
 import HarnessPackOpti.utils.Normalize;
 import HarnessPackOpti.utils.ThreadPool;
 
-import static HarnessPackOpti.utils.GINEInferenceEngine.objectMapper;
-
 /**
  * 新的topo优化遗传算法
  */
 public class NewHarnessBranchTopoOptimize {
     // 初代样本最低生成数量（提高多样性，避免遗传起点过于集中）
-    public static Integer LessRandomSamleNumber = 200;
+    public static Integer LessRandomSamleNumber = 100;
     // 迭代最少样本数量（提高每代候选池规模，保证进化方向充分探索）
-    public static Integer HybridizationLessRandomSamleNumber = 200;
+    public static Integer HybridizationLessRandomSamleNumber = 100;
     // top几的数量规定
-    public static final Integer TopNumber = 20;
+    public static final Integer TopNumber = 100;
     // 绕线优化:分支累计绕线成本贡献阈值,超过则 B 改 C
     public static final Double WindingCostThreshold = 10.0;
     // 每次迭代最优的成本
@@ -61,7 +61,7 @@ public class NewHarnessBranchTopoOptimize {
     // 最优样本重复次数
     public static Integer BestRepetitionNumber = 0;
     // 迭代重复的次数限值
-    public static Integer IterationRestrictNumber = 10;
+    public static Integer IterationRestrictNumber = 3;
     // 定义一个仓库
     public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
     // 仓库的 key 索引：完整状态列表拼接的字符串，用于 O(1) 去重
@@ -104,7 +104,9 @@ public class NewHarnessBranchTopoOptimize {
         File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM项目json优化设置.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         NewHarnessBranchTopoOptimize newHarnessBranchTopoOptimize = new NewHarnessBranchTopoOptimize();
+        long startTime = System.currentTimeMillis();
         String topoOptimize = newHarnessBranchTopoOptimize.topoOptimize(jsonContent);
+        System.out.println("算法总耗时：" + (System.currentTimeMillis() - startTime));
         File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\测试新遗传算法2.txt");
         Files.write(outputFile.toPath(), topoOptimize.getBytes());
         System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
@@ -226,7 +228,7 @@ public class NewHarnessBranchTopoOptimize {
                 if ((edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S"))
                         || (edge.get("statusC").toString().equals("C") && edge.get("statusS").toString().equals("S"))
                         || (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")
-                        && edge.get("statusC").toString().equals("C"))) {
+                                && edge.get("statusC").toString().equals("C"))) {
                     canChangeS.add(edge.get("id").toString());
                 }
             }
@@ -702,21 +704,21 @@ public class NewHarnessBranchTopoOptimize {
                 projectCircuitInfoOutput,
                 jsonToMap, mutexMap, chooseOneList, togetherBCList, singleBCList, singleSCList,
                 singleBSList, singleBSCList, eleclection);
-
+        threadPool.shutdown();
         return objectMapper.writeValueAsString(maps);
     }
 
     /**
      * @Description: 绕线优化(在遗传算法结束后最后跑一次)。
-     * 思路:
-     * ① 遍历所有方案,对每个绕线回路(windingLength > 0)算出"全打通"状态下的最短路径,
-     * 与原回路比对,差异分支(全打通有而原回路没有的分支)就是"打通后能消除绕线"的分支;
-     * 把"绕线长度"作为成本贡献,均摊到这些差异分支上,累加得 branchCostContribution[branchId]。
-     * ② 累计成本贡献 > WindingCostThreshold 的分支,直接 B → C(用不绕线的回路)。
-     * ③ 改完后用 recognizeLoopNew 检测闭环,用 canChangeS 中打断成本最小的分支打 S 消除,
-     * 循环直到无闭环。
-     * ④ 重算成本 + 约束检查,过则保留,挂则丢弃。
-     * ⑤ 取 TopNumber 返回。
+     *               思路:
+     *               ① 遍历所有方案,对每个绕线回路(windingLength > 0)算出"全打通"状态下的最短路径,
+     *               与原回路比对,差异分支(全打通有而原回路没有的分支)就是"打通后能消除绕线"的分支;
+     *               把"绕线长度"作为成本贡献,均摊到这些差异分支上,累加得 branchCostContribution[branchId]。
+     *               ② 累计成本贡献 > WindingCostThreshold 的分支,直接 B → C(用不绕线的回路)。
+     *               ③ 改完后用 recognizeLoopNew 检测闭环,用 canChangeS 中打断成本最小的分支打 S 消除,
+     *               循环直到无闭环。
+     *               ④ 重算成本 + 约束检查,过则保留,挂则丢弃。
+     *               ⑤ 取 TopNumber 返回。
      * @input: mapList 已完成遗传迭代的方案集
      * @input: adjacencyMatrixGraphConnector 分支全部打通情况下的邻接矩阵
      * @input: edges 原始 edges
@@ -740,7 +742,8 @@ public class NewHarnessBranchTopoOptimize {
             Map<String, Object> jsonMap,
             ObjectMapper mapper,
             ProjectCircuitInfoOutput projectCircuitInfoOutput,
-            JsonToMap jsonToMap, Map<String, Map<String, List<String>>> mutexMap, List<Map<String, List<String>>> chooseOneList, List<List<String>> togetherBCList,
+            JsonToMap jsonToMap, Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList, List<List<String>> togetherBCList,
             List<String> singleBCList,
             List<String> singleSCList,
             List<String> singleBSList,
@@ -767,29 +770,42 @@ public class NewHarnessBranchTopoOptimize {
         }
         System.out.println("[windingOptimize] " + highCostBranches.size() + " 个分支超阈值(>"
                 + WindingCostThreshold + "),待 B→C");
-        if (highCostBranches.isEmpty()) {
-            return findBest.findBest(mapList, "成本", TopNumber);
+
+        // ③④ 对每个方案做 B→C + 闭环消除 + 成本重算 + 约束检查（多线程提速）
+        List<Map<String, Double>> costDeail = Collections.synchronizedList(new ArrayList<>());
+        List<java.util.concurrent.Callable<Map<String, Object>>> tasks = new ArrayList<>();
+        for (Map<String, Object> map : mapList) {
+            tasks.add(() -> {
+                return processSingleSchemeForWinding(
+                        map, highCostBranches, edges, normList, canChangeS, wearId,
+                        jsonMap, mapper, projectCircuitInfoOutput, jsonToMap, mutexMap, chooseOneList, togetherBCList,
+                        singleBCList, singleSCList,
+                        singleBSList, singleBSCList, eleclection, costDeail);
+            });
         }
 
-        // ③④ 对每个方案做 B→C + 闭环消除 + 成本重算 + 约束检查
+        List<java.util.concurrent.Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (java.util.concurrent.Callable<Map<String, Object>> task : tasks) {
+            futures.add(threadPool.submit(task));
+        }
+
         List<Map<String, Object>> optimized = new ArrayList<>();
         int scrapCount = 0;
-        List<Map<String, Double>> costDeail = new ArrayList<>();
-        // 早停：优化后的方案数达到 TopNumber 的 2 倍即可停止处理
         final int earlyStopTarget = TopNumber * 2;
-        for (Map<String, Object> map : mapList) {
+        for (java.util.concurrent.Future<Map<String, Object>> future : futures) {
             if (optimized.size() >= earlyStopTarget) {
                 System.out.println("[windingOptimize] 早停:已收集 " + optimized.size() + " 个优化方案");
                 break;
             }
-            Map<String, Object> result = processSingleSchemeForWinding(
-                    map, highCostBranches, edges, normList, canChangeS, wearId,
-                    jsonMap, mapper, projectCircuitInfoOutput, jsonToMap, mutexMap, chooseOneList, togetherBCList, singleBCList, singleSCList,
-                    singleBSList, singleBSCList, eleclection, costDeail);
-            if (result != null) {
-                optimized.add(result);
-            } else {
-                scrapCount++;
+            try {
+                Map<String, Object> result = future.get(3000, java.util.concurrent.TimeUnit.SECONDS);
+                if (result != null) {
+                    optimized.add(result);
+                } else {
+                    scrapCount++;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
         System.out.println("[windingOptimize] 处理完成:通过 " + optimized.size()
@@ -803,7 +819,7 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 阶段一:遍历 mapList 统计每个分支的绕线成本贡献。
-     * 对每个绕线回路,找全打通状态下的最短路径,与原回路差异分支均摊绕线成本作为该分支的贡献。
+     *               对每个绕线回路,找全打通状态下的最短路径,与原回路差异分支均摊绕线成本作为该分支的贡献。
      */
     private void collectBranchCostContribution(
             List<Map<String, Object>> mapList,
@@ -825,7 +841,7 @@ public class NewHarnessBranchTopoOptimize {
 
         // 预构建:点对 → 边id(双向)
         Map<String, String> pairToEdgeId = new HashMap<>();
-        //edges的edgeName就是右前门线inline点-车身线右前inline点这种的名称，下面还需要拼接吗手动的
+        // edges的edgeName就是右前门线inline点-车身线右前inline点这种的名称，下面还需要拼接吗手动的
         for (Map<String, Object> e : edges) {
             Object idObj = e.get("id");
             Object sObj = e.get("startPointName");
@@ -1029,7 +1045,7 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 对单个方案执行 B→C + 闭环消除 + 成本重算 + 约束检查。
-     * 流程严格遵循硬约束:闭环必须消完才返回,约束不过则丢弃。
+     *               流程严格遵循硬约束:闭环必须消完才返回,约束不过则丢弃。
      */
     private Map<String, Object> processSingleSchemeForWinding(
             Map<String, Object> map,
@@ -1041,16 +1057,23 @@ public class NewHarnessBranchTopoOptimize {
             Map<String, Object> jsonMap,
             ObjectMapper mapper,
             ProjectCircuitInfoOutput projectCircuitInfoOutput,
-            JsonToMap jsonToMap, Map<String, Map<String, List<String>>> mutexMap, List<Map<String, List<String>>> chooseOneList, List<List<String>> togetherBCList,
+            JsonToMap jsonToMap, Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList, List<List<String>> togetherBCList,
             List<String> singleBCList,
             List<String> singleSCList,
             List<String> singleBSList,
-            List<String> singleBSCList, Map<String, String> eleclection, List<Map<String, Double>> costDeail) throws Exception {
+            List<String> singleBSCList, Map<String, String> eleclection, List<Map<String, Double>> costDeail)
+            throws Exception {
         Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
         Map<String, Object> projectInfo = (Map<String, Object>) jsonMap.get("projectInfo");
         Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
+        List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
         Boolean whetherOnLoop = caseInfo.get("loopcreate").toString().equals("true") ? true : false;
-
+        // 可打B的分支
+        List<String> canChangeToB = new ArrayList<>();
+        canChangeToB.addAll(singleBCList);
+        canChangeToB.addAll(singleBSList);
+        canChangeToB.addAll(singleBSCList);
         List<String> originalStatue = (List<String>) map.get("serviceableStatue");
         if (originalStatue == null || originalStatue.size() != normList.size()) {
             return null;
@@ -1058,36 +1081,158 @@ public class NewHarnessBranchTopoOptimize {
         List<String> statue = new ArrayList<>(originalStatue);
 
         // 1) B → C:贡献超阈值的分支
-        int changedCount = 0;
-        for (int i = 0; i < statue.size(); i++) {
-            if ("B".equals(statue.get(i)) && highCostBranches.contains(normList.get(i)) && singleBSCList.contains(normList.get(i))) {
-                statue.set(i, "C");     //分支可改C的改C
-                changedCount++;
+        if (highCostBranches.size() != 0) {
+            for (int i = 0; i < statue.size(); i++) {
+                if ("B".equals(statue.get(i)) && highCostBranches.contains(normList.get(i))
+                        && singleBSCList.contains(normList.get(i))) {
+                    statue.set(i, "C");
+                }
             }
         }
-        if (changedCount == 0) {
+        // 让方案满足多选一约束
+        // 规则:每组中"恰好一个 C"
+        // - 当前 1 个 C:满足,放过
+        // - 当前 0 个 C:从允许状态含 C 的分支中选一个改成 C
+        // - 当前 >1 个 C:随机保留一个 C,其余 C → 其允许状态中随机选一个(非 C)
+        applyChooseOneConstraint(statue, chooseOneList, normList);
+        // 记录原始方案的成本（用于后续比较）
+        Map<String, Object> origCostObj = (Map<String, Object>) map.get("成本");
+        double originalCost = origCostObj != null && origCostObj.get("总成本") != null
+                ? Double.parseDouble(origCostObj.get("总成本").toString())
+                : Double.MAX_VALUE;
+
+        // 2) 计算 B→C 后的初始成本和打断代价（对齐 changeAndFindBest）
+        List<Map<String, Object>> serviceableEdge = createNewEdges(statue, edges, normList);
+        Map<String, Object> threadLocalJsonMap = mapper.readValue(
+                mapper.writeValueAsString(jsonMap), Map.class);
+        threadLocalJsonMap.put("edges", serviceableEdge);
+
+        Map<String, Double> breakCostMap = new HashMap<>();
+        Map<String, Object> costResultData = new HashMap<>();
+        try {
+            String circuitResult = projectCircuitInfoOutput
+                    .projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
+            Map<String, Object> obj = jsonToMap.TransJsonToMap(circuitResult);
+            Map<String, Object> circuitInfoMap = (Map<String, Object>) obj.get("projectCircuitInfo");
+            costResultData.put("总成本", circuitInfoMap.get("总成本"));
+            costResultData.put("总长度", circuitInfoMap.get("回路总长度"));
+            costResultData.put("总重量", circuitInfoMap.get("回路总重量"));
+
+            Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) obj
+                    .get("bundeleRelatedCircuitInfo");
+            for (String s : bundeleRelatedCircuitInfo.keySet()) {
+                Map<String, Object> edgeMap = (Map<String, Object>) bundeleRelatedCircuitInfo.get(s);
+                Map<String, Object> edgeDetail = (Map<String, Object>) edgeMap.get("circuitInfoIntergation");
+                breakCostMap.put(s, Double.parseDouble(
+                        edgeDetail.get("分支打断代价") != null ? edgeDetail.get("分支打断代价").toString() : "0"));
+            }
+        } catch (Exception e) {
+            System.out.println("processSingleSchemeForWinding: 计算初始成本异常: " + e.getMessage());
             return null;
         }
 
-        // 2) 重新生成 edges 并重算成本(深拷贝 jsonMap 避免污染)
-        Map<String, Object> threadLocalJsonMap = mapper.readValue(
-                mapper.writeValueAsString(jsonMap), Map.class);
-        List<Map<String, Object>> serviceableEdge = createNewEdges(statue, edges, normList);
-        threadLocalJsonMap.put("edges", serviceableEdge);
+        // 3) 闭环消除：对齐 changeAndFindBest 逻辑（wearId → whetherOnLoop）
+        boolean scrapOrNot = false;
+        int maxLoopIterations = 300;
+        while (!scrapOrNot && maxLoopIterations-- > 0) {
+            serviceableEdge = createNewEdges(statue, edges, normList);
+            List<List<String>> recognizeLoopList = recognizeLoopNew(serviceableEdge);
 
-        List<Map<String, Object>> handleList = bestOptionVariation(statue, singleBCList, singleSCList,
-                singleBSList, singleBSCList, normList, jsonMap, eleclection, wearId, mutexMap,
-                chooseOneList, togetherBCList, whetherOnLoop);
-        if (handleList != null && !handleList.isEmpty()) {
-            Map<String, Object> objectMap = handleList.get(0);
-            Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
-            if (costDeail.contains(cost)) {
-                System.out.println("成本重复");
-                return null;
+            // 3a) 检查含 wearId 的闭环
+            List<String> recognizeLoopIdList = new ArrayList<>();
+            for (List<String> loop : recognizeLoopList) {
+                for (String s : loop) {
+                    if (wearId.contains(s)) {
+                        recognizeLoopIdList.addAll(loop);
+                        break;
+                    }
+                }
             }
-            List<Map<String, Object>> mapList = (List<Map<String, Object>>) objectMap.get("serviceableEdges");
-            List<List<String>> outputLoopList = recognizeLoopNew(mapList);
-            for (List<String> loop : outputLoopList) {
+
+            if (recognizeLoopIdList.size() != 0) {
+                // 含 wearId 的闭环：选打断代价最低且可设为S的分支
+                List<String> keyList = findMinCostKey(recognizeLoopIdList, breakCostMap);
+                String minCostKey = null;
+                for (String s : keyList) {
+                    if (canChangeS.contains(s)) {
+                        minCostKey = s;
+                        break;
+                    }
+                }
+                if (minCostKey == null) {
+                    scrapOrNot = true;
+                    break;
+                }
+                statue.set(normList.indexOf(minCostKey), "S");
+                if (!refreshCircuitInfo(statue, edges, normList, threadLocalJsonMap,
+                        projectCircuitInfoOutput, mapper, jsonToMap, costResultData, breakCostMap)) {
+                    scrapOrNot = true;
+                    break;
+                }
+            } else {
+                // 3b) 检查 whetherOnLoop 全局闭环消除
+                if (whetherOnLoop) {
+                    int innerMaxIter = 300;
+                    while (innerMaxIter-- > 0) {
+                        serviceableEdge = createNewEdges(statue, edges, normList);
+                        List<List<String>> recognizeLoopListSon = recognizeLoopNew(serviceableEdge);
+                        if (recognizeLoopListSon.size() == 0) {
+                            break;
+                        } else {
+                            Set<String> son = new HashSet<>();
+                            for (List<String> loop : recognizeLoopListSon) {
+                                son.addAll(loop);
+                            }
+                            List<String> keyList = findMinCostKey(new ArrayList<>(son), breakCostMap);
+                            String minCostKey = null;
+                            for (String s : keyList) {
+                                if (canChangeS.contains(s)) {
+                                    minCostKey = s;
+                                    break;
+                                }
+                            }
+                            if (minCostKey == null) {
+                                if (keyList.isEmpty()) {
+                                    scrapOrNot = true;
+                                    break;
+                                }
+                                minCostKey = keyList.get(0);
+                            }
+                            statue.set(normList.indexOf(minCostKey), "S");
+                            if (!refreshCircuitInfo(statue, edges, normList, threadLocalJsonMap,
+                                    projectCircuitInfoOutput, mapper, jsonToMap, costResultData,
+                                    breakCostMap)) {
+                                scrapOrNot = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (scrapOrNot) {
+                        break;
+                    }
+                }
+                // 所有闭环已消除，跳出外层循环
+                break;
+            }
+        }
+        if (scrapOrNot || maxLoopIterations <= 0) {
+            return null;
+        }
+
+        // 4) 成本比较：如果优化后成本没下降，改用原方案
+        double newCost = Double.parseDouble(costResultData.get("总成本").toString());
+        if (newCost >= originalCost) {
+            // 成本上升，返回原方案
+            List<String> origStatueCopy = new ArrayList<>(originalStatue);
+            // 关键:对原始 statue 也进行多选一约束修正,否则后续 forceBreakLoops 里的 checkFirstOption 会失败
+            // (原始 statue 可能本身就不满足多选一,例如来自遗传算法迭代的中间态)
+            applyChooseOneConstraint(origStatueCopy, chooseOneList, normList);
+            // 对最终的方案进行一个计算 并且按照格式进行一个返回
+            List<Map<String, Object>> finalEdgeresult = createNewEdges(origStatueCopy, edges, normList);
+            // 输出前进行最终的闭环校验：含 wearId 的闭环不能存在，开启消除闭环时也不能存在
+            List<List<String>> finalLoopList = recognizeLoopNew(finalEdgeresult);
+            boolean hasUnresolvedLoop = false;
+            for (List<String> loop : finalLoopList) {
                 boolean containsWearId = false;
                 for (String s1 : wearId) {
                     if (loop.contains(s1)) {
@@ -1095,45 +1240,166 @@ public class NewHarnessBranchTopoOptimize {
                         break;
                     }
                 }
-                if (containsWearId || whetherOnLoop) {
-                    System.out.println("handleAndShowTop: 输出前发现未消除闭环！" + loop
-                            + (containsWearId ? "[含 wearId]" : "[whetherOnLoop=true]"));
+                if (containsWearId) {
+                    hasUnresolvedLoop = true;
+                    System.out.println("警告：最终方案仍存在含 wearId 的闭环！" + loop);
+                    break;
+                }
+                if (whetherOnLoop) {
+                    hasUnresolvedLoop = true;
+                    System.out.println("警告：最终方案仍存在闭环（whetherOnLoop=true）！" + loop);
+                    break;
                 }
             }
-            List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
-            for (Map<String, Object> mapTemp : mapList) {
-                Map<String, String> result = new HashMap<>();
-                result.put("edgeId", mapTemp.get("id").toString());
-                result.put("statue", mapTemp.get("topologyStatusCode").toString());
-                topoOptimizeResult.add(result);
+            if (hasUnresolvedLoop) {
+                // 仍有未消除的闭环，尝试最后一轮强制打断（从闭环中选 cost 最小的 B 打断）
+                boolean broken = forceBreakLoops(origStatueCopy, edges, normList, wearId, canChangeToB, whetherOnLoop,
+                        appPositions, eleclection, mutexMap, chooseOneList, togetherBCList,
+                        projectCircuitInfoOutput, objectMapper, jsonMap, jsonToMap);
+                if (broken) {
+                    // 重新计算最终边
+                    finalEdgeresult = createNewEdges(origStatueCopy, edges, normList);
+                } else {
+                    return null;
+                }
             }
-            // 保持线程安全 浅拷贝一份
+            List<Map<String, Object>> origEdges = finalEdgeresult;
+            List<List<String>> list = recognizeLoopNew(finalEdgeresult);
+            boolean whe = false;
+            for (List<String> strings : list) {
+                for (String string : wearId) {
+                    if (strings.contains(string)) {
+                        whe = true;
+                    }
+                }
+            }
+            if (whe) {
+                System.out.println("原方案中穿腔分支还存在闭环");
+            }
+            List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
             HashMap<String, Object> newJsonMap = new HashMap<>(jsonMap);
-            newJsonMap.put("edges", mapList);
+            newJsonMap.put("edges", origEdges);
             String s = projectCircuitInfoOutput
                     .projectCircuitInfoOutput(objectMapper.writeValueAsString(newJsonMap));
             Map<String, Object> map2 = jsonToMap.TransJsonToMap(s);
-            Map<String, Object> projectCircuitInfo = (Map<String, Object>) map2.get("projectCircuitInfo");
-            Map<String, Double> projectCost = new HashMap<>();
-            projectCost.put("总成本", (Double) projectCircuitInfo.get("总成本"));
-            projectCost.put("总重量", (Double) projectCircuitInfo.get("回路总重量"));
-            projectCost.put("总长度", (Double) projectCircuitInfo.get("回路总长度"));
+            Map<String, Double> tempCost = new HashMap<>();
+            Map<String, Object> circuitInfoMap = (Map<String, Object>) map2.get("projectCircuitInfo");
+            tempCost.put("总成本", Double.parseDouble(circuitInfoMap.get("总成本").toString()));
+            tempCost.put("总重量", Double.parseDouble(circuitInfoMap.get("回路总重量").toString()));
+            tempCost.put("总长度", Double.parseDouble(circuitInfoMap.get("回路总长度").toString()));
+            if (costDeail.contains(tempCost)) {
+                System.out.println("成本重复");
+                return null;
+            }
+            costDeail.add(tempCost);
+            for (Map<String, Object> edge : origEdges) {
+                Map<String, String> result = new HashMap<>();
+                result.put("edgeId", edge.get("id").toString());
+                result.put("statue", edge.get("topologyStatusCode").toString());
+                topoOptimizeResult.add(result);
+            }
 
-            map2.put("成本", projectCost);
+            map2.put("成本", costResultData);
             map2.put("topoId", topoInfoMap.get("id").toString());
             map2.put("caseId", projectInfo.get("caseId").toString());
             map2.put("topoOptimizeResult", topoOptimizeResult);
             map2.put("finishStatue", "normal");
             map2.put("initializationScheme", false);
+            map2.put("serviceableStatue", origStatueCopy);
+            map2.put("serviceableEdges", origEdges);
             return map2;
-        } else {
+        }
+
+        // 5) 构建优化方案返回结果
+        // 成本去重检查
+
+        // 对最终的方案进行一个计算 并且按照格式进行一个返回
+        List<Map<String, Object>> finalEdgeresult = createNewEdges(statue, edges, normList);
+        // 输出前进行最终的闭环校验：含 wearId 的闭环不能存在，开启消除闭环时也不能存在
+        List<List<String>> finalLoopList = recognizeLoopNew(finalEdgeresult);
+        boolean hasUnresolvedLoop = false;
+        for (List<String> loop : finalLoopList) {
+            boolean containsWearId = false;
+            for (String s1 : wearId) {
+                if (loop.contains(s1)) {
+                    containsWearId = true;
+                    break;
+                }
+            }
+            if (containsWearId) {
+                hasUnresolvedLoop = true;
+                System.out.println("警告：最终方案仍存在含 wearId 的闭环！" + loop);
+                break;
+            }
+            if (whetherOnLoop) {
+                hasUnresolvedLoop = true;
+                System.out.println("警告：最终方案仍存在闭环（whetherOnLoop=true）！" + loop);
+                break;
+            }
+        }
+        if (hasUnresolvedLoop) {
+            // 仍有未消除的闭环，尝试最后一轮强制打断（从闭环中选 cost 最小的 B 打断）
+            boolean broken = forceBreakLoops(statue, edges, normList, wearId, canChangeToB, whetherOnLoop,
+                    appPositions, eleclection, mutexMap, chooseOneList, togetherBCList,
+                    projectCircuitInfoOutput, objectMapper, jsonMap, jsonToMap);
+            if (broken) {
+                // 重新计算最终边
+                finalEdgeresult = createNewEdges(statue, edges, normList);
+            } else {
+                return null;
+            }
+        }
+        HashMap<String, Object> newJsonMap = new HashMap<>(jsonMap);
+        newJsonMap.put("edges", finalEdgeresult);
+        String s = projectCircuitInfoOutput
+                .projectCircuitInfoOutput(objectMapper.writeValueAsString(newJsonMap));
+        Map<String, Object> map2 = jsonToMap.TransJsonToMap(s);
+        Map<String, Object> circuitInfoMap = (Map<String, Object>) map2.get("projectCircuitInfo");
+        costResultData.put("总成本", circuitInfoMap.get("总成本"));
+        costResultData.put("总长度", circuitInfoMap.get("回路总长度"));
+        costResultData.put("总重量", circuitInfoMap.get("回路总重量"));
+        List<Map<String, String>> topoOptimizeResult2 = new ArrayList<>();
+        for (Map<String, Object> edge : finalEdgeresult) {
+            Map<String, String> result = new HashMap<>();
+            result.put("edgeId", edge.get("id").toString());
+            result.put("statue", edge.get("topologyStatusCode").toString());
+            topoOptimizeResult2.add(result);
+        }
+        List<List<String>> recognizeLoopListSon = recognizeLoopNew(finalEdgeresult);
+        boolean whe = false;
+        for (List<String> strings : recognizeLoopListSon) {
+            for (String string : wearId) {
+                if (strings.contains(string)) {
+                    whe = true;
+                }
+            }
+        }
+        if (whe) {
+            System.out.println("新方案中穿腔分支存在闭环");
+        }
+        Map<String, Double> dedupCost = new HashMap<>();
+        dedupCost.put("总成本", Double.parseDouble(costResultData.get("总成本").toString()));
+        dedupCost.put("总重量", Double.parseDouble(costResultData.get("总重量").toString()));
+        dedupCost.put("总长度", Double.parseDouble(costResultData.get("总长度").toString()));
+        if (costDeail.contains(dedupCost)) {
+            System.out.println("成本重复");
             return null;
         }
+        costDeail.add(dedupCost);
+        map2.put("成本", circuitInfoMap);
+        map2.put("topoId", topoInfoMap.get("id").toString());
+        map2.put("caseId", projectInfo.get("caseId").toString());
+        map2.put("topoOptimizeResult", topoOptimizeResult2);
+        map2.put("finishStatue", "normal");
+        map2.put("initializationScheme", false);
+        map2.put("serviceableStatue", statue);
+        map2.put("serviceableEdges", finalEdgeresult);
+        return map2;
     }
 
     /**
      * @Description: 对top的方案进行再次变异 结果中分支打断状况为S的 可以变化的进行变化 在总成本小于3的情况下
-     * 选择当前的方案(主要为了降低S的数量)
+     *               选择当前的方案(主要为了降低S的数量)
      * @input: findBest 当前最优的top10 方案
      * @input: singleBCList 分支打断可选BC的集合
      * @input: singleSCList 分支打断可选SC的集合
@@ -1149,17 +1415,17 @@ public class NewHarnessBranchTopoOptimize {
      * @Return: 返回修改后的top的方案
      */
     public List<Map<String, Object>> bestOptionVariation(List<String> findBest,
-                                                         List<String> singleBCList,
-                                                         List<String> singleSCList,
-                                                         List<String> singleBSList,
-                                                         List<String> singleBSCList,
-                                                         List<String> normList,
-                                                         Map<String, Object> jsonMapOrigin,
-                                                         Map<String, String> eleclection,
-                                                         List<String> wearId,
-                                                         Map<String, Map<String, List<String>>> mutexMap,
-                                                         List<Map<String, List<String>>> chooseOneList,
-                                                         List<List<String>> togetherBCList, Boolean whetherOnLoop) throws Exception {
+            List<String> singleBCList,
+            List<String> singleSCList,
+            List<String> singleBSList,
+            List<String> singleBSCList,
+            List<String> normList,
+            Map<String, Object> jsonMapOrigin,
+            Map<String, String> eleclection,
+            List<String> wearId,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList, Boolean whetherOnLoop) throws Exception {
         // 状态检查
         if (threadPool.shouldStop()) {
             return null;
@@ -1525,8 +1791,8 @@ public class NewHarnessBranchTopoOptimize {
             Map<String, Object> jsonMap,
             JsonToMap jsonToMap) {
         boolean anyBroken = false;
-        int maxIterations = 100;
-        while (maxIterations-- > 0) {
+        int maxIterations = 300;
+        while (true) {
             List<Map<String, Object>> currentEdges = createNewEdges(statueList, edges, normList);
             List<List<String>> lists = recognizeLoopNew(currentEdges);
             if (lists.isEmpty()) {
@@ -1548,6 +1814,9 @@ public class NewHarnessBranchTopoOptimize {
                     targetLoops.add(loop);
                 }
             }
+            if (whetherOnLoop) {
+                targetLoops = lists;
+            }
             if (targetLoops.isEmpty()) {
                 break;
             }
@@ -1564,37 +1833,54 @@ public class NewHarnessBranchTopoOptimize {
                 System.out.println("forceBreakLoops: 无可打断分支，停止");
                 break;
             }
-            // 选一个打断（优先选 wearId 闭环中的分支）
-            String pickId = null;
-            for (List<String> loop : targetLoops) {
-                for (String id : loop) {
-                    if (breakableIds.contains(id)) {
-                        pickId = id;
-                        break;
+            // 尝试本轮所有可打断分支,直到找到一个合法的打断位置
+            // 原因:之前一遇 checkFirstOption 不通过就 break 太果断,可能漏掉其他合法分支
+            boolean brokenThisRound = false;
+            List<String> triedInRound = new ArrayList<>();
+            while (true) {
+                // 选一个未尝试的分支(优先 wearId 闭环中的)
+                String pickId = null;
+                for (List<String> loop : targetLoops) {
+                    for (String id : loop) {
+                        if (breakableIds.contains(id) && !triedInRound.contains(id)) {
+                            pickId = id;
+                            break;
+                        }
                     }
+                    if (pickId != null)
+                        break;
                 }
-                if (pickId != null)
+                if (pickId == null) {
+                    // 本轮所有可打断分支都尝试过,都不行
                     break;
+                }
+                triedInRound.add(pickId);
+                int pickIdx = normList.indexOf(pickId);
+                String originalStatus = statueList.get(pickIdx); // 记录原状态用于回滚
+                // 验证打断后方案合法
+                statueList.set(pickIdx, "S");
+                List<Map<String, Object>> afterEdges = createNewEdges(statueList, edges, normList);
+                Boolean ok = checkFirstOption(normList, statueList, afterEdges, appPositions, eleclection, mutexMap,
+                        chooseOneList, togetherBCList);
+                if (ok) {
+                    System.out.println("forceBreakLoops: 已强制打断 " + pickId + "(原状态 " + originalStatus + " → S)");
+                    anyBroken = true;
+                    brokenThisRound = true;
+                    break; // 跳出内层 while,进入下一轮外层
+                } else {
+                    System.out.println("forceBreakLoops: 打断 " + pickId + " 后方案不合法,回滚到 " + originalStatus + " 继续尝试下一个");
+                    statueList.set(pickIdx, originalStatus); // 回滚到原状态,试下一个
+                }
             }
-            if (pickId == null) {
+            if (!brokenThisRound) {
+                // 本轮所有可打断分支都试过且都失败,真正退出 forceBreakLoops
+                System.out.println("forceBreakLoops: 本轮所有可打断分支尝试完毕且都不合法,退出");
                 break;
             }
-            // 验证打断后方案合法
-            statueList.set(normList.indexOf(pickId), "B");
-            List<Map<String, Object>> afterEdges = createNewEdges(statueList, edges, normList);
-            Boolean ok = checkFirstOption(normList, statueList, afterEdges, appPositions, eleclection, mutexMap,
-                    chooseOneList, togetherBCList);
-            if (!ok) {
-                System.out.println("forceBreakLoops: 打断 " + pickId + " 后方案不合法，回滚");
-                statueList.set(normList.indexOf(pickId), "S"); // 回滚到 S（保留原状态的最佳猜测）
-                break;
-            }
-            System.out.println("forceBreakLoops: 已强制打断 " + pickId);
-            anyBroken = true;
+            // brokenThisRound=true 时继续外层 while 的下一轮
         }
         return anyBroken;
     }
-
 
     /**
      * 安全 double 解析,null/异常返 0
@@ -1623,7 +1909,7 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 根据给定的分支打断状况集合（符合要求的） 对他们进行一个分支的闭环检查 修改S 将最终的分支打断情况进行一个计算
-     * 返回最优的是个方案
+     *               返回最优的是个方案
      * @input: simpleList 分支打断情况的集合
      * @input: edges txt中没解析的分支部分
      * @input: normList 分支id的集合
@@ -1634,17 +1920,18 @@ public class NewHarnessBranchTopoOptimize {
      * @Return: 返回最优的top20方案
      */
     public List<Map<String, Object>> changeAndFindBest(List<List<String>> simpleList,
-                                                       List<Map<String, Object>> edges,
-                                                       List<String> normList,
-                                                       List<String> wearId,
-                                                       List<String> canChangeS,
-                                                       Map<String, Object> jsonMap,
-                                                       List<String> edgeChooseBS,
-                                                       Map<String, Map<String, String>> elecPosition,
-                                                       Map<String, Object> branchLength,
-                                                       List<List<Integer>> connection,
-                                                       Map<String, List<String>> multiLoopInfos,
-                                                       Map<String, String> pointMap, List<Map<String, Object>> findBestPre, List<String> conformList) throws Exception {
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            List<String> wearId,
+            List<String> canChangeS,
+            Map<String, Object> jsonMap,
+            List<String> edgeChooseBS,
+            Map<String, Map<String, String>> elecPosition,
+            Map<String, Object> branchLength,
+            List<List<Integer>> connection,
+            Map<String, List<String>> multiLoopInfos,
+            Map<String, String> pointMap, List<Map<String, Object>> findBestPre, List<String> conformList)
+            throws Exception {
         FindBest findBest = new FindBest();
         Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
@@ -1665,11 +1952,12 @@ public class NewHarnessBranchTopoOptimize {
                 // break;
                 // }
                 List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
-//                for (int i = 0; i < serviceableStatue.size(); i++) {
-//                    if (serviceableStatue.get(i).equals("C") && canChangeS.contains(normList.get(i))) {
-//                        serviceableStatue.set(i, "S");
-//                    }
-//                }
+                // for (int i = 0; i < serviceableStatue.size(); i++) {
+                // if (serviceableStatue.get(i).equals("C") &&
+                // canChangeS.contains(normList.get(i))) {
+                // serviceableStatue.set(i, "S");
+                // }
+                // }
 
                 List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
                 // 深拷贝
@@ -1726,7 +2014,7 @@ public class NewHarnessBranchTopoOptimize {
                         String minCostKey = null;
                         List<String> keyList = findMinCostKey(recognizeLoopIdList, breakCostMap);
                         for (String s : keyList) {
-                            //改改B的改B
+                            // 改改B的改B
                             if (canChangeS.contains(s)) {
                                 minCostKey = s;
                                 break;
@@ -1821,7 +2109,7 @@ public class NewHarnessBranchTopoOptimize {
                     resultList.add(result);
                 }
             } catch (Exception e) {
-//                 e.printStackTrace();
+                // e.printStackTrace();
             }
 
         }
@@ -1846,7 +2134,7 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: List<String> id 在Map < String, Double>
-     * breakCostMap中每一个id作为一个key对应的 double最小的一个key
+     *               breakCostMap中每一个id作为一个key对应的 double最小的一个key
      * @input: ids id集合
      * @input: breakCostMap 所有分支的打断成本状况
      * @Return: 按照分支打断代价 对id进行一个排序
@@ -2051,9 +2339,9 @@ public class NewHarnessBranchTopoOptimize {
      * @param costResultData 输出的成本信息（会被覆盖）
      * @param breakCostMap   输出的分支打断代价（会被覆盖）
      * @Description: 打断一个分支后，重新计算全图成本和各分支的打断代价
-     * （必须重新调用，不能简单累加原始 breakCostMap 的增量，
-     * 因为打断后回路走线、导线选型、连接器配置都变化，
-     * 其他分支的打断代价是相对"新图状态"的）
+     *               （必须重新调用，不能简单累加原始 breakCostMap 的增量，
+     *               因为打断后回路走线、导线选型、连接器配置都变化，
+     *               其他分支的打断代价是相对"新图状态"的）
      * @input: serviceableStatue 当前分支状态集合（已应用本次打断）
      * @input: edges 分支模板
      * @input: normList 分支id集合
@@ -2065,14 +2353,14 @@ public class NewHarnessBranchTopoOptimize {
      * @Complexity: O(V + E)，主要由 projectCircuitInfoOutput 内部计算决定
      */
     private boolean refreshCircuitInfo(List<String> serviceableStatue,
-                                       List<Map<String, Object>> edges,
-                                       List<String> normList,
-                                       Map<String, Object> threadLocalJsonMap,
-                                       ProjectCircuitInfoOutput projectCircuitInfoOutput,
-                                       ObjectMapper mapper,
-                                       JsonToMap jsonToMap,
-                                       Map<String, Object> costResultData,
-                                       Map<String, Double> breakCostMap) {
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            Map<String, Object> threadLocalJsonMap,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
+            ObjectMapper mapper,
+            JsonToMap jsonToMap,
+            Map<String, Object> costResultData,
+            Map<String, Double> breakCostMap) {
         try {
             List<Map<String, Object>> newServiceableEdge = createNewEdges(serviceableStatue, edges, normList);
             threadLocalJsonMap.put("edges", newServiceableEdge);
@@ -2103,18 +2391,18 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 遗传算法主体(单代)。
-     * 分两阶段变异:
-     * ① 复用 generateInitialSchemes(同时变异 + 按概率变异)以 initialScheme
-     * 为基准生成阶段一方案;
-     * ② 以 TopDetail(上一代最优)为父本,两两配对交叉变异,每对各取 1 个 mutation 叠加,生成阶段二方案;
-     * 两阶段合并后做 4 关 + checkFirstOption 约束 + WareHouse 去重,再注入上一代 top
-     * 30%(精英保留),
-     * 最后 AI 预测成本并取 TopNumber 方案返回。
-     * 整体保证:新一代最优成本 ≤ 上一代最优成本(单调不增)。
+     *               分两阶段变异:
+     *               ① 复用 generateInitialSchemes(同时变异 + 按概率变异)以 initialScheme
+     *               为基准生成阶段一方案;
+     *               ② 以 TopDetail(上一代最优)为父本,两两配对交叉变异,每对各取 1 个 mutation 叠加,生成阶段二方案;
+     *               两阶段合并后做 4 关 + checkFirstOption 约束 + WareHouse 去重,再注入上一代 top
+     *               30%(精英保留),
+     *               最后 AI 预测成本并取 TopNumber 方案返回。
+     *               整体保证:新一代最优成本 ≤ 上一代最优成本(单调不增)。
      * @input: 13+ 参数,分别为 generateInitialSchemes 和 predictAndFindBest 的全部入参
      * @Return: 新一代 TopNumber 个最优方案(含 serviceableStatue / 成本 / serviceableEdges)
      * @Complexity: O(P1 + P2 + E) 阶段一/二生成 + 精英注入;P1 受 generateInitialSchemes
-     * 内部线程池限制。
+     *              内部线程池限制。
      */
     public List<Map<String, Object>> hybridization(
             List<Map<String, Object>> edges,
@@ -2223,7 +2511,8 @@ public class NewHarnessBranchTopoOptimize {
             }
             Set<String> expanded = expandAndValidateBreaks(
                     breakSet, baseStatusMapForPhase2, togetherBCIndex, mutexConflictIndex);
-            if (expanded == null) continue;
+            if (expanded == null)
+                continue;
             // 重建 statusMap（应用 togetherBC 展开）
             statusMap = new LinkedHashMap<>(baseStatusMapForPhase2);
             for (String id : expanded) {
@@ -2233,7 +2522,8 @@ public class NewHarnessBranchTopoOptimize {
             Map<String, String> propagated = applyChooseOnePropagation(
                     statusMap, baseStatusMapForPhase2, chooseOneList, breakCostMap,
                     canBreakToBSet, canChangeSSet, phase2Rnd);
-            if (propagated == null) continue;
+            if (propagated == null)
+                continue;
             // 4) 重建 fullStatus
             List<String> adjusted = new ArrayList<>();
             for (String id : normList) {
@@ -2396,8 +2686,8 @@ public class NewHarnessBranchTopoOptimize {
                 sheet = workbook.createSheet("迭代统计");
                 // 写入表头
                 org.apache.poi.ss.usermodel.Row headerRow = sheet.createRow(0);
-                String[] headers = {"迭代轮次", "每代生成样本数", "AI过滤后样本数", "过滤耗时(ms)",
-                        "预测成本", "真实成本", "最优重量", "最优长度", "找最优耗时(ms)"};
+                String[] headers = { "迭代轮次", "每代生成样本数", "AI过滤后样本数", "过滤耗时(ms)",
+                        "预测成本", "真实成本", "最优重量", "最优长度", "找最优耗时(ms)" };
                 for (int i = 0; i < headers.length; i++) {
                     org.apache.poi.ss.usermodel.Cell cell = headerRow.createCell(i);
                     cell.setCellValue(headers[i]);
@@ -2441,8 +2731,8 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 交叉变异。两两配对父本（成本低的优先），各取 1-2 个 mutation 位置叠加到子代。
-     * 生成 2-3 mutation 子代方案集合，保留 S 状态不变。
-     * 父本均来自上一代 TopDetail，其"突变位置"=相对 baseScheme 被改 B 的位置。
+     *               生成 2-3 mutation 子代方案集合，保留 S 状态不变。
+     *               父本均来自上一代 TopDetail，其"突变位置"=相对 baseScheme 被改 B 的位置。
      * @input: parentStatues 父本状态列表(长度 = normList.size())
      * @input: baseScheme 基准状态(initialScheme)
      * @input: normList 分支 id 按顺序排列
@@ -2566,12 +2856,14 @@ public class NewHarnessBranchTopoOptimize {
         }
         double minCost = Double.MAX_VALUE;
         for (double c : costs) {
-            if (c < minCost) minCost = c;
+            if (c < minCost)
+                minCost = c;
         }
         double total = 0;
         for (int i = 0; i < n; i++) {
             double c = costs.get(i);
-            if (c <= 0) c = minCost; // 防御
+            if (c <= 0)
+                c = minCost; // 防御
             weights[i] = minCost / c; // 成本越低权重越高
             total += weights[i];
         }
@@ -2603,7 +2895,7 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 统计方案相对 base 改 B 的位置数(即该方案相对 base 的 mutation 数量)。
-     * 用于日志展示阶段一基准的"进化深度"。
+     *               用于日志展示阶段一基准的"进化深度"。
      */
     private int countMutation(List<String> scheme, List<String> base) {
         if (scheme == null || base == null || scheme.size() != base.size()) {
@@ -2620,9 +2912,9 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 公共约束检查 + 入仓。4 关 + checkFirstOption + WareHouse 去重,全过才入仓并返回
-     * true。
-     * true。
-     * 阶段二(交叉变异)产生的原始子代通过本方法统一校验入仓。
+     *               true。
+     *               true。
+     *               阶段二(交叉变异)产生的原始子代通过本方法统一校验入仓。
      * @input: fullStatus 完整状态列表(长度 = normList.size(),顺序与 normList 一致)
      * @Return: 是否通过校验并成功入仓
      * @Complexity: O(E) E = edges.size()
@@ -2730,12 +3022,12 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 根据打断代价从高到低排序后的Map，对可打断为B的分支分配被打断概率。
-     * 打断代价越低 → 概率越高（成本增加少，容易改B）；
-     * 打断代价越高 → 概率越低（成本增加多，不易改B）。
+     *               打断代价越低 → 概率越高（成本增加少，容易改B）；
+     *               打断代价越高 → 概率越低（成本增加多，不易改B）。
      * @input: sortedBreakCostMap 按打断代价从高到低排序的分支id->打断代价 LinkedHashMap
-     * canBreakToBSet 允许从C打断为B的分支id集合
-     * maxProbability 单条分支被打断的最大概率上限，默认0.9（保留一定随机性，避免100%必中）
-     * weightFactor 整体概率衰减因子，范围(0,1]，越小越平均，默认0.7
+     *         canBreakToBSet 允许从C打断为B的分支id集合
+     *         maxProbability 单条分支被打断的最大概率上限，默认0.9（保留一定随机性，避免100%必中）
+     *         weightFactor 整体概率衰减因子，范围(0,1]，越小越平均，默认0.7
      * @Return: 允许打断的分支id -> 被打断概率（0~maxProbability之间），按概率从高到低排序
      * @Complexity: O(n)，n为可打断分支数
      */
@@ -2812,7 +3104,7 @@ public class NewHarnessBranchTopoOptimize {
     /**
      * @Description: 根据分支打断概率表，按概率随机抽样一条分支
      * @input: probabilityMap 分支id -> 被打断概率（0~1）
-     * random 可选外部传入的Random实例；为null则新建一个
+     *         random 可选外部传入的Random实例；为null则新建一个
      * @Return: 抽中的分支id；若概率表为空返回null
      * @Complexity: O(n)
      */
@@ -3016,10 +3308,92 @@ public class NewHarnessBranchTopoOptimize {
     }
 
     /**
+     * 让方案满足"多选一"约束(基于 statue 列表,直接修改传入的列表)
+     * 规则:每个 chooseOne 组中"恰好一个 C"
+     * - 当前 1 个 C:满足,放过
+     * - 当前 0 个 C:从允许状态含 C 的分支中选一个改成 C
+     * - 当前 >1 个 C:随机保留一个 C,其余 C → 其允许状态中随机选一个(非 C)
+     *
+     * 与 applyChooseOnePropagation 的区别:
+     * - applyChooseOnePropagation 基于 baseStatusMap 判断"原本是否为 C",只动原本 C 的
+     * - applyChooseOneConstraint 直接基于当前 statue 操作,任何 C 都参与判断
+     *
+     * @param statue        当前状态列表(会被原地修改)
+     * @param chooseOneList 多选一约束列表
+     * @param normList      分支 id → 索引的映射列表
+     */
+    private void applyChooseOneConstraint(List<String> statue,
+            List<Map<String, List<String>>> chooseOneList, List<String> normList) {
+        if (chooseOneList == null || chooseOneList.isEmpty()) {
+            return;
+        }
+        Random chooseOneRnd = new Random();
+        for (Map<String, List<String>> group : chooseOneList) {
+            // 当前组里有哪些分支是 C
+            List<Integer> currentCIndices = new ArrayList<>();
+            for (String bid : group.keySet()) {
+                int idx = normList.indexOf(bid);
+                if (idx >= 0 && "C".equals(statue.get(idx))) {
+                    currentCIndices.add(idx);
+                }
+            }
+            if (currentCIndices.size() == 1) {
+                continue; // 满足,放过
+            }
+            if (currentCIndices.isEmpty()) {
+                // 0 个 C:从允许状态含 C 的分支中选一个改成 C
+                Integer pickIdx = null;
+                for (String bid : group.keySet()) {
+                    int idx = normList.indexOf(bid);
+                    if (idx < 0)
+                        continue;
+                    List<String> allowed = group.get(bid);
+                    if (allowed != null && allowed.contains("C")
+                            && !"C".equals(statue.get(idx))) {
+                        pickIdx = idx;
+                        break;
+                    }
+                }
+                if (pickIdx != null) {
+                    statue.set(pickIdx, "C");
+                }
+            } else {
+                // >1 个 C:随机保留一个,其余 C → 其允许状态中随机选一个(非 C)
+                int keepIdx = currentCIndices.get(chooseOneRnd.nextInt(currentCIndices.size()));
+                for (Integer cIdx : currentCIndices) {
+                    if (cIdx == keepIdx)
+                        continue;
+                    String bid = normList.get(cIdx);
+                    List<String> allowed = group.get(bid);
+                    List<String> candidates = new ArrayList<>();
+                    if (allowed != null) {
+                        for (String s : allowed) {
+                            if (!"C".equals(s)) {
+                                candidates.add(s);
+                            }
+                        }
+                    }
+                    if (candidates.isEmpty()) {
+                        // 兜底:该分支只允许 C,改为 B
+                        candidates.add("B");
+                    }
+                    String newStatus;
+                    if (candidates.size() == 1) {
+                        newStatus = candidates.get(0); // 只有一个候选,直接指定
+                    } else {
+                        newStatus = candidates.get(chooseOneRnd.nextInt(candidates.size()));
+                    }
+                    statue.set(cIdx, newStatus);
+                }
+            }
+        }
+    }
+
+    /**
      * 将分支设为B（优先），若不可B则设为S
      */
     private void applyBOrS(Map<String, String> statusMap, String id,
-                           Set<String> canBreakToBSet, Set<String> canChangeSSet) {
+            Set<String> canBreakToBSet, Set<String> canChangeSSet) {
         if (canBreakToBSet != null && canBreakToBSet.contains(id)) {
             statusMap.put(id, "B");
         } else if (canChangeSSet != null && canChangeSSet.contains(id)) {
@@ -3032,7 +3406,7 @@ public class NewHarnessBranchTopoOptimize {
      * 加权随机选一个：打断代价越低，越容易被选中
      */
     private String weightedRandomPick(List<String> candidates,
-                                      Map<String, Double> breakCostMap, Random rnd) {
+            Map<String, Double> breakCostMap, Random rnd) {
         if (candidates.size() == 1) {
             return candidates.get(0);
         }
@@ -3041,8 +3415,10 @@ public class NewHarnessBranchTopoOptimize {
         double[] weights = new double[candidates.size()];
         for (int i = 0; i < candidates.size(); i++) {
             double cost = breakCostMap != null ? breakCostMap.getOrDefault(candidates.get(i), Double.MAX_VALUE) : 1.0;
-            if (cost <= 0) cost = 1e-9;
-            if (cost < minCost) minCost = cost;
+            if (cost <= 0)
+                cost = 1e-9;
+            if (cost < minCost)
+                minCost = cost;
             weights[i] = cost;
         }
         // 转换为权重（倒数）
@@ -3082,7 +3458,8 @@ public class NewHarnessBranchTopoOptimize {
             String firstStatus = null;
             for (String id : group) {
                 int idx = normList.indexOf(id);
-                if (idx < 0) continue;
+                if (idx < 0)
+                    continue;
                 String st = fullStatus.get(idx);
                 if (firstStatus == null) {
                     firstStatus = st;
@@ -3098,8 +3475,10 @@ public class NewHarnessBranchTopoOptimize {
             List<String> secondGroup = new ArrayList<>();
             int cycle = 0;
             for (List<String> ids : groupMap.values()) {
-                if (cycle == 0) firstGroup.addAll(ids);
-                else secondGroup.addAll(ids);
+                if (cycle == 0)
+                    firstGroup.addAll(ids);
+                else
+                    secondGroup.addAll(ids);
                 cycle++;
             }
             boolean firstHasB = false, secondHasB = false;
@@ -3129,7 +3508,8 @@ public class NewHarnessBranchTopoOptimize {
                     int idx = normList.indexOf(id);
                     if (idx >= 0 && "C".equals(fullStatus.get(idx))) {
                         cCount++;
-                        if (cCount > 1) return false;
+                        if (cCount > 1)
+                            return false;
                     }
                 }
             }
@@ -3139,9 +3519,9 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 生成初代遗传算法方案。约束感知：枚举/抽样时先按约束传播（togetherBC展开），
-     * 再快速校验互斥/多选一/组团，最后才做拓扑检查，大幅提高存活率。
-     * k=1,2 走枚举，k>2 走加权随机抽样，多线程并行。
-     * 不再依赖 survivalRateByK，直接使用 bestBreakCount。
+     *               再快速校验互斥/多选一/组团，最后才做拓扑检查，大幅提高存活率。
+     *               k=1,2 走枚举，k>2 走加权随机抽样，多线程并行。
+     *               不再依赖 survivalRateByK，直接使用 bestBreakCount。
      */
     public List<List<String>> generateInitialSchemes(
             List<Map<String, Object>> originalEdges,
@@ -3210,7 +3590,8 @@ public class NewHarnessBranchTopoOptimize {
                     Set<String> expanded = expandAndValidateBreaks(
                             new LinkedHashSet<>(chosen), baseStatusMap,
                             togetherBCIndex, mutexConflictIndex);
-                    if (expanded == null) continue;
+                    if (expanded == null)
+                        continue;
 
                     // 构造完整状态
                     Map<String, String> statusMap = new LinkedHashMap<>(baseStatusMap);
@@ -3226,7 +3607,8 @@ public class NewHarnessBranchTopoOptimize {
                     Map<String, String> propagated = applyChooseOnePropagation(
                             statusMap, baseStatusMap, chooseOneList, breakCostMap,
                             canBreakToBSet, canChangeSSet, new Random(seedCounter.incrementAndGet()));
-                    if (propagated == null) continue;
+                    if (propagated == null)
+                        continue;
                     // 重建 fullStatus（propagated 可能修改了状态）
                     fullStatus = new ArrayList<>();
                     for (String id : baseStatusMap.keySet()) {
@@ -3289,22 +3671,27 @@ public class NewHarnessBranchTopoOptimize {
                         int localGenerated = 0;
 
                         for (int k : sampleKList) {
-                            if (localGenerated >= localTarget) break;
-                            if (roundGenerated.get() >= roundTarget) break;
+                            if (localGenerated >= localTarget)
+                                break;
+                            if (roundGenerated.get() >= roundTarget)
+                                break;
 
                             int perKTarget = Math.max(1, (localTarget * k + totalKSum - 1) / totalKSum);
                             List<List<String>> pickedCombinations = weightedSampleCombinations(
                                     breakableIds, k, perKTarget, probMap, rnd);
 
                             for (List<String> chosen : pickedCombinations) {
-                                if (localGenerated >= localTarget) break;
-                                if (roundGenerated.get() >= roundTarget) break;
+                                if (localGenerated >= localTarget)
+                                    break;
+                                if (roundGenerated.get() >= roundTarget)
+                                    break;
 
                                 // 约束感知展开
                                 Set<String> expanded = expandAndValidateBreaks(
                                         new LinkedHashSet<>(chosen), baseStatusMap,
                                         togetherBCIndex, mutexConflictIndex);
-                                if (expanded == null) continue;
+                                if (expanded == null)
+                                    continue;
 
                                 Map<String, String> statusMap = new LinkedHashMap<>(baseStatusMap);
                                 for (String id : expanded) {
@@ -3319,19 +3706,22 @@ public class NewHarnessBranchTopoOptimize {
                                 Map<String, String> propagated = applyChooseOnePropagation(
                                         statusMap, baseStatusMap, chooseOneList, breakCostMap,
                                         canBreakToBSet, canChangeSSet, rnd);
-                                if (propagated == null) continue;
+                                if (propagated == null)
+                                    continue;
                                 fullStatus = new ArrayList<>();
                                 for (String id : baseStatusMap.keySet()) {
                                     fullStatus.add(propagated.get(id));
                                 }
 
                                 // 快速约束校验
-                                if (!checkConstraintsFast(fullStatus, normList, mutexMap, chooseOneList, togetherBCList)) {
+                                if (!checkConstraintsFast(fullStatus, normList, mutexMap, chooseOneList,
+                                        togetherBCList)) {
                                     continue;
                                 }
 
                                 // 拓扑检查
-                                List<Map<String, Object>> testEdges = createNewEdges(fullStatus, originalEdges, normList);
+                                List<Map<String, Object>> testEdges = createNewEdges(fullStatus, originalEdges,
+                                        normList);
                                 if (!checkFirstOption(testEdges, appPositions, eleclection)) {
                                     continue;
                                 }
@@ -3428,7 +3818,7 @@ public class NewHarnessBranchTopoOptimize {
      * @Description: 递归枚举 list 中选 k 个的所有组合
      */
     private void enumerateCombinations(List<String> list, int k, int start,
-                                       List<String> current, List<List<String>> result) {
+            List<String> current, List<List<String>> result) {
         if (current.size() == k) {
             result.add(new ArrayList<>(current));
             return;
@@ -3446,10 +3836,10 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 随机抽样 count 个不重复的组合，每个组合选 k 个元素
-     * 用 Set 去重，超出尝试上限则提前结束
+     *               用 Set 去重，超出尝试上限则提前结束
      */
     private List<List<String>> randomSampleCombinations(List<String> list, int k,
-                                                        int count, Random random) {
+            int count, Random random) {
         List<List<String>> result = new ArrayList<>();
         int n = list.size();
         if (k <= 0 || k > n) {
@@ -3485,14 +3875,14 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 按 probMap 加权随机抽 count 个 k-组合（不重复）
-     * 算法：每个分支按权重生成"加权随机键" key = random^(1/weight)，
-     * 用最小堆选前 k 个最大 key（O(n log k)），避免全排序 O(n log n)
-     * 权重高的分支更易排前，权重全相等时退化为均匀随机
-     * 多次重复+去重，得到 count 个不同组合
-     * 时间复杂度：O(count * n * log k)，n = breakableIds.size()
+     *               算法：每个分支按权重生成"加权随机键" key = random^(1/weight)，
+     *               用最小堆选前 k 个最大 key（O(n log k)），避免全排序 O(n log n)
+     *               权重高的分支更易排前，权重全相等时退化为均匀随机
+     *               多次重复+去重，得到 count 个不同组合
+     *               时间复杂度：O(count * n * log k)，n = breakableIds.size()
      */
     private List<List<String>> weightedSampleCombinations(List<String> list, int k,
-                                                          int count, Map<String, Double> probMap, Random random) {
+            int count, Map<String, Double> probMap, Random random) {
         List<List<String>> result = new ArrayList<>();
         int n = list.size();
         if (k <= 0 || k > n) {
@@ -3588,12 +3978,12 @@ public class NewHarnessBranchTopoOptimize {
             }
             double key = Math.pow(random.nextDouble(), 1.0 / w);
             if (minHeap.size() < k) {
-                minHeap.offer(new double[]{i, key});
+                minHeap.offer(new double[] { i, key });
             } else {
                 double[] peek = minHeap.peek();
                 if (key > peek[1]) {
                     minHeap.poll();
-                    minHeap.offer(new double[]{i, key});
+                    minHeap.offer(new double[] { i, key });
                 }
             }
         }
@@ -3614,7 +4004,7 @@ public class NewHarnessBranchTopoOptimize {
      * @Return: 根据给定的方案检查 返回是否符合的状态
      */
     public Boolean checkFirstOption(List<Map<String, Object>> edges, List<Map<String, String>> appPositions,
-                                    Map<String, String> eleclection) {
+            Map<String, String> eleclection) {
 
         List<String> strPointNameList = new ArrayList<>();
         List<String> endPointNameList = new ArrayList<>();
@@ -3685,7 +4075,7 @@ public class NewHarnessBranchTopoOptimize {
      * @Return: 根据传入的分支打断情况 创建一个分支详情
      */
     public List<Map<String, Object>> createNewEdges(List<String> edgeStatue, List<Map<String, Object>> edgeDetails,
-                                                    List<String> normList) {
+            List<String> normList) {
         List<Map<String, Object>> newEdges = edgeDetails.stream().collect(Collectors.toList());
         for (Map<String, Object> newEdge : newEdges) {
             String id = (String) newEdge.get("id");
@@ -3725,10 +4115,10 @@ public class NewHarnessBranchTopoOptimize {
      * @Return: 根据给定的方案检查 返回是否符合的状态
      */
     public Boolean checkFirstOption(List<String> normList, List<String> changeList, List<Map<String, Object>> edges,
-                                    List<Map<String, String>> appPositions, Map<String, String> eleclection,
-                                    Map<String, Map<String, List<String>>> mutexMap,
-                                    List<Map<String, List<String>>> chooseOneList,
-                                    List<List<String>> togetherBCList) {
+            List<Map<String, String>> appPositions, Map<String, String> eleclection,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList) {
         // 组团的检查
         for (List<String> list : togetherBCList) {
             String statue = changeList.get(normList.indexOf(list.get(0)));
@@ -3857,7 +4247,7 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * @Description: 使用AI预测模型对每个样本预测成本，返回成本最优的topN样本
-     * 替代整车计算方法，直接通过GINE模型预测成本
+     *               替代整车计算方法，直接通过GINE模型预测成本
      * @input: simpleList 分支打断情况的集合
      * @input: edges 分支模板
      * @input: normList 分支id的集合
@@ -3871,15 +4261,15 @@ public class NewHarnessBranchTopoOptimize {
      * @Return: 返回AI预测成本最优的topN方案
      */
     public List<Map<String, Object>> predictAndFindBest(List<List<String>> simpleList,
-                                                        List<Map<String, Object>> edges,
-                                                        List<String> normList,
-                                                        Map<String, Object> jsonMap,
-                                                        List<String> edgeChooseBS,
-                                                        Map<String, Map<String, String>> elecPosition,
-                                                        Map<String, Object> branchLength,
-                                                        List<List<Integer>> connection,
-                                                        Map<String, List<String>> multiLoopInfos,
-                                                        Map<String, String> pointMap, List<Map<String, Object>> findBestPre) throws Exception {
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            Map<String, Object> jsonMap,
+            List<String> edgeChooseBS,
+            Map<String, Map<String, String>> elecPosition,
+            Map<String, Object> branchLength,
+            List<List<Integer>> connection,
+            Map<String, List<String>> multiLoopInfos,
+            Map<String, String> pointMap, List<Map<String, Object>> findBestPre) throws Exception {
         GINEInferenceEngine gine = new GINEInferenceEngine();
         ObjectMapper mapper = new ObjectMapper();
         List<Float> length = (List<Float>) branchLength.get("branchLength");

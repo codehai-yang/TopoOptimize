@@ -37,11 +37,11 @@ import HarnessPackOpti.utils.ThreadPool;
 
 public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
-    public static Integer LessRandomSamleNumber = 1000;
+    public static Integer LessRandomSamleNumber = 200;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 30;
+    public static Integer HybridizationLessRandomSamleNumber = 200;
     // top几的数量规定
-    public static final Integer TopNumber = 100;
+    public static final Integer TopNumber = 20;
     // 最后返回前端的方案数量
     public static final Integer LastNumber = 20;
     // 每次迭代最优的成本
