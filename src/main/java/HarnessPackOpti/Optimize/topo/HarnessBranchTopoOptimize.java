@@ -37,11 +37,11 @@ import HarnessPackOpti.utils.ThreadPool;
 
 public class HarnessBranchTopoOptimize {
     // 随机变换样本数量
-    public static Integer LessRandomSamleNumber = 200;
+    public static Integer LessRandomSamleNumber = 1000;
     // 迭代最少样本数量
-    public static Integer HybridizationLessRandomSamleNumber = 200;
+    public static Integer HybridizationLessRandomSamleNumber = 10000;
     // top几的数量规定
-    public static final Integer TopNumber = 20;
+    public static final Integer TopNumber = 100;
     // 最后返回前端的方案数量
     public static final Integer LastNumber = 20;
     // 每次迭代最优的成本
@@ -1991,41 +1991,41 @@ public class HarnessBranchTopoOptimize {
         long findBestTimeMs = System.currentTimeMillis() - findBestStartTime;
         System.out.println("查找每一代最优结果耗时：" + findBestTimeMs);
         // 记录迭代统计到Excel
-        ObjectMapper mapper = new ObjectMapper();
-        JsonToMap jsonToMap = new JsonToMap();
-        if (mapList != null && !mapList.isEmpty()) {
-            Map<String, Object> bestResult = mapList.get(0);
-            Map<String, Object> costMap = (Map<String, Object>) bestResult.get("成本");
-            // 计算每轮迭代的最优成本，加到excel预测成本的后一列
-            List<String> serviceableStatue = (List<String>) bestResult.get("serviceableStatue");
-            List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
-            Map<String, Object> threadLocalJsonMap = mapper.readValue(
-                    mapper.writeValueAsString(jsonMap),
-                    Map.class);
-            threadLocalJsonMap.put("edges", serviceableEdge);
-            String betweenoptimizeInterfacesresult = null;
-            try {
-                betweenoptimizeInterfacesresult = projectCircuitInfoOutput
-                        .projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap));
-            } catch (Exception e) {
-                return findBest;
-            }
-            Map<String, Object> betweenobjectMapresult = jsonToMap.TransJsonToMap(betweenoptimizeInterfacesresult);
-            Map<String, Object> betweenprojectCircuitInfo = (Map<String, Object>) betweenobjectMapresult
-                    .get("projectCircuitInfo");
-            Double betweencurrentalCost = (Double) betweenprojectCircuitInfo.get("总成本");
-            if (costMap != null) {
-                double bestCost = Double.parseDouble(costMap.get("总成本").toString());
-                double bestWeight = Double.parseDouble(costMap.get("总重量").toString());
-                double bestLength = Double.parseDouble(costMap.get("总长度").toString());
-                String excelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\iteration_stats_"
-                        + "testAItrue"
-                        + ".xlsx";
-                recordIterationStatsToExcel(
-                        hybridizationNumber, generatedCount, aiFilteredCount, filterTimeMs,
-                        bestCost, bestWeight, bestLength, findBestTimeMs, excelPath, betweencurrentalCost);
-            }
-        }
+//        ObjectMapper mapper = new ObjectMapper();
+//        JsonToMap jsonToMap = new JsonToMap();
+//        if (mapList != null && !mapList.isEmpty()) {
+//            Map<String, Object> bestResult = mapList.get(0);
+//            Map<String, Object> costMap = (Map<String, Object>) bestResult.get("成本");
+//            // 计算每轮迭代的最优成本，加到excel预测成本的后一列
+//            List<String> serviceableStatue = (List<String>) bestResult.get("serviceableStatue");
+//            List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+//            Map<String, Object> threadLocalJsonMap = mapper.readValue(
+//                    mapper.writeValueAsString(jsonMap),
+//                    Map.class);
+//            threadLocalJsonMap.put("edges", serviceableEdge);
+//            String betweenoptimizeInterfacesresult = null;
+//            try {
+//                betweenoptimizeInterfacesresult = projectCircuitInfoOutput
+//                        .projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap));
+//            } catch (Exception e) {
+//                return findBest;
+//            }
+//            Map<String, Object> betweenobjectMapresult = jsonToMap.TransJsonToMap(betweenoptimizeInterfacesresult);
+//            Map<String, Object> betweenprojectCircuitInfo = (Map<String, Object>) betweenobjectMapresult
+//                    .get("projectCircuitInfo");
+//            Double betweencurrentalCost = (Double) betweenprojectCircuitInfo.get("总成本");
+//            if (costMap != null) {
+//                double bestCost = Double.parseDouble(costMap.get("总成本").toString());
+//                double bestWeight = Double.parseDouble(costMap.get("总重量").toString());
+//                double bestLength = Double.parseDouble(costMap.get("总长度").toString());
+//                String excelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\iteration_stats_"
+//                        + "testAItrue"
+//                        + ".xlsx";
+//                recordIterationStatsToExcel(
+//                        hybridizationNumber, generatedCount, aiFilteredCount, filterTimeMs,
+//                        bestCost, bestWeight, bestLength, findBestTimeMs, excelPath, betweencurrentalCost);
+//            }
+//        }
         return mapList;
     }
 
