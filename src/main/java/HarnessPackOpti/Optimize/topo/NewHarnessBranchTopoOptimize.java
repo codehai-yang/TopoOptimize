@@ -1,4 +1,4 @@
-﻿package HarnessPackOpti.Optimize.topo;
+package HarnessPackOpti.Optimize.topo;
 
 import static HarnessPackOpti.utils.GINEInferenceEngine.objectMapper;
 
@@ -49,11 +49,11 @@ import HarnessPackOpti.utils.ThreadPool;
  */
 public class NewHarnessBranchTopoOptimize {
     // 初代样本最低生成数量（提高多样性，避免遗传起点过于集中）
-    public static Integer LessRandomSamleNumber = 100;
+    public static Integer LessRandomSamleNumber = 20;
     // 迭代最少样本数量（提高每代候选池规模，保证进化方向充分探索）
-    public static Integer HybridizationLessRandomSamleNumber = 100;
+    public static Integer HybridizationLessRandomSamleNumber = 20;
     // top几的数量规定
-    public static final Integer TopNumber = 100;
+    public static final Integer TopNumber = 5;
     // 绕线优化:分支累计绕线成本贡献阈值,超过则 B 改 C
     public static final Double WindingCostThreshold = 10.0;
     // 每次迭代最优的成本
@@ -2232,45 +2232,45 @@ public class NewHarnessBranchTopoOptimize {
                 multiLoopInfos, pointMap, null);
         long findBestTimeMs = System.currentTimeMillis() - predTime;
         System.out.println("预测" + allSchemes.size() + "个样本成本耗时：" + findBestTimeMs);
-        // 记录迭代统计到Excel
-        int generatedCount = allSchemes.size();
-        int aiFilteredCount = 0;
-        long filterTimeMs = 0;
-        ObjectMapper mapper = new ObjectMapper();
-        JsonToMap jsonToMap = new JsonToMap();
-        if (mapList != null && !mapList.isEmpty()) {
-            Map<String, Object> bestResult = mapList.get(0);
-            Map<String, Object> costMap = (Map<String, Object>) bestResult.get("成本");
-            // 计算每轮迭代的最优成本，加到excel预测成本的后一列
-            List<String> serviceableStatue = (List<String>) bestResult.get("serviceableStatue");
-            List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
-            Map<String, Object> threadLocalJsonMap = mapper.readValue(
-                    mapper.writeValueAsString(jsonMap),
-                    Map.class);
-            threadLocalJsonMap.put("edges", serviceableEdge);
-            String betweenoptimizeInterfacesresult = null;
-            try {
-                betweenoptimizeInterfacesresult = projectCircuitInfoOutput
-                        .projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap));
-            } catch (Exception e) {
-                return TopDetail;
-            }
-            Map<String, Object> betweenobjectMapresult = jsonToMap.TransJsonToMap(betweenoptimizeInterfacesresult);
-            Map<String, Object> betweenprojectCircuitInfo = (Map<String, Object>) betweenobjectMapresult
-                    .get("projectCircuitInfo");
-            Double betweencurrentalCost = (Double) betweenprojectCircuitInfo.get("总成本");
-            if (costMap != null) {
-                double bestCost = Double.parseDouble(costMap.get("总成本").toString());
-                double bestWeight = Double.parseDouble(costMap.get("总重量").toString());
-                double bestLength = Double.parseDouble(costMap.get("总长度").toString());
-                String excelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\iteration_stats_"
-                        + "testAItrue"
-                        + ".xlsx";
-                recordIterationStatsToExcel(
-                        hybridizationNumber, generatedCount, aiFilteredCount, filterTimeMs,
-                        bestCost, bestWeight, bestLength, findBestTimeMs, excelPath, betweencurrentalCost);
-            }
-        }
+//        // 记录迭代统计到Excel
+//        int generatedCount = allSchemes.size();
+//        int aiFilteredCount = 0;
+//        long filterTimeMs = 0;
+//        ObjectMapper mapper = new ObjectMapper();
+//        JsonToMap jsonToMap = new JsonToMap();
+//        if (mapList != null && !mapList.isEmpty()) {
+//            Map<String, Object> bestResult = mapList.get(0);
+//            Map<String, Object> costMap = (Map<String, Object>) bestResult.get("成本");
+//            // 计算每轮迭代的最优成本，加到excel预测成本的后一列
+//            List<String> serviceableStatue = (List<String>) bestResult.get("serviceableStatue");
+//            List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+//            Map<String, Object> threadLocalJsonMap = mapper.readValue(
+//                    mapper.writeValueAsString(jsonMap),
+//                    Map.class);
+//            threadLocalJsonMap.put("edges", serviceableEdge);
+//            String betweenoptimizeInterfacesresult = null;
+//            try {
+//                betweenoptimizeInterfacesresult = projectCircuitInfoOutput
+//                        .projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap));
+//            } catch (Exception e) {
+//                return TopDetail;
+//            }
+//            Map<String, Object> betweenobjectMapresult = jsonToMap.TransJsonToMap(betweenoptimizeInterfacesresult);
+//            Map<String, Object> betweenprojectCircuitInfo = (Map<String, Object>) betweenobjectMapresult
+//                    .get("projectCircuitInfo");
+//            Double betweencurrentalCost = (Double) betweenprojectCircuitInfo.get("总成本");
+//            if (costMap != null) {
+//                double bestCost = Double.parseDouble(costMap.get("总成本").toString());
+//                double bestWeight = Double.parseDouble(costMap.get("总重量").toString());
+//                double bestLength = Double.parseDouble(costMap.get("总长度").toString());
+//                String excelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\iteration_stats_"
+//                        + "testAItrue"
+//                        + ".xlsx";
+//                recordIterationStatsToExcel(
+//                        hybridizationNumber, generatedCount, aiFilteredCount, filterTimeMs,
+//                        bestCost, bestWeight, bestLength, findBestTimeMs, excelPath, betweencurrentalCost);
+//            }
+//        }
         return mapList;
     }
 
