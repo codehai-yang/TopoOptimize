@@ -1,0 +1,259 @@
+# -*- coding: utf-8 -*-
+"""
+线束拓扑闭环分析可视化工具
+根据 BS4EM项目json优化设置.txt 的 edges 坐标 + 最终方案的 serviceableStatue，
+可视化展示闭环位置。
+
+用法：python visualize_cycle.py <txt路径> <方案json路径>
+"""
+import json
+import sys
+import networkx as nx
+import matplotlib.pyplot as plt
+
+
+def load_edges(txt_path):
+    """从 BS4EM项目json优化设置.txt 解析 edges
+    文件可能末尾被污染（PowerShell 错误日志混入），用 raw_decode 只取第一个完整 JSON
+    """
+    with open(txt_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    # raw_decode 解析第一个完整 JSON 对象，自动跳过尾部污染
+    decoder = json.JSONDecoder()
+    obj, end_pos = decoder.raw_decode(content)
+    print(f"  [load_edges] 解析到 {end_pos}/{len(content)} 字节 ({end_pos*100//len(content)}%)")
+    edges = obj.get('edges', [])
+    return edges, obj  # 顺便返回完整 obj，方便后续取 normList 等
+
+
+def load_scheme(scheme_path, idx=0):
+    """从方案 json 读 serviceableStatue（顺序对应 normList）
+    兼容两种格式：
+      1) 根是 dict: {"serviceableStatue": [...]}
+      2) 根是 list: [{"serviceableStatue": [...]}, ...]  ← 取第 idx 个（默认 0）
+    """
+    with open(scheme_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    if isinstance(data, list):
+        if len(data) == 0:
+            raise ValueError("方案文件为空 list")
+        if idx >= len(data):
+            raise ValueError(f"方案 idx={idx} 越界，list 长度={len(data)}")
+        first = data[idx]
+        if isinstance(first, dict):
+            return first.get('serviceableStatue', first.get('statues', first.get('topologyStatusCodes', [])))
+        else:
+            raise ValueError(f"list 根第 {idx} 个元素不是 dict: {type(first)}")
+    elif isinstance(data, dict):
+        return data.get('serviceableStatue', data.get('statues', data.get('topologyStatusCodes', [])))
+    else:
+        raise ValueError(f"未识别的方案格式: type={type(data)}")
+
+
+def build_graph_and_find_cycles(edges, statuses):
+    """
+    1. 构造 networkx 图
+    2. 标记 B 边（打断）
+    3. 识别连通分量；>1 个 = 有闭环
+    4. 找具体回路
+    """
+    G = nx.Graph()
+    pos = {}
+
+    for edge, status in zip(edges, statuses):
+        sp = edge.get('startPointName', edge.get('startPoint'))
+        ep = edge.get('endPointName', edge.get('endPoint'))
+        if not sp or not ep:
+            continue
+        G.add_edge(sp, ep, status=status, edge_id=edge.get('id', ''))
+        if sp not in pos:
+            pos[sp] = (edge.get('startXCoordinate', 0), edge.get('startYCoordinate', 0))
+        if ep not in pos:
+            pos[ep] = (edge.get('endXCoordinate', 0), edge.get('endYCoordinate', 0))
+
+    # B 边（打断）
+    break_edges = [(u, v) for u, v, d in G.edges(data=True) if d['status'] == 'B']
+
+    # 移除 B 边后识别连通分量
+    H = G.copy()
+    H.remove_edges_from(break_edges)
+    components = list(nx.connected_components(H))
+
+    # 找回路：每个 B 边在原始图中找 u→v 路径，再闭合到 u
+    # 同时跳过 B 边，避免回路高亮打到 B 边上（视觉混淆）
+    cycles = []
+    for u, v in break_edges:
+        if u not in G or v not in G:
+            continue
+        # 构造临时图：去除 B 边
+        H_cycle = G.copy()
+        H_cycle.remove_edges_from(break_edges)
+        # u 与 v 应在 H_cycle 中不连通（说明有回路）
+        if u in H_cycle and v in H_cycle and nx.has_path(H_cycle, u, v) and not _in_same_component(H_cycle, u, v):
+            try:
+                # 找 u → v 的路径（只走 C/S 边）
+                path = nx.shortest_path(H_cycle, u, v)
+                # 闭合：u → ... → v → u（最后一个 B 边）
+                closed = path + [u]
+                cycles.append(closed)
+            except nx.NetworkXNoPath:
+                pass
+        # 兜底：如果上面没找到，用原始 G 找 u→v 路径
+        if not cycles or all(u not in c for c in cycles):
+            try:
+                path = nx.shortest_path(G, u, v)
+                closed = path + [u]
+                cycles.append(closed)
+            except nx.NetworkXNoPath:
+                pass
+
+    # 去重：相同的节点序列只保留一个
+    seen = set()
+    unique_cycles = []
+    for c in cycles:
+        key = tuple(sorted(c[:-1]))  # 去掉末尾的 u，按无序集合去重
+        if key not in seen:
+            seen.add(key)
+            unique_cycles.append(c)
+    cycles = unique_cycles
+
+    # 找所有基本环（与 Java 端 recognizeLoopNew 算法等价：DFS生成树 + 非树边 + LCA）
+    # nx.cycle_basis 在数学上等价于 recognizeLoopNew，返回环基的独立环集合
+    # 但需要去 B 边（避免 B 边被算入环内）
+    H_basis = G.copy()
+    H_basis.remove_edges_from(break_edges)
+    if len(H_basis) > 0:
+        # cycle_basis 返回独立环的节点序列，每个环不闭合，但 cycle[0] 是起点
+        basis_cycles = nx.cycle_basis(H_basis)
+    else:
+        basis_cycles = []
+
+    # 转换为节点序列闭合形式（与 Java recognizeLoopNew 输出格式一致）
+    cycles = []
+    for cyc in basis_cycles:
+        if len(cyc) >= 3:  # 至少 3 个节点成环
+            # 闭合：起点加到末尾形成 cycle
+            closed = list(cyc) + [cyc[0]]
+            cycles.append(closed)
+
+    # ★ 兜底：如果 cycle_basis 没找到，用连通分量数判断
+    # 环数 = E - V + C (C=连通分量数)，这是基本环的数学公式
+    if not cycles and len(break_edges) > 0:
+        H_check = G.copy()
+        H_check.remove_edges_from(break_edges)
+        V = H_check.number_of_nodes()
+        E = H_check.number_of_edges()
+        C = nx.number_connected_components(H_check)
+        fundamental_count = E - V + C  # 环基大小
+        print(f"  [INFO] cycle_basis 未找到环，但数学上应有 {fundamental_count} 个基本环")
+
+    return G, pos, break_edges, cycles, components
+
+
+def _in_same_component(G, u, v):
+    """u 和 v 是否在 G 的同一连通分量"""
+    for comp in nx.connected_components(G):
+        if u in comp:
+            return v in comp
+    return False
+
+
+def draw(G, pos, break_edges, cycles, save_path='cycle.png'):
+    fig, ax = plt.subplots(figsize=(24, 18))
+
+    # 状态统计
+    status_count = {'B': 0, 'C': 0, 'S': 0, '其他': 0}
+    for _, _, d in G.edges(data=True):
+        s = d.get('status', '其他')
+        status_count[s if s in status_count else '其他'] += 1
+
+    # 画 C 边（绿色 = 保持连通）
+    c_edges = [(u, v) for u, v, d in G.edges(data=True) if d['status'] == 'C']
+    nx.draw_networkx_edges(G, pos, edgelist=c_edges, ax=ax,
+                           edge_color='green', width=1)
+
+    # 画 S 边（黑色 = 单线/绕线）
+    s_edges = [(u, v) for u, v, d in G.edges(data=True) if d['status'] == 'S']
+    nx.draw_networkx_edges(G, pos, edgelist=s_edges, ax=ax,
+                           edge_color='black', width=1.5)
+
+    # B 边（打断）= 完全不显示
+
+    # 画回路（橙色高亮 = B 边之间形成的不连通路径）
+    for idx, cycle in enumerate(cycles):
+        if len(cycle) < 2:
+            continue
+        cycle_edges = []
+        for i in range(len(cycle) - 1):
+            u, v = cycle[i], cycle[i + 1]
+            if G.has_edge(u, v):
+                cycle_edges.append((u, v))
+        if not cycle_edges:
+            continue
+        nx.draw_networkx_edges(G, pos, edgelist=cycle_edges, ax=ax,
+                               edge_color='orange', width=4, alpha=0.9)
+        # 标记回路编号
+        mid = cycle_edges[len(cycle_edges) // 2]
+        if mid[0] in pos:
+            x, y = pos[mid[0]]
+            ax.annotate(f"Loop-{idx+1}", (x, y), color='orange',
+                        fontsize=8, weight='bold')
+
+    # 画点（小灰点，不显示名字）
+    nx.draw_networkx_nodes(G, pos, ax=ax, node_size=8, node_color='gray',
+                           edgecolors='none')
+    # 不画 labels（避免方框遮挡）
+
+    ax.set_title('线束拓扑闭环分析\n绿=C连通 / 黑=S单线 / 橙=闭环路径\n(B 打断边不显示)',
+                 fontsize=14, weight='bold')
+    ax.set_aspect('equal')
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=200, bbox_inches='tight')
+    print(f"[OK] 已保存: {save_path}")
+    print(f"[INFO] 状态统计: B={status_count['B']}, C={status_count['C']}, "
+          f"S={status_count['S']}, 其他={status_count['其他']}")
+    print(f"[INFO] 画出的边: 绿(C)={len(c_edges)}, 黑(S)={len(s_edges)}, "
+          f"暗红(B)={len(break_edges)}, 橙(回路)={sum(len(c) for c in cycles)}")
+    print(f"[INFO] 闭环数: {len(cycles)}（基本环，与 Java recognizeLoopNew 等价）")
+    for i, c in enumerate(cycles):
+        print(f"  Loop-{i+1} (边数={len(c)-1}): {' -> '.join(c[:8])}{'...' if len(c) > 8 else ''}")
+    plt.show()
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='线束拓扑闭环分析')
+    parser.add_argument('txt_path', nargs='?',
+                        default=r'F:\office\idearProjects\project20251009\src\main\resources\BS4EM项目json优化设置.txt',
+                        help='线束 txt 路径')
+    parser.add_argument('scheme_path', nargs='?',
+                        default=r'F:\office\pythonProjects\GineService\测试新遗传算法2.json',
+                        help='方案 json 路径')
+    parser.add_argument('--scheme-idx', type=int, default=0,
+                        help='list 根方案文件中取第几个（默认 0 = 第一个 = 通常最优）')
+    args = parser.parse_args()
+    txt_path = args.txt_path
+    scheme_path = args.scheme_path
+
+    print(f"[INFO] 读 txt: {txt_path}")
+    edges, json_obj = load_edges(txt_path)
+    # 顺便提取 normList（与 edges 顺序对应，用于坐标排序）
+    norm_list = json_obj.get('normList', [e.get('id') for e in edges])
+    print(f"[INFO] edges 数: {len(edges)}, normList 数: {len(norm_list)}")
+
+    print(f"[INFO] 读方案: {scheme_path}")
+    statuses = load_scheme(scheme_path, idx=args.scheme_idx)
+    print(f"[INFO] statuses 数: {len(statuses)}（取方案 #{args.scheme_idx}）")
+
+    if len(edges) != len(statuses):
+        print(f"[WARN] 长度不一致！edges={len(edges)} != statuses={len(statuses)}")
+        print(f"       按 min 取交集: {min(len(edges), len(statuses))}")
+
+    G, pos, break_edges, cycles, components = build_graph_and_find_cycles(edges, statuses)
+    print(f"[INFO] B 打断数: {len(break_edges)}")
+    print(f"[INFO] 连通分量数（>1 表示有闭环）: {len(components)}")
+    if len(components) > 1:
+        for i, comp in enumerate(components):
+            print(f"  分量-{i+1}: {len(comp)} 个点")
+
+    draw(G, pos, break_edges, cycles)
