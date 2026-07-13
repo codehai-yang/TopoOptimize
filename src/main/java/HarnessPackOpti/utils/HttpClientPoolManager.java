@@ -40,7 +40,7 @@ public class HttpClientPoolManager {
                 // 建立TCP连接的超时时间
                 .setConnectTimeout(10000)
                 // 等待服务端返回数据的超时时间
-                .setSocketTimeout(60000)
+                .setSocketTimeout(240000)
                 .build();
 
         // --- 构建全局HttpClient实例 ---

@@ -57,7 +57,7 @@ public class JsonToExcel {
         topoReader.close();
         String topoJsonContent = topoSb.toString();
 
-        String outputExcelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\测试新遗传算法2.xlsx";
+        String outputExcelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\测试新遗传算法Top20.xlsx";
         exportTopoResultToExcel(topoJsonContent, edges, outputExcelPath);
         System.out.println("Excel导出完成: " + outputExcelPath);
     }

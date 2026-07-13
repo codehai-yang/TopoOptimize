@@ -1515,7 +1515,6 @@ public class HarnessBranchTopoOptimize {
             Map<String, List<String>> multiLoopInfos,
             Map<String, String> pointMap, List<Map<String, Object>> findBestPre) throws Exception {
         GINEInferenceEngine gine = new GINEInferenceEngine();
-        ObjectMapper mapper = new ObjectMapper();
         List<Float> length = (List<Float>) branchLength.get("branchLength");
         List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) jsonMap.get("loopInfos");
         List<Map<String, String>> pointsList = (List<Map<String, String>>) jsonMap.get("points");
@@ -1532,10 +1531,14 @@ public class HarnessBranchTopoOptimize {
                 }
                 List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
                 // 深拷贝
-                Map<String, Object> threadLocalJsonMap = mapper.readValue(
-                        mapper.writeValueAsString(jsonMap),
-                        Map.class);
+                List<Map<String, String>> originalList = (List<Map<String, String>>) jsonMap.get("appPositions");
+                List<Map<String, String>> deepCopyAppPositions = new ArrayList<>(originalList.size());
+                for (Map<String, String> item : originalList) {
+                    deepCopyAppPositions.add(new HashMap<>(item)); // 逐个复制
+                }
+                Map<String, Object> threadLocalJsonMap = new HashMap<>(jsonMap);
                 threadLocalJsonMap.put("edges", serviceableEdge);
+                threadLocalJsonMap.put("appPositions", deepCopyAppPositions);
 
                 // 分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1]
                 List<List<Float>> branchFeatureList = new ArrayList<>();
