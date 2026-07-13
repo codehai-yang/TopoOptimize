@@ -7,6 +7,7 @@
 用法：python visualize_cycle.py <txt路径> <方案json路径>
 """
 import json
+import os
 import sys
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -71,8 +72,9 @@ def build_graph_and_find_cycles(edges, statuses):
         if ep not in pos:
             pos[ep] = (edge.get('endXCoordinate', 0), edge.get('endYCoordinate', 0))
 
-    # B 边（打断）
+    # B 边（打断）和 S 边（单线/绕线）都不参与闭环检测，只保留 C 边（与 Java recognizeLoopNew 对齐）
     break_edges = [(u, v) for u, v, d in G.edges(data=True) if d['status'] == 'B']
+    skip_edges = [(u, v) for u, v, d in G.edges(data=True) if d['status'] in ('B', 'S')]
 
     # 移除 B 边后识别连通分量
     H = G.copy()
@@ -119,9 +121,9 @@ def build_graph_and_find_cycles(edges, statuses):
 
     # 找所有基本环（与 Java 端 recognizeLoopNew 算法等价：DFS生成树 + 非树边 + LCA）
     # nx.cycle_basis 在数学上等价于 recognizeLoopNew，返回环基的独立环集合
-    # 但需要去 B 边（避免 B 边被算入环内）
+    # 排除 B 和 S 边（与 Java 对齐：只保留 C 边成环）
     H_basis = G.copy()
-    H_basis.remove_edges_from(break_edges)
+    H_basis.remove_edges_from(skip_edges)
     if len(H_basis) > 0:
         # cycle_basis 返回独立环的节点序列，每个环不闭合，但 cycle[0] 是起点
         basis_cycles = nx.cycle_basis(H_basis)
@@ -140,7 +142,7 @@ def build_graph_and_find_cycles(edges, statuses):
     # 环数 = E - V + C (C=连通分量数)，这是基本环的数学公式
     if not cycles and len(break_edges) > 0:
         H_check = G.copy()
-        H_check.remove_edges_from(break_edges)
+        H_check.remove_edges_from(skip_edges)
         V = H_check.number_of_nodes()
         E = H_check.number_of_edges()
         C = nx.number_connected_components(H_check)
@@ -156,6 +158,39 @@ def _in_same_component(G, u, v):
         if u in comp:
             return v in comp
     return False
+
+
+def collect_cycle_branch_ids(G, cycles):
+    """汇总每个闭环的分支 id（去重保序），返回 list[list[str]]"""
+    result = []
+    for c in cycles:
+        edge_ids = []
+        for j in range(len(c) - 1):
+            u, v = c[j], c[j + 1]
+            if G.has_edge(u, v):
+                eid = G[u][v].get('edge_id', '')
+                if eid and eid not in edge_ids:
+                    edge_ids.append(eid)
+        result.append(edge_ids)
+    return result
+
+
+def print_cycle_branch_ids(G, cycles):
+    """在控制台清晰输出每个闭环的分支 id"""
+    cycle_ids = collect_cycle_branch_ids(G, cycles)
+    print("\n" + "=" * 70)
+    print(f"[闭环分支 ID 汇总] 共 {len(cycle_ids)} 个闭环")
+    print("=" * 70)
+    if not cycle_ids:
+        print("  (无闭环)")
+    for i, ids in enumerate(cycle_ids):
+        print(f"  Loop-{i+1:>2}  边数={len(ids):>2}  分支ID: {ids}")
+    # 统计去重后的总分支数
+    all_ids = sorted({i for ids in cycle_ids for i in ids})
+    print(f"\n  涉及分支总数（去重）: {len(all_ids)}")
+    print(f"  全部闭环分支 ID: {all_ids}")
+    print("=" * 70 + "\n")
+    return cycle_ids
 
 
 def draw(G, pos, break_edges, cycles, save_path='cycle.png'):
@@ -179,7 +214,7 @@ def draw(G, pos, break_edges, cycles, save_path='cycle.png'):
 
     # B 边（打断）= 完全不显示
 
-    # 画回路（橙色高亮 = B 边之间形成的不连通路径）
+    # 画回路（橙色高亮 = 闭环路径上的 C 边）
     for idx, cycle in enumerate(cycles):
         if len(cycle) < 2:
             continue
@@ -198,6 +233,15 @@ def draw(G, pos, break_edges, cycles, save_path='cycle.png'):
             x, y = pos[mid[0]]
             ax.annotate(f"Loop-{idx+1}", (x, y), color='orange',
                         fontsize=8, weight='bold')
+        # 在每条回路边上标注其 edge id（分支 id）
+        for (u, v) in cycle_edges:
+            eid = G[u][v].get('edge_id', '')
+            if eid and u in pos and v in pos:
+                mx = (pos[u][0] + pos[v][0]) / 2
+                my = (pos[u][1] + pos[v][1]) / 2
+                ax.annotate(str(eid), (mx, my), color='darkorange',
+                            fontsize=6, weight='bold',
+                            bbox=dict(boxstyle='round,pad=0.1', fc='yellow', alpha=0.75))
 
     # 画点（小灰点，不显示名字）
     nx.draw_networkx_nodes(G, pos, ax=ax, node_size=8, node_color='gray',
@@ -216,7 +260,15 @@ def draw(G, pos, break_edges, cycles, save_path='cycle.png'):
           f"暗红(B)={len(break_edges)}, 橙(回路)={sum(len(c) for c in cycles)}")
     print(f"[INFO] 闭环数: {len(cycles)}（基本环，与 Java recognizeLoopNew 等价）")
     for i, c in enumerate(cycles):
-        print(f"  Loop-{i+1} (边数={len(c)-1}): {' -> '.join(c[:8])}{'...' if len(c) > 8 else ''}")
+        edge_ids = []
+        for j in range(len(c) - 1):
+            u, v = c[j], c[j + 1]
+            if G.has_edge(u, v):
+                eid = G[u][v].get('edge_id', '')
+                if eid and eid not in edge_ids:
+                    edge_ids.append(eid)
+        print(f"  Loop-{i+1} (边数={len(c)-1}, 分支id={edge_ids}): "
+              f"{' -> '.join(c[:8])}{'...' if len(c) > 8 else ''}")
     plt.show()
 
 
@@ -229,7 +281,7 @@ if __name__ == '__main__':
     parser.add_argument('scheme_path', nargs='?',
                         default=r'F:\office\pythonProjects\GineService\测试新遗传算法2.json',
                         help='方案 json 路径')
-    parser.add_argument('--scheme-idx', type=int, default=0,
+    parser.add_argument('--scheme-idx', type=int, default=15,
                         help='list 根方案文件中取第几个（默认 0 = 第一个 = 通常最优）')
     args = parser.parse_args()
     txt_path = args.txt_path
@@ -255,5 +307,20 @@ if __name__ == '__main__':
     if len(components) > 1:
         for i, comp in enumerate(components):
             print(f"  分量-{i+1}: {len(comp)} 个点")
+
+    # ★ 闭环分支 ID 单独汇总输出
+    cycle_ids = print_cycle_branch_ids(G, cycles)
+    # 落盘：方便后续脚本读取
+    try:
+        ids_path = os.path.splitext(os.path.basename(txt_path))[0] + "_cycle_branch_ids.json"
+        with open(ids_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                "loopCount": len(cycle_ids),
+                "loops": [{"loopId": i + 1, "branchIds": ids} for i, ids in enumerate(cycle_ids)],
+                "allBranchIds": sorted({i for ids in cycle_ids for i in ids}),
+            }, f, ensure_ascii=False, indent=2)
+        print(f"[OK] 闭环分支 ID 已保存: {ids_path}")
+    except Exception as e:
+        print(f"[WARN] 保存闭环分支 ID 失败: {e}")
 
     draw(G, pos, break_edges, cycles)

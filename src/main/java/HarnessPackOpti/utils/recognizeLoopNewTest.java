@@ -61,7 +61,7 @@ public class recognizeLoopNewTest {
                 });
         List<String> edgeStute = new ArrayList<>();
         for (int i = 0; i < solutionList.size(); i++) {
-            if(i != 15){
+            if(i != 1){
                 continue;
             }
             Map<String, Object> solution = solutionList.get(i);

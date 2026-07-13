@@ -53,7 +53,7 @@ public class HarnessBranchTopoOptimize {
     // 定义一个仓库
     public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
     // 变异的次数
-    public static Integer VariationNumber = 1;
+    public static Integer VariationNumber = 5;
     // 每次迭代得到的top20
     public static List<Map<String, Object>> TopDetail = new ArrayList<>();
     // 初始化自动补全得次数
@@ -1957,6 +1957,7 @@ public class HarnessBranchTopoOptimize {
         // 方案补充次数耗时时间
         long completeStartTime = System.currentTimeMillis();
         // 如果方案数量不足，那么会生成额外的方案
+        System.out.println("遗传出的方案：" + simple.size());
         while (simple.size() < HybridizationLessRandomSamleNumber) {
             List<List<String>> simpleList = initialOptimize(minLoopNumber, maxLoopNumber, initialScheme, togetherBCList,
                     conformList, normList, onlyNameS, edges, appPositions, eleclection, mutexMap, mutexGroupList,
