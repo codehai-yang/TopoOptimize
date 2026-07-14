@@ -40,6 +40,13 @@ public class ProjectCircuitInfoOutput {
 
     public static Map<String, Map<String, String>> elecFixedLocationLibrary = null;
     public static Map<String, Double> elecBusinessPrice = null;
+    //数模直径系数
+    public static Double DiameterConversionFactor = 1.14;
+    //回路总理论直径系数
+    public static Double ModelDiameterFactor = 1.3;
+    //分支补充长度
+    public static Double BranchEndFallback = 200.0;
+
 
     // 构造函数中读取Excel
     public ProjectCircuitInfoOutput() {
@@ -847,7 +854,7 @@ public class ProjectCircuitInfoOutput {
                 // 两个分支点之间的总理论直径
                 Double totalLength = length == null ? 0 : length + (length2 == null ? 0 : length2);
                 // 开根号 × 1.3 得到等效直径
-                Double equivalentDiameter = Math.sqrt(totalLength) * 1.3;
+                Double equivalentDiameter = Math.sqrt(totalLength) * ModelDiameterFactor;
                 // 判断颜色
                 String edgeColor = getlengthColor(equivalentDiameter);
                 // 两个分支点-对应的颜色
@@ -908,7 +915,7 @@ public class ProjectCircuitInfoOutput {
                     Map<String, Object> branchInfo = findBranchByNode.findBranchByNode(listName, edges);
                     List<String> edgeIdList = (List<String>) branchInfo.get("idList");
                     Map<String, Object> pathLength = calculatePathLength.calculatePathLength(edgeIdList, projectInfo);
-                    Double length = (Double) pathLength.get("长度") + 200;
+                    Double length = (Double) pathLength.get("长度") + BranchEndFallback;
                     // 两点距离
                     length = Double.parseDouble(df.format(length / 1000));
                     lengthList.add(length);
@@ -1292,9 +1299,9 @@ public class ProjectCircuitInfoOutput {
             avgLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
         // 总理论直径
-        Double totalDiameter = Math.sqrt(lenght) * 1.3;
+        Double totalDiameter = Math.sqrt(lenght) * ModelDiameterFactor;
         // 数模直径
-        Double mathematicalDiameter = totalDiameter * 1.14;
+        Double mathematicalDiameter = totalDiameter * DiameterConversionFactor;
         totalCost.put("能量流绕路总数量", null);
         totalCost.put("能量流绕路数量占比", null);
         totalCost.put("能量流绕路长度总值", null);
@@ -1416,7 +1423,7 @@ public class ProjectCircuitInfoOutput {
         totalCost.put("能量流绕路长度总值", null);
         totalCost.put("能量流绕路长度均值", null);
         totalCost.put("回路长度均值(打断后)", vagLength2);
-        totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * 1.3)));
+        totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * ModelDiameterFactor)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
 
         return totalCost;

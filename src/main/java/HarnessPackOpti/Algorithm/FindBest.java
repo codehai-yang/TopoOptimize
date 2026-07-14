@@ -1,5 +1,7 @@
 package HarnessPackOpti.Algorithm;
 
+import HarnessPackOpti.Optimize.topo.NewHarnessBranchTopoOptimize;
+
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -46,7 +48,7 @@ public class FindBest {
             double allCost = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总成本").toString());
             double weight = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总重量").toString());
             double length = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总长度").toString());
-            double score = (allCost - minCost) / ((maxCost - minCost) + 0.0001) * 0.98 + (weight - minWeight) / ((maxWeight - minWeight) + 0.0001) * 0.01 + (length - minLength) / ((maxLength - minLength) + 0.0001) * 0.01;
+            double score = (allCost - minCost) / ((maxCost - minCost) + 0.0001) * NewHarnessBranchTopoOptimize.costWeight + (weight - minWeight) / ((maxWeight - minWeight) + 0.0001) * NewHarnessBranchTopoOptimize.weightWeight + (length - minLength) / ((maxLength - minLength) + 0.0001) * NewHarnessBranchTopoOptimize.lengthWeight;
             map.put("score", score);
         }
         List<Map<String, Object>> score = findTopTenMinDoubleMaps(radomList, "score", topNumber);

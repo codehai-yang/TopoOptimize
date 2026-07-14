@@ -63,7 +63,7 @@ public class NewHarnessBranchTopoOptimize {
     // 迭代最少样本数量（提高每代候选池规模，保证进化方向充分探索）
     public static Integer HybridizationLessRandomSamleNumber = 10000;
     // top几的数量规定
-    public static final Integer TopNumber = 20;
+    public static final Integer TopNumber = 100;
     // 最终返回前端的参数
     public static final Integer resultNumber = 20;
     // 绕线优化:分支累计绕线成本贡献阈值,超过则 B 改 C
@@ -72,7 +72,8 @@ public class NewHarnessBranchTopoOptimize {
     public static Map<String, Double> BestCost = new HashMap<>();
     // 最优样本重复次数
     public static Integer BestRepetitionNumber = 0;
-
+    //成本重量长度的权重
+    //截面系数
     // ===== 进化统计：每代方案生成/淘汰/补充计数（每代清零）=====
     // 阶段一（父本邻域变异）候选数（每次调 tryChildBs +1）
     private final AtomicInteger statPhase1Candidates = new AtomicInteger(0);
@@ -115,28 +116,16 @@ public class NewHarnessBranchTopoOptimize {
     public static final Set<String> WAREHOUSE_KEYS = ConcurrentHashMap.newKeySet();
     // 每次迭代得到的top20
     public static List<Map<String, Object>> TopDetail = new ArrayList<>();
-    // 找存活率每轮生成的样本数
-    public static Integer MaxSamplePerRound = 1000;
-    // 决定走枚举还是随机的阈值
-    public static Integer MaxEnumerateCombinations = 1000;
     // 自动补全得次数
     public static Integer AutoCompleteNumber = 2000;
     // 分支打断代价降序排序时使用的权重衰减系数，越低打断越激进，高打断代价的分支也会又概率打断
     public static Double WeightFactor = 0.7;
     // 决定最高打断概率
     public static Double MaxProbability = 0.9;
-    // 存活率阈值：低于此值的 k 视为无效（用于过滤 maxValidK）
-    public static Double MinSurvivalRate = 0.30;
     // 父本邻域预估容量不足的倍数阈值：邻域总候选数 < 目标 * 该倍数时直接跳过父本桶、走全空间兜底
     // 1.5 含义：邻域最多能产目标 1.5 倍就别让父本桶空转了（实际通过率远小于候选数）
     // 避免第 7-8 代"几百个几百个加"卡顿；前 6 代邻域候选数远 > 目标不受影响
     public static Double ParentCapacityShortageRatio = 1.5;
-    // 父本邻域软触发兜底比例：父本桶跑完后总产量 < 目标 * 该比例时触发全空间兜底补齐
-    // 0.5 含义：产不到目标一半（如 1000 → 500）就走兜底
-    // 设 0 即关闭软触发兜底，恢复原"0 才触发"行为
-    public static Double ParentYieldSoftTriggerRatio = 0.0;
-    // 兜底最大轮数：每轮重抽样，过约束后入仓；达目标数 / 达最大轮数 退出
-    public static final int MaxFallbackRounds = 5;
     // 兜底每 k 段单轮抽样量上限：避免极端情况死循环；实际通过 tryChildBs + WAREHOUSE_KEYS 去重
     public static final int MaxFallbackSamplePerK = 8000;
     // 父本邻域单桶枚举/抽样上限：避免 C(pC, k2) 极大时炸内存
@@ -146,17 +135,20 @@ public class NewHarnessBranchTopoOptimize {
     // 阶段一基准方案补充阈值：当前阶段一累计产量 < perGenTarget * 该比例时
     // 调一次反权重全空间抽样补充新方案
     public static final double Phase1TopUpRatio = 0.5;
-    // 反权重补充：反转 probMap 让高 cost 分支被 B 翻转的概率变大，搜父本邻域未覆盖区域
-    public static final double AntiWeightFactor = 0.7;
     public static final double AntiMinProb = 0.05;
     // 反权重补充最大抽样倍数（相对 topUpThreshold）— 高 cost 翻转失败率高，需放大
     public static final int AntiWeightMaxSamplesMultiplier = 30;
+    //成本权重
+    public static Double costWeight = 0.98;
+    //重量权重
+    public static Double weightWeight = 0.01;
+    //长度权重
+    public static Double lengthWeight = 0.01;
+
+
     // 线程池
     public static ThreadPool threadPool = new ThreadPool(10, 20);
-    // 单轮并发任务基数：8C/16T 推荐 12，给 OS/IDE 留 4 个逻辑核；16C/32T 可调到 24
-    // 取值应略低于物理核数（避免超订阅引起上下文切换抖动），略高于物理核数的一半（避免部分核空转）
-    public static final int BaseTaskCount = Math.min(12,
-            Math.max(2, Runtime.getRuntime().availableProcessors() / 2 + 4));
+
     // 全局种子计数器，用于生成不碰撞的Random种子
     private static final AtomicLong seedCounter = new AtomicLong(System.nanoTime());
 
@@ -1075,12 +1067,7 @@ public class NewHarnessBranchTopoOptimize {
 
         List<Map<String, Object>> optimized = new ArrayList<>();
         int scrapCount = 0;
-        final int earlyStopTarget = resultNumber;
         for (java.util.concurrent.Future<Map<String, Object>> future : futures) {
-            if (optimized.size() >= earlyStopTarget) {
-                System.out.println("[windingOptimize] 早停:已收集 " + optimized.size() + " 个优化方案");
-                break;
-            }
             try {
                 Map<String, Object> result = future.get(3000, java.util.concurrent.TimeUnit.SECONDS);
                 if (result != null) {
@@ -2346,7 +2333,7 @@ public class NewHarnessBranchTopoOptimize {
         // 获取线程池结果
         for (Future<Map<String, Object>> future : futures) {
             try {
-                Map<String, Object> result = future.get(600, java.util.concurrent.TimeUnit.SECONDS);
+                Map<String, Object> result = future.get(6000, java.util.concurrent.TimeUnit.SECONDS);
                 if (result != null) {
                     resultList.add(result);
                 }
@@ -4898,16 +4885,11 @@ public class NewHarnessBranchTopoOptimize {
         List<Map<String, String>> pointsList = (List<Map<String, String>>) jsonMap.get("points");
         List<Map<String, Object>> resultList = new ArrayList<>();
         List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
-        int sampleId = 0;
         long start = System.currentTimeMillis();
         for (List<String> strings : simpleList) {
             tasks.add(() -> {
                 List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
-                for (int i = 0; i < serviceableStatue.size(); i++) {
-                    if (serviceableStatue.get(i).equals("C") && edgeChooseBS.contains(normList.get(i))) {
-                        serviceableStatue.set(i, "S");
-                    }
-                }
+
                 List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
                 // 深拷贝
                 List<Map<String, String>> originalList = (List<Map<String, String>>) jsonMap.get("appPositions");
@@ -4982,7 +4964,7 @@ public class NewHarnessBranchTopoOptimize {
         // 获取线程池结果
         for (Future<Map<String, Object>> future : futures) {
             try {
-                Map<String, Object> result = future.get(600, java.util.concurrent.TimeUnit.SECONDS);
+                Map<String, Object> result = future.get(6000, java.util.concurrent.TimeUnit.SECONDS);
                 if (result != null) {
                     resultList.add(result);
                 }

@@ -1,5 +1,7 @@
 package HarnessPackOpti.CircuitInfoCalculate;
 
+import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -40,7 +42,7 @@ public class CalculatePathLength {
                         if (!referenceLength.isEmpty()) {
                             length += Double.parseDouble(referenceLength);
                         } else {
-                            length += 200;
+                            length += ProjectCircuitInfoOutput.BranchEndFallback;
                         }
                     }
                 }
