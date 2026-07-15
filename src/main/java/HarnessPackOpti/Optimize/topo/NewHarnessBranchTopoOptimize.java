@@ -21,7 +21,6 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -88,18 +87,12 @@ public class NewHarnessBranchTopoOptimize {
     // 1.5 含义：邻域最多能产目标 1.5 倍就别让父本桶空转了（实际通过率远小于候选数）
     // 避免第 7-8 代"几百个几百个加"卡顿；前 6 代邻域候选数远 > 目标不受影响
     public static Double ParentCapacityShortageRatio = 1.5;
-    // 兜底每 k 段单轮抽样量上限：避免极端情况死循环；实际通过 tryChildBs + WAREHOUSE_KEYS 去重
-    public static final int MaxFallbackSamplePerK = 8000;
+
     // 父本邻域单桶枚举/抽样上限：避免 C(pC, k2) 极大时炸内存
     // 桶内总组合数 ≤ 该值时枚举；> 该值时随机抽样该值次
     // 例:N=19, pB=5, pC=14, k=10, k1=2 → C(5,2)*C(14,8)=10*3003=30030 → 抽样 1000 次
     public static final int ParentBucketEnumerateThreshold = 1000;
-    // 阶段一基准方案补充阈值：当前阶段一累计产量 < perGenTarget * 该比例时
-    // 调一次反权重全空间抽样补充新方案
-    public static final double Phase1TopUpRatio = 0.5;
-    public static final double AntiMinProb = 0.05;
-    // 反权重补充最大抽样倍数（相对 topUpThreshold）— 高 cost 翻转失败率高，需放大
-    public static final int AntiWeightMaxSamplesMultiplier = 30;
+
     // 成本权重
     public static Double costWeight = 0.98;
     // 重量权重
@@ -677,7 +670,7 @@ public class NewHarnessBranchTopoOptimize {
             findBest = hybridization(
                     edges, canBreakToBSet, initialScheme, appPositions, eleclection,
                     bestBreakCount, breakCostMap, normList,
-                    mutexMap, chooseOneList, togetherBCList,
+                    mutexMap, chooseOneList, togetherBCList, mutexGroupList,
                     jsonMap, edgeChooseBS, elecPosition, branchLength,
                     connection, multiLoopInfos, pointMap, hybridizationNumber,
                     togetherBCIndex, chooseOneIndex, mutexConflictIndex,
@@ -1559,7 +1552,7 @@ public class NewHarnessBranchTopoOptimize {
                 statueList.set(pickIdx, "S");
                 List<Map<String, Object>> afterEdges = createNewEdges(statueList, edges, normList);
                 Boolean ok = checkFirstOption(normList, statueList, afterEdges, appPositions, eleclection, mutexMap,
-                        chooseOneList, togetherBCList);
+                        chooseOneList, togetherBCList, null);
                 if (ok) {
                     anyBroken = true;
                     brokenThisRound = true;
@@ -2275,6 +2268,7 @@ public class NewHarnessBranchTopoOptimize {
             Map<String, Map<String, List<String>>> mutexMap,
             List<Map<String, List<String>>> chooseOneList,
             List<List<String>> togetherBCList,
+            List<List<String>> mutexGroupList,
             Map<String, Object> jsonMap,
             List<String> edgeChooseBS,
             Map<String, Map<String, String>> elecPosition,
@@ -2465,7 +2459,7 @@ public class NewHarnessBranchTopoOptimize {
             }
             // 6) 入仓（含拓扑检查）
             if (validateAndAddToWarehouse(adjusted, edges, normList, appPositions, eleclection,
-                    mutexMap, chooseOneList, togetherBCList)) {
+                    mutexMap, chooseOneList, togetherBCList, mutexGroupList)) {
                 phase2Valid.add(adjusted);
             }
         }
@@ -2485,7 +2479,6 @@ public class NewHarnessBranchTopoOptimize {
                 allSchemes.add(eliteStatue);
             }
         }
-
 
         if (allSchemes.isEmpty()) {
             return null;
@@ -2677,26 +2670,22 @@ public class NewHarnessBranchTopoOptimize {
             Map<String, String> eleclection,
             Map<String, Map<String, List<String>>> mutexMap,
             List<Map<String, List<String>>> chooseOneList,
-            List<List<String>> togetherBCList) {
+            List<List<String>> togetherBCList,
+            List<List<String>> mutexGroupList) {
         if (fullStatus == null || originalEdges == null || normList == null
                 || fullStatus.size() != normList.size()) {
             return false;
         }
 
-        // 1) 拓扑连通性+用电器检查（快速预过滤）
+        // 1) 完整约束检查(回路/互斥/组团/chooseOne/用电器覆盖)
         List<Map<String, Object>> copyEdges = createNewEdges(fullStatus, originalEdges, normList);
-        if (!checkFirstOption(copyEdges, appPositions, eleclection)) {
-            return false;
-        }
-
-        // 2) 完整约束检查(回路/互斥/组团)
         Boolean bool = checkFirstOption(normList, fullStatus, copyEdges, appPositions, eleclection,
-                mutexMap, chooseOneList, togetherBCList);
+                mutexMap, chooseOneList, togetherBCList, mutexGroupList);
         if (!bool) {
             return false;
         }
 
-        // 3) WareHouse 去重(原子)
+        // 2) WareHouse 去重(原子)
         // WAREHOUSE_KEYS 是 ConcurrentHashMap.newKeySet()，add() 自身原子，
         // 返回 true 表示本次是新加入，可省掉 synchronized 块
         String warehouseKey = String.join(",", fullStatus);
@@ -3178,111 +3167,80 @@ public class NewHarnessBranchTopoOptimize {
         }
         final int pB = parentBs.size();
         final int pC = parentBreakableCs.size();
-        final boolean useParentGuided = (pB + pC) > 0;
-
-        // 5) 父本邻域预估容量：纯数学计算，与并发无关，安全用于决定是否跳过父本桶
-        // 预估总候选数 = Σ_{k=1..bestBreakCount, k1=0..min(k,pB), k-k1<=pC}
-        // C(pB,k1)*C(pC,k-k1)
-        // 实际通过率（过约束+拓扑+去重）远小于 1，所以 1.5 倍阈值留余量
-        long estimatedCapacity = 0;
-        if (useParentGuided) {
-            for (int k = 1; k <= adjustedBestBreakCount; k++) {
-                for (int k1 = 0; k1 <= Math.min(k, pB); k1++) {
-                    int k2 = k - k1;
-                    if (k2 > pC) {
-                        continue;
-                    }
-                    long totalCand = combination(pB, k1) * combination(pC, k2);
-                    if (totalCand > 0) {
-                        estimatedCapacity += totalCand;
-                    }
-                }
-            }
-        }
-        double shortageRatio = ParentCapacityShortageRatio == null ? 1.5
-                : ParentCapacityShortageRatio.doubleValue();
-        long capacityThreshold = (long) Math.ceil(finalLessRandomSamleNumber * shortageRatio);
-        final boolean skipParentGuided = useParentGuided
-                && estimatedCapacity < capacityThreshold;
-        if (skipParentGuided) {
-            System.out.println("阶段一父本邻域预估容量 " + estimatedCapacity + " < 阈值 "
-                    + capacityThreshold + " → 跳过父本桶，直接走全空间兜底");
-        }
 
         // 6) per-call 指纹预过滤 + 邻域变异（或 fallback 随机抽样）
         final Set<Long> localFingerprints = ConcurrentHashMap.newKeySet();
         long time = System.currentTimeMillis();
 
-        if (useParentGuided && !skipParentGuided) {
-            // 每个 (k, k1) 桶一个 task，并行处理
-            // 桶数 = sum_{k=1..maxK} min(k,pB)+1，远大于 BaseTaskCount，负载均衡
-            // 单桶内部根据 totalComb 决定枚举(<=ParentBucketEnumerateThreshold)或抽样(>该值时)
-            //
-            // ★ k 上限优化:maxK = min(adjustedBestBreakCount, pB+pC)
-            // 原因:k > pB+pC 时桶内 k1+k2=k 无法满足 (k1<=pB && k2<=pC),
-            // 提前 cap 避免空转
-            final int maxK = Math.min(adjustedBestBreakCount, pB + pC);
-            List<Future<List<List<String>>>> futures = new ArrayList<>();
-            try {
-                for (int k = 1; k <= maxK; k++) {
-                    for (int k1 = 0; k1 <= Math.min(k, pB); k1++) {
-                        int k2 = k - k1;
-                        if (k2 > pC)
-                            continue;
-                        long totalCand = combination(pB, k1) * combination(pC, k2);
-                        if (totalCand == 0)
-                            continue;
-                        final int k1F = k1, k2F = k2;
-                        final long totalCandF = totalCand;
-                        // 提前剪枝：分配桶前先检查目标，节省线程任务开销
-                        if (globalResultSize.get() >= finalLessRandomSamleNumber) {
-                            break;
-                        }
-                        if (totalCandF <= ParentBucketEnumerateThreshold) {
-                            // 小桶:全枚举
-                            futures.add(threadPool.submit((Callable<List<List<String>>>) () -> {
-                                List<List<String>> bucketResult = new ArrayList<>();
-                                processParentGuidedBucket(parentBs, k1F, parentBreakableCs, k2F, baseStatusMap,
-                                        breakCostMap, canBreakToBSet, canChangeSSet, normList, originalEdges,
-                                        appPositions, eleclection, mutexMap, chooseOneList, togetherBCList,
-                                        togetherBCIndex, mutexConflictIndex, localFingerprints, bucketResult,
-                                        new Random(seedCounter.incrementAndGet()), globalResultSize,
-                                        finalLessRandomSamleNumber);
-                                return bucketResult;
-                            }));
-                        } else {
-                            // 大桶:随机抽样(每桶 ParentBucketEnumerateThreshold 次)
-                            // 避免 C(pC, k2) 极大时枚举炸内存/炸时间
-                            futures.add(threadPool.submit((Callable<List<List<String>>>) () -> {
-                                List<List<String>> bucketResult = new ArrayList<>();
-                                processParentGuidedBucketSampled(parentBs, k1F, parentBreakableCs, k2F,
-                                        totalCandF, baseStatusMap, breakCostMap, canBreakToBSet, canChangeSSet,
-                                        normList, originalEdges, appPositions, eleclection, mutexMap,
-                                        chooseOneList, togetherBCList, togetherBCIndex, mutexConflictIndex,
-                                        localFingerprints, bucketResult,
-                                        new Random(seedCounter.incrementAndGet()), globalResultSize,
-                                        finalLessRandomSamleNumber);
-                                return bucketResult;
-                            }));
-                        }
+        // 每个 (k, k1) 桶一个 task，并行处理
+        // 桶数 = sum_{k=1..maxK} min(k,pB)+1，远大于 BaseTaskCount，负载均衡
+        // 单桶内部根据 totalComb 决定枚举(<=ParentBucketEnumerateThreshold)或抽样(>该值时)
+        //
+        // ★ k 上限优化:maxK = min(adjustedBestBreakCount, pB+pC)
+        // 原因:k > pB+pC 时桶内 k1+k2=k 无法满足 (k1<=pB && k2<=pC),
+        // 提前 cap 避免空转
+        final int maxK = Math.min(adjustedBestBreakCount, pB + pC);
+        List<Future<List<List<String>>>> futures = new ArrayList<>();
+        try {
+            for (int k = 1; k <= maxK; k++) {
+                for (int k1 = 0; k1 <= Math.min(k, pB); k1++) {
+                    int k2 = k - k1;
+                    if (k2 > pC)
+                        continue;
+                    long totalCand = combination(pB, k1) * combination(pC, k2);
+                    if (totalCand == 0)
+                        continue;
+                    final int k1F = k1, k2F = k2;
+                    final long totalCandF = totalCand;
+                    // 提前剪枝：分配桶前先检查目标，节省线程任务开销
+                    if (globalResultSize.get() >= finalLessRandomSamleNumber) {
+                        break;
+                    }
+                    if (totalCandF <= ParentBucketEnumerateThreshold) {
+                        // 小桶:全枚举
+                        futures.add(threadPool.submit((Callable<List<List<String>>>) () -> {
+                            List<List<String>> bucketResult = new ArrayList<>();
+                            processParentGuidedBucket(parentBs, k1F, parentBreakableCs, k2F, baseStatusMap,
+                                    breakCostMap, canBreakToBSet, canChangeSSet, normList, originalEdges,
+                                    appPositions, eleclection, mutexMap, chooseOneList, togetherBCList,
+                                    togetherBCIndex, mutexConflictIndex, localFingerprints, bucketResult,
+                                    new Random(seedCounter.incrementAndGet()), globalResultSize,
+                                    finalLessRandomSamleNumber);
+                            return bucketResult;
+                        }));
+                    } else {
+                        // 大桶:随机抽样(每桶 ParentBucketEnumerateThreshold 次)
+                        // 避免 C(pC, k2) 极大时枚举炸内存/炸时间
+                        futures.add(threadPool.submit((Callable<List<List<String>>>) () -> {
+                            List<List<String>> bucketResult = new ArrayList<>();
+                            processParentGuidedBucketSampled(parentBs, k1F, parentBreakableCs, k2F,
+                                    totalCandF, baseStatusMap, breakCostMap, canBreakToBSet, canChangeSSet,
+                                    normList, originalEdges, appPositions, eleclection, mutexMap,
+                                    chooseOneList, togetherBCList, togetherBCIndex, mutexConflictIndex,
+                                    localFingerprints, bucketResult,
+                                    new Random(seedCounter.incrementAndGet()), globalResultSize,
+                                    finalLessRandomSamleNumber);
+                            return bucketResult;
+                        }));
                     }
                 }
-                for (Future<List<List<String>>> f : futures) {
-                    try {
-                        List<List<String>> part = f.get(10, TimeUnit.MINUTES); // 30s 超时
-                        if (part != null)
-                            result.addAll(part);
-                    } catch (TimeoutException te) {
-                        System.err.println("[generateInitialSchemes] 桶任务超时 30s,跳过");
-                        f.cancel(true); // 尝试中断(但 worker 死了就不行)
-                    } catch (Exception e) {
-                        System.err.println("[generateInitialSchemes] 桶任务异常: " + e.getMessage());
-                    }
-                }
-            } catch (Exception e) {
-                System.err.println("generateInitialSchemes 父本邻域变异异常: " + e.getMessage());
             }
+            for (Future<List<List<String>>> f : futures) {
+                try {
+                    List<List<String>> part = f.get(10, TimeUnit.MINUTES); // 30s 超时
+                    if (part != null)
+                        result.addAll(part);
+                } catch (TimeoutException te) {
+                    System.err.println("[generateInitialSchemes] 桶任务超时 30s,跳过");
+                    f.cancel(true); // 尝试中断(但 worker 死了就不行)
+                } catch (Exception e) {
+                    System.err.println("[generateInitialSchemes] 桶任务异常: " + e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("generateInitialSchemes 父本邻域变异异常: " + e.getMessage());
         }
+
         System.out.println("阶段一耗时（父本邻域变异）：" + (System.currentTimeMillis() - time) + " ms, 生成 "
                 + result.size() + " 个方案");
         return result;
@@ -3796,14 +3754,16 @@ public class NewHarnessBranchTopoOptimize {
 
     /**
      * 完整约束检查重载:1、是否存在互斥 2、回路是否导通 3、用电器周围至少一个分支 4、chooseOne 数量约束。
-     * 包含组团一致、互斥、chooseOne、拓扑连通性、用电器覆盖检查,全过才返回 true。
+     * 包含组团一致、互斥、changeTogether 组、chooseOne、拓扑连通性、用电器覆盖检查,全过才返回 true。
      * 与轻量版 checkConstraintsFast 区别:本版本包含拓扑连通性检查,适合做最终入仓校验。
+     * mutexGroupList 是 changeTogether 组(已与 togetherBC 同 key 合并),需要"同组同态"检查。
      */
     public Boolean checkFirstOption(List<String> normList, List<String> changeList, List<Map<String, Object>> edges,
             List<Map<String, String>> appPositions, Map<String, String> eleclection,
             Map<String, Map<String, List<String>>> mutexMap,
             List<Map<String, List<String>>> chooseOneList,
-            List<List<String>> togetherBCList) {
+            List<List<String>> togetherBCList,
+            List<List<String>> mutexGroupList) {
         // 组团的检查
         for (List<String> list : togetherBCList) {
             String statue = changeList.get(normList.indexOf(list.get(0)));
@@ -3836,6 +3796,13 @@ public class NewHarnessBranchTopoOptimize {
         }
 
         // 对互斥的情况进行一个检查
+        // 规则：
+        // 1) 同 mutexFullName 内所有分支必须同状态（全 B 或全 C/S）
+        // 2) 不同 mutexFullName 之间状态必须相反
+        // - 第一组 B → 其他组必须 C 或 S（不允许 B）
+        // - 第一组 C/S → 其他组必须 B（被打断）
+        // 3) 同一 changeTogether 组（mutexGroupList）内所有分支必须同状态
+        // （处理"互斥组团"语义：A 在 changeTogether 组里，A 变 B 时整个组团都变 B）
         Set<String> mutexName = mutexMap.keySet();
         for (String s : mutexName) {
             Map<String, List<String>> listMap = mutexMap.get(s);
@@ -3845,6 +3812,7 @@ public class NewHarnessBranchTopoOptimize {
             for (String edgeId : sonset) {
                 List<String> list = listMap.get(edgeId);
                 if (cycleNumber == 1) {
+                    // 第一组:同 mutexFullName 内必须同状态
                     statue = changeList.get(normList.indexOf(list.get(0)));
                     if (statue.equals("B")) {
                         for (String topologyStatusCode : list) {
@@ -3861,15 +3829,17 @@ public class NewHarnessBranchTopoOptimize {
                         }
                     }
                 } else {
+                    // 其他组:必须和第一组状态相反
                     if (statue.equals("B")) {
+                        // 第一组 B → 其他组必须 C 或 S(不允许 B,避免"同 mutex 相反"语义失效)
                         for (String topologyStatusCode : list) {
                             if (!(changeList.get(normList.indexOf(topologyStatusCode)).equals("C")
-                                    || changeList.get(normList.indexOf(topologyStatusCode)).equals("S")
-                                    || changeList.get(normList.indexOf(topologyStatusCode)).equals("B"))) {
+                                    || changeList.get(normList.indexOf(topologyStatusCode)).equals("S"))) {
                                 return false;
                             }
                         }
                     } else {
+                        // 第一组 C/S → 其他组必须 B
                         for (String topologyStatusCode : list) {
                             if (!changeList.get(normList.indexOf(topologyStatusCode)).equals("B")) {
                                 return false;
@@ -3878,6 +3848,23 @@ public class NewHarnessBranchTopoOptimize {
                     }
                 }
                 cycleNumber++;
+            }
+        }
+
+        // changeTogether 组同态检查(处理"互斥组团"语义)
+        // 组内任意一条边为 B,其余边也必须为 B(组团一起打断)
+        // 前提:mutexGroupMap 已与 togetherBCMap 合并(同 key 组团成员全在 mutexGroupList 里)
+        if (mutexGroupList != null) {
+            for (List<String> group : mutexGroupList) {
+                if (group == null || group.isEmpty()) {
+                    continue;
+                }
+                String groupStatue = changeList.get(normList.indexOf(group.get(0)));
+                for (String id : group) {
+                    if (!groupStatue.equals(changeList.get(normList.indexOf(id)))) {
+                        return false;
+                    }
+                }
             }
         }
 
