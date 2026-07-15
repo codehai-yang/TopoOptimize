@@ -790,10 +790,6 @@ public class NewHarnessBranchTopoOptimize {
             return null;
         }
 
-        // ① 收集高成本贡献分支(改:放到 processSingleSchemeForWinding 里按方案独立统计)
-        // 原因:不同方案通断状态不一致,全局统计会把各方案的差异平均掉,丢失"本方案该改哪个分支"的精确度
-        // 改为:对每个方案独立计算 branchCostContribution,得到该方案自己的 highCostBranches,再 B→C
-
         // ② 对每个方案做 独立统计 + B→C + 闭环消除 + 成本重算 + 约束检查（多线程提速）
         List<Map<String, Double>> costDeail = Collections.synchronizedList(new ArrayList<>());
         List<java.util.concurrent.Callable<Map<String, Object>>> tasks = new ArrayList<>();
@@ -881,7 +877,6 @@ public class NewHarnessBranchTopoOptimize {
         Object ciObj = ((Map<?, ?>) costObj).get("circuitInfo");
         // 拿当前 top 方案的 edges(原状 B/C/S 混合),严格只用 top 自己的状态
         // 不兜底用原始 edges:原始 edges 没有 top 的状态,会污染成本计算
-        @SuppressWarnings("unchecked")
         List<Map<String, Object>> topEdges = (List<Map<String, Object>>) map.get("serviceableEdges");
         if (topEdges == null) {
             return branchCostContribution;
@@ -1580,24 +1575,7 @@ public class NewHarnessBranchTopoOptimize {
             }
             // brokenThisRound=true 时继续外层 while 的下一轮
         }
-
-        // ★ 兜底:用所有可打B的分支继续打B状态(不是S)
-        // 触发条件:上面的 canChangeToB 打S 循环正常退出或提前 break,此时可能还有闭环
-        // 原因:canChangeToB 候选用完 / 全不合法 → 形成的闭环只能靠打B来消除
-        // 逻辑:每轮按"覆盖闭环数倒序"挑候选打B,
-        // 验证后至少消除一个闭环才保留,否则回滚换下一个;直到闭环消除或无候选
-        //
-        // ★ 关键:这里不用 conformList 参数(它是窄集合,只含 (B&&S)||(C&&B)||(B&&S&&C))
-        // 而是本地构造 allBStatusSet —— 凡是 statusB=="B" 的分支都可打B
-        // 这样能纳入"纯B分支"(statusB="B" 但 statusC/statusS 为空)
-        // 避免可视化里看到的闭环无法消除
         Set<String> allBStatusSet = new HashSet<>(conformList);
-        // for (Map<String, Object> edge : edges) {
-        // if (edge.get("statusB") != null &&
-        // edge.get("statusB").toString().equals("B")) {
-        // allBStatusSet.add(edge.get("id").toString());
-        // }
-        // }
         int conformMaxIter = 300;
         while (conformMaxIter-- > 0) {
             List<Map<String, Object>> currentEdgesB = createNewEdges(statueList, edges, normList);
@@ -1727,17 +1705,7 @@ public class NewHarnessBranchTopoOptimize {
             tasks.add(() -> {
                 long startTime = System.currentTimeMillis();
                 Map<String, Object> map = new HashMap<>();
-                // if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
-                // break;
-                // }
                 List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
-                // for (int i = 0; i < serviceableStatue.size(); i++) {
-                // if (serviceableStatue.get(i).equals("C") &&
-                // canChangeS.contains(normList.get(i))) {
-                // serviceableStatue.set(i, "S");
-                // }
-                // }
-
                 List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
                 // 深拷贝
                 Map<String, Object> threadLocalJsonMap = new HashMap<>(jsonMap);
@@ -1909,28 +1877,7 @@ public class NewHarnessBranchTopoOptimize {
                         break;
                     }
                 }
-                // if (scrapOrNot) {
-                // // 方案无法消除闭环，作废
-                // return null;
-                // }
-
-                // ★ 二次强制打断:用所有可打B的分支打B状态(不是S)
-                // 触发条件:上面打断循环正常结束(scrapOrNot=false),但 recognizeLoopNew 仍检出闭环
-                // 逻辑:与上面打S循环保持一致 ——
-                // 1) 优先找含 wearId 的闭环;若不存在再看 whetherOnLoop
-                // 2) whetherOnLoop=true 时所有闭环都要消;否则 wearId 闭环消完即可退出
-                // 3) 每轮按"覆盖闭环数倒序 + breakCostMap代价升序"挑一个候选打B
-                // 4) 然后 refreshCircuitInfo 重新计算 cost / breakCostMap
-                //
-                // ★ 关键:这里不用 conformList 参数(它是窄集合),而是本地构造 allBStatusSet
-                // 凡是 statusB=="B" 的分支都可打B —— 包含"纯B分支"
                 Set<String> allBStatusSet = new HashSet<>(conformList);
-                // for (Map<String, Object> edge : edges) {
-                // if (edge.get("statusB") != null &&
-                // edge.get("statusB").toString().equals("B")) {
-                // allBStatusSet.add(edge.get("id").toString());
-                // }
-                // }
                 int conformMaxIter = 100;
                 while (conformMaxIter-- > 0) {
                     serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
@@ -2418,14 +2365,45 @@ public class NewHarnessBranchTopoOptimize {
         }
         System.out.println("[hybridization] 阶段一累计 " + phase1.size() + " 个有效方案,耗时 "
                 + (System.currentTimeMillis() - phase1Time) + " ms");
-            
+        // 对上面生成的样本进行ai预测成本，拿top
+        if (phase1.isEmpty()) {
+            System.out.println("[hybridization] 阶段一无有效方案,跳过 AI 预测");
+            return null;
+        }
+        long phase1PredictTime = System.currentTimeMillis();
+        // findBestPre 传 null 避免注入 10% 精英(由本方法统一控制)
+        List<Map<String, Object>> phase1Top = predictAndFindBest(
+                phase1, edges, normList, jsonMap,
+                edgeChooseBS, elecPosition, branchLength, connection,
+                multiLoopInfos, pointMap, null, objectMapper);
+        System.out.println("[hybridization] 阶段一 AI 预测+取 top 耗时 "
+                + (System.currentTimeMillis() - phase1PredictTime) + " ms,top 数 "
+                + (phase1Top == null ? 0 : phase1Top.size()));
 
-        // 3) 阶段二:交叉变异(以 TopDetail 父本为基准,两两配对)
-        // 传递父本成本用于加权轮盘赌选择
+        // 3) 阶段二:交叉变异(以阶段一 AI 预测的 top 为父本,两两配对)
+        // ★ 不是上一代 TopDetail,而是刚刚阶段一 AI 预测排序拿到的 top
+        // 同样做 S → C 还原(避免 S 状态污染父本邻域的 baseStatusMap)
+        List<List<String>> phase2Parents = new ArrayList<>();
+        for (Map<String, Object> detail : phase1Top) {
+            List<String> statue = (List<String>) detail.get("serviceableStatue");
+            if (statue != null && initialScheme != null && statue.size() == initialScheme.size()) {
+                List<String> statueClean = new ArrayList<>(statue);
+                for (int i = 0; i < statueClean.size(); i++) {
+                    if ("S".equals(statueClean.get(i)) && canChangeSSet.contains(normList.get(i))) {
+                        statueClean.set(i, "C");
+                    }
+                }
+                phase2Parents.add(statueClean);
+            }
+        }
+        if (phase2Parents.isEmpty()) {
+            System.out.println("[hybridization] 阶段一 AI top 无有效父本,跳过交叉变异");
+            return null;
+        }
         long phase2Time = System.currentTimeMillis();
-        int crossTarget = Math.max(perGenTarget, parentStatues.size() * 2);
+        int crossTarget = Math.max(perGenTarget, phase2Parents.size() * 2);
         List<Double> parentCosts = new ArrayList<>();
-        for (Map<String, Object> detail : TopDetail) {
+        for (Map<String, Object> detail : phase1Top) {
             Map<String, Object> costMap = (Map<String, Object>) detail.get("成本");
             if (costMap != null && costMap.get("总成本") != null) {
                 parentCosts.add(Double.parseDouble(costMap.get("总成本").toString()));
@@ -2434,7 +2412,7 @@ public class NewHarnessBranchTopoOptimize {
             }
         }
         List<List<String>> phase2Raw = crossoverMutation(
-                parentStatues, initialScheme, normList, crossTarget, parentCosts);
+                phase2Parents, initialScheme, normList, crossTarget, parentCosts);
         System.out.println("[hybridization] 阶段二原始生成 " + phase2Raw.size() + " 个,耗时 "
                 + (System.currentTimeMillis() - phase2Time) + " ms");
 
@@ -2501,43 +2479,13 @@ public class NewHarnessBranchTopoOptimize {
 
         // 6) 注入上一代 top 30%(精英保留,确保新一代最优 ≤ 上一代最优)
         int eliteCount = Math.max(1, (int) Math.ceil(TopDetail.size() * 0.3));
-        int eliteAdded = 0;
         for (int i = 0; i < eliteCount && i < TopDetail.size(); i++) {
             List<String> eliteStatue = (List<String>) TopDetail.get(i).get("serviceableStatue");
             if (eliteStatue != null && eliteStatue.size() == initialScheme.size()) {
                 allSchemes.add(eliteStatue);
-                eliteAdded++;
             }
         }
 
-        // 6.5) 补偿:如果两阶段+精英仍不够每代目标,对 TopDetail 每个父本再调 generateInitialSchemes 补充
-        // 防止极端情况下方案数不足以让 AI 选出 TopNumber 个好样本
-        // perGenTarget 沿用阶段一里的 final 声明
-        final int maxCompensationRounds = AutoCompleteNumber;
-        int compensationRound = 0;
-        while (allSchemes.size() < perGenTarget && compensationRound < maxCompensationRounds) {
-            compensationRound++;
-            int beforeCount = allSchemes.size();
-            for (List<String> parent : parentStatues) {
-                if (allSchemes.size() >= perGenTarget) {
-                    break;
-                }
-                List<List<String>> more = generateInitialSchemes(
-                        edges, canBreakToBSet, parent, appPositions, eleclection,
-                        bestBreakCount, breakCostMap, normList,
-                        mutexMap, chooseOneList, togetherBCList,
-                        togetherBCIndex, chooseOneIndex, mutexConflictIndex,
-                        canChangeSSet);
-                allSchemes.addAll(more);
-            }
-            int added = allSchemes.size() - beforeCount;
-            if (added == 0) {
-                // 本轮无新增方案，再尝试也无效，提前退出
-                break;
-            }
-            System.out.println("[hybridization] 补偿第 " + compensationRound + " 轮:新增 " + added
-                    + " 个");
-        }
 
         if (allSchemes.isEmpty()) {
             return null;
@@ -2780,28 +2728,6 @@ public class NewHarnessBranchTopoOptimize {
     }
 
     /**
-     * 按导线商务单位价降序排序。
-     * 内层 Map 的"导线单位商务价（元/米）"字段作为排序键。
-     * 稳定排序,返回 LinkedHashMap 保持插入顺序。
-     */
-    public Map<String, Map<String, String>> sortMapByInnerCostValue(Map<String, Map<String, String>> originalMap) {
-        List<Map.Entry<String, Map<String, String>>> entryList = new ArrayList<>(originalMap.entrySet());
-
-        entryList.sort((entry1, entry2) -> {
-            String costValue1 = entry1.getValue().get("导线单位商务价（元/米）");
-            String costValue2 = entry2.getValue().get("导线单位商务价（元/米）");
-            return Double.compare(Double.parseDouble(costValue2), Double.parseDouble(costValue1));
-        });
-
-        return entryList.stream()
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        Map.Entry::getValue,
-                        (oldValue, newValue) -> oldValue,
-                        LinkedHashMap::new));
-    }
-
-    /**
      * 按打断代价从高到低排序。
      * 排序键为 Double 值,降序排列。
      * 稳定排序,返回 LinkedHashMap 保持插入顺序。
@@ -2820,83 +2746,6 @@ public class NewHarnessBranchTopoOptimize {
                         Map.Entry::getValue,
                         (oldValue, newValue) -> oldValue,
                         LinkedHashMap::new));
-    }
-
-    /**
-     * 根据打断代价从高到低排序后的Map,对可打断为B的分支分配被打断概率。
-     * 打断代价越低 → 概率越高;打断代价越高 → 概率越低。
-     * 概率公式:(1 - norm) * weightFactor * maxProbability + minProb,裁剪到 [minProb,
-     * maxProbability]。
-     * O(n) 遍历,n 为可打断分支数。
-     */
-    public Map<String, Double> calcBreakProbabilityByCost(
-            Map<String, Double> sortedBreakCostMap,
-            Set<String> canBreakToBSet,
-            double maxProbability,
-            double weightFactor) {
-
-        // 参数校验
-        if (sortedBreakCostMap == null || sortedBreakCostMap.isEmpty()) {
-            return new LinkedHashMap<>();
-        }
-        if (canBreakToBSet == null || canBreakToBSet.isEmpty()) {
-            return new LinkedHashMap<>();
-        }
-        if (maxProbability <= 0 || maxProbability > 1) {
-            maxProbability = 0.9;
-        }
-        if (weightFactor <= 0 || weightFactor > 1) {
-            weightFactor = 0.7;
-        }
-
-        // 1. 提取可打断为B的分支及其代价
-        Map<String, Double> candidateMap = new LinkedHashMap<>();
-        double minCost = Double.MAX_VALUE;
-        double maxCost = -Double.MAX_VALUE;
-        for (Map.Entry<String, Double> entry : sortedBreakCostMap.entrySet()) {
-            String edgeId = entry.getKey();
-            if (canBreakToBSet.contains(edgeId)) {
-                double cost = entry.getValue() == null ? 0.0 : entry.getValue();
-                candidateMap.put(edgeId, cost);
-                if (cost < minCost) {
-                    minCost = cost;
-                }
-                if (cost > maxCost) {
-                    maxCost = cost;
-                }
-            }
-        }
-        if (candidateMap.isEmpty()) {
-            return new LinkedHashMap<>();
-        }
-
-        // 2. 线性归一化反向计算概率
-        // 归一化值 norm = (cost - minCost) / (maxCost - minCost + 0.0001)，范围[0,1]
-        // 概率 = (1 - norm) * weightFactor，再裁剪到 [minProb, maxProbability]
-        // 注：sortedBreakCostMap是按代价从高到低排的，所以 LinkedHashMap 的遍历顺序就是代价从高到低
-        double costRange = (maxCost - minCost) + 0.0001; // 加小数防除零
-        double minProb = (1.0 - weightFactor) * maxProbability; // 最低概率
-        // 使用按概率从高到低排序的 LinkedHashMap 返回
-        Map<String, Double> probabilityMapDesc = new LinkedHashMap<>();
-        List<Map.Entry<String, Double>> sortedByProbDesc = new ArrayList<>();
-        for (Map.Entry<String, Double> entry : candidateMap.entrySet()) {
-            double norm = (entry.getValue() - minCost) / costRange; // 0=最低代价，1=最高代价
-            double prob = (1.0 - norm) * weightFactor * maxProbability + minProb;
-            // 防御性裁剪
-            if (prob < 0) {
-                prob = 0;
-            }
-            if (prob > 1) {
-                prob = 1;
-            }
-            sortedByProbDesc.add(new java.util.AbstractMap.SimpleEntry<>(entry.getKey(), prob));
-        }
-        // 按概率从高到低排序
-        sortedByProbDesc.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
-        for (Map.Entry<String, Double> entry : sortedByProbDesc) {
-            probabilityMapDesc.put(entry.getKey(), entry.getValue());
-        }
-        return probabilityMapDesc;
     }
 
     /**
@@ -3308,23 +3157,8 @@ public class NewHarnessBranchTopoOptimize {
         if (N == 0) {
             return result;
         }
-
         // 2) adjustedBestBreakCount
         final int adjustedBestBreakCount = Math.max(1, Math.min(bestBreakCount, N));
-
-        // // 3) 概率表（保留兼容，本次主要用父本邻域）
-        // final Map<String, Double> probMap;
-        // if (breakCostMap != null && !breakCostMap.isEmpty()) {
-        // probMap = calcBreakProbabilityByCost(breakCostMap, canBreakToBSet,
-        // MaxProbability, WeightFactor);
-        // } else {
-        // Map<String, Double> uniform = new HashMap<>();
-        // for (String id : breakableIds) {
-        // uniform.put(id, MaxProbability);
-        // }
-        // probMap = uniform;
-        // }
-
         // 4) 【核心改造】父本邻域识别
         // 原实现：全空间 C(N,k) 随机搜索（大海捞针），命中率高时 80s+ / 1000 方案
         // 改造后：在父本邻域内变异（k1 减打断 + k2 加打断）
@@ -3447,55 +3281,6 @@ public class NewHarnessBranchTopoOptimize {
                 }
             } catch (Exception e) {
                 System.err.println("generateInitialSchemes 父本邻域变异异常: " + e.getMessage());
-            }
-
-            // ★ 自由随机补充（旧遗传 initialOptimize 思路）：父本邻域变异未达目标时
-            // 不依赖父本，对每个 breakableId 独立 0.5 抛 B/C，生成全新方向的候选
-            // 与父本邻域 / 全空间兜底正交：跳出父本 B 集附近，搜全局空间
-            if (result.size() < finalLessRandomSamleNumber && !breakableIds.isEmpty()
-                    && globalResultSize.get() < finalLessRandomSamleNumber && useParentGuided) {
-                final int freeRandomSamples = 200; // 自由随机抽样数（可调）
-                List<Future<List<List<String>>>> freeFutures = new ArrayList<>();
-                int freeSampled = 0;
-                int freeAccepted = 0;
-                final List<String> breakableIdsList = new ArrayList<>(breakableIds);
-                final int NBreak = breakableIdsList.size();
-                try {
-                    for (int s = 0; s < freeRandomSamples; s++) {
-                        if (globalResultSize.get() >= finalLessRandomSamleNumber) {
-                            break;
-                        }
-                        freeFutures.add(threadPool.submit((Callable<List<List<String>>>) () -> {
-                            List<List<String>> freeResult = new ArrayList<>();
-                            // 19 个 breakableId 独立抛 0.5 概率 B / 0.5 概率 C
-                            Set<String> randomBs = new HashSet<>();
-                            for (int j = 0; j < NBreak; j++) {
-                                if (ThreadLocalRandom.current().nextBoolean()) {
-                                    randomBs.add(breakableIdsList.get(j));
-                                }
-                            }
-                            tryChildBs(randomBs, baseStatusMap, breakCostMap, canBreakToBSet,
-                                    canChangeSSet, normList, originalEdges, appPositions, eleclection, mutexMap,
-                                    chooseOneList, togetherBCList, togetherBCIndex, mutexConflictIndex,
-                                    localFingerprints, freeResult,
-                                    new Random(seedCounter.incrementAndGet()), globalResultSize,
-                                    finalLessRandomSamleNumber);
-                            return freeResult;
-                        }));
-                        freeSampled++;
-                    }
-                    for (Future<List<List<String>>> f : freeFutures) {
-                        List<List<String>> part = f.get();
-                        if (part != null) {
-                            freeAccepted += part.size();
-                            result.addAll(part);
-                        }
-                    }
-                } catch (Exception e) {
-                    System.err.println("generateInitialSchemes 自由随机补充异常: " + e.getMessage());
-                }
-                System.out.println("[gen-freerandom-topup] 自由随机补充: 抽样 " + freeSampled
-                        + " → 入仓 " + freeAccepted);
             }
         }
         System.out.println("阶段一耗时（父本邻域变异）：" + (System.currentTimeMillis() - time) + " ms, 生成 "
@@ -3790,181 +3575,6 @@ public class NewHarnessBranchTopoOptimize {
             enumerateCombinations(list, k, i + 1, current, result);
             current.remove(current.size() - 1);
         }
-    }
-
-    /**
-     * 全空间兜底:邻域枯竭(result 为 0)或邻域预估容量不足时启用。
-     * 从 breakableIds 全集按打断成本权重加权随机抽样,不受父本状态限制。
-     * 复用 weightedSampleCombinationsNoDedupe + tryChildBs 完整流水线。
-     */
-    private void runFullSpaceFallback(
-            List<List<String>> result,
-            List<String> breakableIds,
-            Map<String, String> baseStatusMap,
-            Map<String, Double> breakCostMap,
-            Set<String> canBreakToBSet,
-            Set<String> canChangeSSet,
-            List<String> normList,
-            List<Map<String, Object>> originalEdges,
-            List<Map<String, String>> appPositions,
-            Map<String, String> eleclection,
-            Map<String, Map<String, List<String>>> mutexMap,
-            List<Map<String, List<String>>> chooseOneList,
-            List<List<String>> togetherBCList,
-            Map<String, Set<String>> togetherBCIndex,
-            Map<String, Set<String>> mutexConflictIndex,
-            Set<Long> localFingerprints,
-            int adjustedBestBreakCount,
-            int finalLessRandomSamleNumber,
-            AtomicInteger globalResultSize) {
-
-        System.out.println("阶段一父本邻域枯竭 → 启动全空间加权随机抽样兜底（单次）");
-        Map<String, Double> probMap;
-        if (breakCostMap != null && !breakCostMap.isEmpty()) {
-            probMap = calcBreakProbabilityByCost(breakCostMap, canBreakToBSet,
-                    MaxProbability, WeightFactor);
-        } else {
-            probMap = new HashMap<>();
-            for (String id : breakableIds) {
-                probMap.put(id, MaxProbability);
-            }
-        }
-        if (probMap.isEmpty()) {
-            return;
-        }
-        Random fallbackRnd = new Random(seedCounter.incrementAndGet());
-
-        // 单次兜底：按 k 段各抽 1k 个候选，过 tryChildBs 流水线，达目标即停
-        // 不做轮次制、不做 < 1% 早退（避免死抽浪费）
-        int remaining = finalLessRandomSamleNumber - globalResultSize.get();
-        int kCount = Math.max(1, adjustedBestBreakCount);
-        int basePerK = Math.max(1, remaining / kCount);
-        int totalSampled = 0;
-        int totalAccepted = 0;
-        for (int k = 1; k <= adjustedBestBreakCount; k++) {
-            if (globalResultSize.get() >= finalLessRandomSamleNumber) {
-                break;
-            }
-            int perKCount = Math.min(MaxFallbackSamplePerK, basePerK);
-            List<List<String>> sampled = weightedSampleCombinationsNoDedupe(
-                    breakableIds, k, perKCount, probMap, fallbackRnd);
-            totalSampled += sampled.size();
-            int beforeAccept = globalResultSize.get();
-            for (List<String> chosen : sampled) {
-                if (globalResultSize.get() >= finalLessRandomSamleNumber) {
-                    break;
-                }
-                Set<String> candidateBs = new LinkedHashSet<>(chosen);
-                tryChildBs(candidateBs, baseStatusMap, breakCostMap, canBreakToBSet,
-                        canChangeSSet, normList, originalEdges, appPositions,
-                        eleclection, mutexMap, chooseOneList, togetherBCList,
-                        togetherBCIndex, mutexConflictIndex, localFingerprints, result,
-                        fallbackRnd, globalResultSize, finalLessRandomSamleNumber);
-            }
-            totalAccepted += globalResultSize.get() - beforeAccept;
-        }
-        System.out.println("兜底单次: 抽样 " + totalSampled
-                + " → 入仓 " + totalAccepted + " (累计 " + globalResultSize.get()
-                + "/" + finalLessRandomSamleNumber + ")");
-    }
-
-    /**
-     * 反权重全空间加权随机抽样 — 把 probMap 反转:高 cost 分支被 B 翻转的概率变大。
-     * 搜父本邻域(偏好低 cost 翻转)未覆盖的高 cost 区域,与 runFullSpaceFallback 形成互补。
-     * 抽样量放大 AntiWeightMaxSamplesMultiplier 倍以应对高 cost 翻转高失败率。
-     */
-    private void runAntiWeightFallback(
-            List<List<String>> result,
-            List<String> breakableIds,
-            Map<String, String> baseStatusMap,
-            Map<String, Double> breakCostMap,
-            Set<String> canBreakToBSet,
-            Set<String> canChangeSSet,
-            List<String> normList,
-            List<Map<String, Object>> originalEdges,
-            List<Map<String, String>> appPositions,
-            Map<String, String> eleclection,
-            Map<String, Map<String, List<String>>> mutexMap,
-            List<Map<String, List<String>>> chooseOneList,
-            List<List<String>> togetherBCList,
-            Map<String, Set<String>> togetherBCIndex,
-            Map<String, Set<String>> mutexConflictIndex,
-            Set<Long> localFingerprints,
-            int adjustedBestBreakCount,
-            int topUpTarget,
-            AtomicInteger globalResultSize) {
-
-        if (breakableIds == null || breakableIds.isEmpty()) {
-            return;
-        }
-        // 1. 计算正常 probMap
-        Map<String, Double> probMap;
-        if (breakCostMap != null && !breakCostMap.isEmpty()) {
-            probMap = calcBreakProbabilityByCost(breakCostMap, canBreakToBSet,
-                    MaxProbability, WeightFactor);
-        } else {
-            probMap = new HashMap<>();
-            for (String id : breakableIds) {
-                probMap.put(id, MaxProbability);
-            }
-        }
-        if (probMap.isEmpty()) {
-            return;
-        }
-        // 2. 反转 probMap：高 cost 分支变高 prob
-        // 公式：antiProb[id] = (maxProb - probMap[id]) + AntiMinProb
-        // 等价于"原来最不容易被选中的（低 prob = 高 cost），现在最容易选中"
-        // AntiMinProb 兜底防止概率为 0（高 cost 区域也要保留少量覆盖）
-        double maxProb = 0.0;
-        for (double p : probMap.values()) {
-            if (p > maxProb) {
-                maxProb = p;
-            }
-        }
-        Map<String, Double> antiProbMap = new LinkedHashMap<>(probMap.size() * 2);
-        for (String id : breakableIds) {
-            double normalProb = probMap.getOrDefault(id, 0.0);
-            double antiProb = (maxProb - normalProb) + AntiMinProb;
-            // 限幅：[AntiMinProb, 1.0] — 防止 antiProb > 1（虽然理论不会超过 maxProb+AntiMinProb）
-            antiProb = Math.min(1.0, Math.max(AntiMinProb, antiProb));
-            antiProbMap.put(id, antiProb);
-        }
-        System.out.println("[anti-weight] 反权重补充: 高 cost 分支概率上调（maxProb="
-                + String.format("%.3f", maxProb) + "）→ 抽样搜父本未覆盖区域");
-
-        Random antiRnd = new Random(seedCounter.incrementAndGet());
-
-        // 3. 反权重抽样：放大抽样量（高 cost 翻转失败率高，可能导致拓扑不连通）
-        int kCount = Math.max(1, adjustedBestBreakCount);
-        int basePerK = Math.max(1, topUpTarget / kCount);
-        int totalSampled = 0;
-        int totalAccepted = 0;
-        for (int k = 1; k <= adjustedBestBreakCount; k++) {
-            if (globalResultSize.get() >= topUpTarget) {
-                break;
-            }
-            int perKCount = Math.min(MaxFallbackSamplePerK * AntiWeightMaxSamplesMultiplier,
-                    basePerK * AntiWeightMaxSamplesMultiplier);
-            List<List<String>> sampled = weightedSampleCombinationsNoDedupe(
-                    breakableIds, k, perKCount, antiProbMap, antiRnd);
-            totalSampled += sampled.size();
-            int beforeAccept = globalResultSize.get();
-            for (List<String> chosen : sampled) {
-                if (globalResultSize.get() >= topUpTarget) {
-                    break;
-                }
-                Set<String> candidateBs = new LinkedHashSet<>(chosen);
-                tryChildBs(candidateBs, baseStatusMap, breakCostMap, canBreakToBSet,
-                        canChangeSSet, normList, originalEdges, appPositions,
-                        eleclection, mutexMap, chooseOneList, togetherBCList,
-                        togetherBCIndex, mutexConflictIndex, localFingerprints, result,
-                        antiRnd, globalResultSize, topUpTarget);
-            }
-            totalAccepted += globalResultSize.get() - beforeAccept;
-        }
-        System.out.println("[anti-weight] 反权重补充: 抽样 " + totalSampled
-                + " → 入仓 " + totalAccepted + " (累计 " + globalResultSize.get()
-                + "/" + topUpTarget + ")");
     }
 
     /**
