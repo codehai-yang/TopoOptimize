@@ -2375,6 +2375,8 @@ public class NewHarnessBranchTopoOptimize {
         long phase1Time = System.currentTimeMillis();
         List<List<String>> phase1 = new ArrayList<>();
         // 阶段一对 TopDetail 每个父本调一次 generateInitialSchemes 做变异
+        // topUpRounds 累计补充调用次数,达到 AutoCompleteNumber 上限则停止
+        int topUpRounds = 0;
         for (List<String> parent : parentStatues) {
             if (phase1.size() >= perGenTarget) {
                 System.out.println("[hybridization] 阶段一早停:累计 " + phase1.size());
@@ -2387,37 +2389,36 @@ public class NewHarnessBranchTopoOptimize {
                     togetherBCIndex, chooseOneIndex, mutexConflictIndex,
                     canChangeSSet);
             phase1.addAll(variants);
-            // 阶段一补充：单次 generateInitialSchemes 产出 < 阈值时
-            // （即当前父本的邻域已经搜不出几个新方案，仓库近饱和），
-            // 用反权重全空间抽样补充：反转 probMap 让高 cost 分支被 B 翻转的概率变大，
-            // 搜父本邻域（偏好低 cost 翻转）未覆盖的高 cost 区域，与 runFullSpaceFallback 形成互补。
-            int topUpThreshold = (int) Math.ceil(LessRandomSamleNumber * Phase1TopUpRatio);
-            if (variants.size() < topUpThreshold) {
-                System.out.println("[hybridization] 本次产出 " + variants.size()
-                        + " < 补充阈值 " + topUpThreshold
-                        + " → 调一次反权重全空间抽样补充");
-                // 用当前父本构造 baseStatusMap（与父本邻域变异语义对齐：基于父本状态做反权重扩展）
-                Map<String, String> parentBaseStatusMap = new LinkedHashMap<>();
-                for (int i = 0; i < normList.size() && i < parent.size(); i++) {
-                    parentBaseStatusMap.put(normList.get(i), parent.get(i));
-                }
-                // 反权重补充需要独立 localFingerprints + globalResultSize（避免与其他父本桶的计数器耦合）
-                Set<Long> topUpFingerprints = new HashSet<>();
-                AtomicInteger topUpCounter = new AtomicInteger(0);
-                List<String> breakableIdList = new ArrayList<>(canBreakToBSet);
-                int beforeTopUp = phase1.size();
-                runAntiWeightFallback(
-                        phase1, breakableIdList, parentBaseStatusMap, breakCostMap,
-                        canBreakToBSet, canChangeSSet, normList, edges, appPositions,
-                        eleclection, mutexMap, chooseOneList, togetherBCList,
-                        togetherBCIndex, mutexConflictIndex, topUpFingerprints,
-                        bestBreakCount, topUpThreshold, topUpCounter);
-                System.out.println("[hybridization] 反权重补充注入 "
-                        + (phase1.size() - beforeTopUp) + " 个样本");
+        }
+        while (phase1.size() < HybridizationLessRandomSamleNumber) {
+            // 继续调用初代生成的方案直到满足方案数量
+            // 限制:补充次数 ≤ AutoCompleteNumber 防止无限循环
+            if (topUpRounds >= AutoCompleteNumber) {
+                System.out.println("[hybridization] 达到补充次数上限 " + AutoCompleteNumber + ",停止补充");
+                break;
+            }
+            topUpRounds++;
+            // 用 initialScheme 作基础状态调 generateInitialSchemes,补充初代方案
+            List<List<String>> moreVariants = generateInitialSchemes(
+                    edges, canBreakToBSet, initialScheme, appPositions, eleclection,
+                    bestBreakCount, breakCostMap, normList,
+                    mutexMap, chooseOneList, togetherBCList,
+                    togetherBCIndex, chooseOneIndex, mutexConflictIndex,
+                    canChangeSSet);
+            int beforeSize = phase1.size();
+            phase1.addAll(moreVariants);
+            int added = phase1.size() - beforeSize;
+            System.out.println("[hybridization] 第 " + topUpRounds + " 次初代补充:本次新增 " + added
+                    + " 个,累计 " + phase1.size());
+            // 本次未新增任何方案,说明仓库已饱和,退出防止死循环
+            if (added == 0) {
+                System.out.println("[hybridization] 仓库已饱和,停止补充");
+                break;
             }
         }
         System.out.println("[hybridization] 阶段一累计 " + phase1.size() + " 个有效方案,耗时 "
                 + (System.currentTimeMillis() - phase1Time) + " ms");
+            
 
         // 3) 阶段二:交叉变异(以 TopDetail 父本为基准,两两配对)
         // 传递父本成本用于加权轮盘赌选择
@@ -3495,43 +3496,6 @@ public class NewHarnessBranchTopoOptimize {
                 }
                 System.out.println("[gen-freerandom-topup] 自由随机补充: 抽样 " + freeSampled
                         + " → 入仓 " + freeAccepted);
-            }
-
-            // 6) 兜底触发条件：父本邻域产出未达目标时走全空间加权随机抽样兜底
-            // 修复：原条件 result.isEmpty() 过于严格 — 仓库饱和时父本邻域总会产 1~几十个撞库
-            // 后的入仓，兜底永远不触发，导致 phase1 累计产不出 800。放宽为 "result.size() < target"，
-            // 内部已有 globalResultSize 早退（见 runFullSpaceFallback），CPU 不浪费。
-            // 与反权重补充互补：兜底用正常权重（低 cost 优先），反权重搜高 cost 区域。
-            if (result.size() < finalLessRandomSamleNumber && !breakableIds.isEmpty()
-                    && globalResultSize.get() < finalLessRandomSamleNumber) {
-                runFullSpaceFallback(result, breakableIds, baseStatusMap, breakCostMap,
-                        canBreakToBSet, canChangeSSet, normList, originalEdges, appPositions,
-                        eleclection, mutexMap, chooseOneList, togetherBCList, togetherBCIndex,
-                        mutexConflictIndex, localFingerprints, adjustedBestBreakCount,
-                        finalLessRandomSamleNumber, globalResultSize);
-            }
-        } else {
-            // Fallback: 父本无 breakable 结构（baseStatusList 为空 / 父本无 B 且无可打断 C）
-            // 退化为全空间 k=1,2 枚举（保底，避免返回空集）
-            for (int k = 1; k <= Math.min(adjustedBestBreakCount, 2); k++) {
-                long totalComb = combination(N, k);
-                if (totalComb > 1000)
-                    break;
-                List<List<String>> allComb = new ArrayList<>();
-                enumerateCombinations(breakableIds, k, 0, new ArrayList<>(), allComb);
-                for (List<String> chosen : allComb) {
-                    // Fallback 路径同样受全局计数限制
-                    if (globalResultSize.get() >= finalLessRandomSamleNumber) {
-                        break;
-                    }
-                    Set<String> candidateBs = new LinkedHashSet<>(chosen);
-                    tryChildBs(candidateBs, baseStatusMap, breakCostMap, canBreakToBSet,
-                            canChangeSSet,
-                            normList, originalEdges, appPositions, eleclection, mutexMap, chooseOneList,
-                            togetherBCList, togetherBCIndex, mutexConflictIndex, localFingerprints, result,
-                            new Random(seedCounter.incrementAndGet()), globalResultSize,
-                            finalLessRandomSamleNumber);
-                }
             }
         }
         System.out.println("阶段一耗时（父本邻域变异）：" + (System.currentTimeMillis() - time) + " ms, 生成 "

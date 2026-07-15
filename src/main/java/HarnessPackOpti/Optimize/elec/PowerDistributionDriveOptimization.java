@@ -75,7 +75,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动优化测试数据.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电分配测试数据.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -106,21 +106,22 @@ public class PowerDistributionDriveOptimization {
 
         // 整车信息计算(初始方案)
         String originalResult = powerProjectCircuitInfoOutput.powerOptimize(jsonContent);
-        // 判断是哪种类型优化
-        String optimizeType = projectInfo.get("optimizeType");
+        // 判断是哪种类型优化（新格式：优化类型取自 optimizeRecord.type）
+        // 1=驱动回路，2=配电回路，3=配电回路+主供电回路+驱动回路（排除硬线/高速线缆/接地回路）
+        String optimizeType = optimizeRecord.get("type") != null ? optimizeRecord.get("type").toString() : "3";
         String[] split = optimizeType.split(",");
         List<String> typeList = Arrays.asList(split);
         Random random = new Random();
-        // 是否开启直连接口
-        boolean whetherToChange = projectInfo.get("whetherToChange") != null
-                && projectInfo.get("whetherToChange").equals("true");
+        // 是否开启直连接口（新格式：开关取自 caseInfo.connect，"true"/"false"）
+        boolean whetherToChange = caseInfo.get("connect") != null
+                && caseInfo.get("connect").toString().equals("true");
 
         // 主供电回路和配电回路
         List<Map<String, String>> elecLoopList = new ArrayList<>();
         // 驱动回路
         List<Map<String, String>> driveLoopList = new ArrayList<>();
-        // 资源数量读取：{"2","5","不限"}分别对应大，中，小电流
-        Map<String, List<String>> resourceNum = new HashMap<>();
+        // 资源数量读取（新格式）：用电器 -> 8 类可连接资源数量限制，限制为 null 表示不限
+        Map<String, AppResourceLimit> resourceNum = new HashMap<>();
         // 组团一起变：groupId → [loopId, ...]
         Map<String, List<String>> togetherGroup = new HashMap<>();
         // 互斥组：mutualId → [loopId, ...]
@@ -161,17 +162,22 @@ public class PowerDistributionDriveOptimization {
         Map<String, String> eleclection = getEleclection(appPositions);
 
         // 先收集直连接口分组（需要在构建 elecChangeablePosition 之前）
+        // 新格式：接口码位于 edges 的 startInterfaceCode / endInterfaceCode，分别约束起点/终点位置点
         Map<String, List<String>> interfaceCodegroup = new HashMap<>();
         Set<String> pointNameSet = new HashSet<>();
         if (whetherToChange) {
-            for (Map<String, Object> point : points) {
-                if (point.get("interfaceCode") != null
-                        && !point.get("interfaceCode").toString().trim().isEmpty()) {
-                    String interfaceCode = point.get("interfaceCode").toString();
-                    String pointName = point.get("pointName").toString();
-                    interfaceCode = interfaceCode.substring(0, interfaceCode.length() - 1);
-                    interfaceCodegroup.computeIfAbsent(interfaceCode, k -> new ArrayList<>()).add(pointName);
-                    pointNameSet.add(pointName);
+            for (Map<String, Object> edge : edges) {
+                Object startIc = edge.get("startInterfaceCode");
+                if (startIc != null && !startIc.toString().trim().isEmpty()) {
+                    String startPointName = edge.get("startPointName").toString();
+                    interfaceCodegroup.computeIfAbsent(startIc.toString(), k -> new ArrayList<>()).add(startPointName);
+                    pointNameSet.add(startPointName);
+                }
+                Object endIc = edge.get("endInterfaceCode");
+                if (endIc != null && !endIc.toString().trim().isEmpty()) {
+                    String endPointNameIc = edge.get("endPointName").toString();
+                    interfaceCodegroup.computeIfAbsent(endIc.toString(), k -> new ArrayList<>()).add(endPointNameIc);
+                    pointNameSet.add(endPointNameIc);
                 }
             }
         }
@@ -179,11 +185,13 @@ public class PowerDistributionDriveOptimization {
         Map<String, List<String>> elecChangeablePosition = new HashMap<>();
         for (Map<String, String> appPosition : appPositions) {
             String appName = appPosition.get("appName");
+            // 读取该用电器的 8 类资源限制（dist/drive 的大/中/小电流 + hardWire + highSpeedWire）
+            // 新格式：字段值为数值或 null；任一非 null 才登记限制，否则视为无限制
             if (resourceNum.get(appName) == null) {
-                List<String> list = objectMapper.readValue(
-                        appPosition.get("resourceNumb"), new TypeReference<List<String>>() {
-                        });
-                resourceNum.put(appName, list);
+                AppResourceLimit limit = parseAppResourceLimit(appPosition);
+                if (limit != null) {
+                    resourceNum.put(appName, limit);
+                }
             }
             if ("1".equals(appPosition.get("changeType"))) {
                 List<String> list = new ArrayList<>();
@@ -223,37 +231,38 @@ public class PowerDistributionDriveOptimization {
         List<String> togetherList = new ArrayList<>();
         List<String> mutualList = new ArrayList<>();
         for (Map<String, String> loopInfo : loopInfos) {
-            if ("主供电回路".equals(loopInfo.get("loopAttribute"))
-                    || "配电回路".equals(loopInfo.get("loopAttribute"))) {
+            // 按 loopAttr 对回路分类：配电回路/主供电回路 -> 配电类；驱动回路 -> 驱动类
+            // 硬线信号回路/接地回路/高速线缆回路 不进入配电/驱动优化目标（type3 时由 combinedList 天然排除）
+            if ("主供电回路".equals(loopInfo.get("loopAttr"))
+                    || "配电回路".equals(loopInfo.get("loopAttr"))) {
                 elecLoopList.add(loopInfo);
-            } else if ("驱动回路".equals(loopInfo.get("loopAttribute"))) {
+            } else if ("驱动回路".equals(loopInfo.get("loopAttr"))) {
                 driveLoopList.add(loopInfo);
             }
-            // 回路可连接的终点用电器统计
-            String s = loopInfo.get("endSpecifyPoints");
+            // 回路可连接的终点用电器（新字段：startConnEndApps = 起点电器件可连的终点电器件）
+            String s = loopInfo.get("startConnEndApps");
             if (s != null && !s.isEmpty()) {
                 for (String part : s.split(",")) {
-                    //TODO 找用电器有问题
                     String pointName = findAppNameById(part, appPositions);
                     loopElecById.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(pointName);
                 }
             }
-            // 回路可连接的终点用电器统计
-            String start = loopInfo.get("startSpecifyPoints");
+            // 回路可连接的起点用电器（新字段：selectedEndApp = 终点电器件可连的起点电器件）
+            String start = loopInfo.get("selectedEndApp");
             if (start != null && !start.isEmpty()) {
                 for (String part : start.split(",")) {
                     String pointName = findAppNameById(part, appPositions);
                     loopElecByIdStart.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(pointName);
                 }
             }
-            // 组团归组
-            String ct = loopInfo.get("changeTogether");
+            // 组团一起变归组（新字段 teamConnRel）
+            String ct = loopInfo.get("teamConnRel");
             if (ct != null && !ct.isEmpty()) {
                 togetherGroup.computeIfAbsent(ct, k -> new ArrayList<>()).add(loopInfo.get("id"));
                 togetherList.add(loopInfo.get("id"));
             }
-            // 互斥归组
-            String me = loopInfo.get("mutualExclusion");
+            // 互斥归组（新字段 exclusiveConnRel）
+            String me = loopInfo.get("exclusiveConnRel");
             if (me != null && !me.isEmpty()) {
                 mutualGroup.computeIfAbsent(me, k -> new ArrayList<>()).add(loopInfo.get("id"));
                 mutualList.add(loopInfo.get("id"));
@@ -286,9 +295,9 @@ public class PowerDistributionDriveOptimization {
                     loopElecById, loopElecByIdStart);
         }
 
-        // 优化类型 3：所有回路
+        // 优化类型 3：配电回路+主供电回路+驱动回路（combinedList 已天然排除硬线/高速线缆/接地回路）
         if ("3".equals(optimizeType)) {
-            combinations = calculateOptimizationCombinations(loopInfos, elecChangeablePosition, togetherGroup,
+            combinations = calculateOptimizationCombinations(combinedList, elecChangeablePosition, togetherGroup,
                     loopElecById, loopElecByIdStart);
         }
 
@@ -309,7 +318,7 @@ public class PowerDistributionDriveOptimization {
             } else if ("2".equals(optimizeType)) {
                 targetLoops = elecLoopList;
             } else if ("3".equals(optimizeType)) {
-                targetLoops = loopInfos;
+                targetLoops = combinedList;
             }
             List<Map<String, Object>> resultList = new ArrayList<>();
             int duplicateCount = 0; // 统计重复方案数
@@ -417,10 +426,10 @@ public class PowerDistributionDriveOptimization {
             targetLoops = driveLoopList;
         } else if ("2".equals(optimizeType)) {
             targetLoops = elecLoopList;
-        } else if ("3".equals(optimizeType)) {
-            targetLoops = loopInfos;
-        }
-        long gaInitTime = System.currentTimeMillis();
+            } else if ("3".equals(optimizeType)) {
+                targetLoops = combinedList;
+            }
+            long gaInitTime = System.currentTimeMillis();
         List<Map<String, Object>> topBest = new ArrayList<>();
         if (targetLoops != null && !targetLoops.isEmpty()) {
             List<Map<String, Object>> initialPopulation = generateInitialPopulation(
@@ -587,89 +596,102 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 资源连接数量检查
+     * 资源连接数量检查（新格式）
+     * 按 loopAttr 判定资源类别（配电/主供电->配电器；驱动->驱动器；硬线；高速线），
+     * 按 loopWireway 第二分段（线径截面积/铜丝数）判定大/中/小电流，
+     * 与用电器在 resourceNum 中登记的 8 类限制逐一比较；限制为 null 视为不限。
      */
-    public Boolean elecResourceCheck(List<Map<String, String>> loopInfos, Map<String, List<String>> resourceNum) {
-        Map<String, Map<String, Integer>> currentResource = new HashMap<>();
-        Set<String> restrictedApps = resourceNum.keySet();
+    public Boolean elecResourceCheck(List<Map<String, String>> loopInfos, Map<String, AppResourceLimit> resourceNum) {
+        if (resourceNum == null || resourceNum.isEmpty()) {
+            return true; // 无任何资源限制，直接通过
+        }
+        // 实际消耗统计：appName -> (statKey -> 数量)，statKey ∈ {distHigh,distMedium,distLow,driveHigh,driveMedium,driveLow,hardWire,highSpeedWire}
+        Map<String, Map<String, Integer>> actualResource = new HashMap<>();
 
         for (Map<String, String> loopInfo : loopInfos) {
+            String resourceCategory = resolveResourceCategory(loopInfo.get("loopAttr"));
+            if (resourceCategory == null) {
+                continue; // 接地回路等不参与资源限制
+            }
+            // 硬线/高速线不按线径分行径尺寸
+            String statKey;
+            if ("hardWire".equals(resourceCategory)) {
+                statKey = "hardWire";
+            } else if ("highSpeedWire".equals(resourceCategory)) {
+                statKey = "highSpeedWire";
+            } else {
+                String size = resolveCurrentSize(loopInfo.get("loopWireway"));
+                if (size == null) continue;
+                statKey = resourceCategory + size; // distHigh / distMedium / distLow / driveHigh ...
+            }
+
             String startApp = loopInfo.get("startApp");
             String endApp = loopInfo.get("endApp");
-            String wireType = loopInfo.get("loopWireway");
-
-            if (wireType == null || wireType.isEmpty()) {
-                continue;
+            if (startApp != null && resourceNum.containsKey(startApp)) {
+                actualResource.computeIfAbsent(startApp, k -> new HashMap<>()).merge(statKey, 1, Integer::sum);
             }
-
-            String[] split = wireType.split(" ");
-            if (split.length < 2) {
-                continue;
-            }
-
-            String currentType;
-            try {
-                int copperCount = Integer.parseInt(split[1]);
-                if (copperCount >= 6) {
-                    currentType = "large";
-                } else if (copperCount > 2) {
-                    currentType = "medium";
-                } else {
-                    currentType = "small";
-                }
-            } catch (NumberFormatException e) {
-                continue;
-            }
-
-            if (restrictedApps.contains(startApp)) {
-                currentResource.computeIfAbsent(startApp, k -> new HashMap<>());
-                currentResource.get(startApp).merge(currentType, 1, Integer::sum);
-            }
-            if (restrictedApps.contains(endApp)) {
-                currentResource.computeIfAbsent(endApp, k -> new HashMap<>());
-                currentResource.get(endApp).merge(currentType, 1, Integer::sum);
+            if (endApp != null && resourceNum.containsKey(endApp)) {
+                actualResource.computeIfAbsent(endApp, k -> new HashMap<>()).merge(statKey, 1, Integer::sum);
             }
         }
 
-        for (String appName : restrictedApps) {
-            List<String> limits = resourceNum.get(appName);
-            if (limits == null || limits.size() < 3)
-                continue;
-
-            Map<String, Integer> actualResource = currentResource.getOrDefault(appName, new HashMap<>());
-            int actualLarge = actualResource.getOrDefault("large", 0);
-            int actualMedium = actualResource.getOrDefault("medium", 0);
-            int actualSmall = actualResource.getOrDefault("small", 0);
-
-            String largeLimit = limits.get(0);
-            if (!"不限".equals(largeLimit) && !largeLimit.isEmpty()) {
-                try {
-                    int maxLarge = Integer.parseInt(largeLimit);
-                    if (actualLarge > maxLarge)
-                        return false;
-                } catch (NumberFormatException e) {
-                }
-            }
-            String mediumLimit = limits.get(1);
-            if (!"不限".equals(mediumLimit) && !mediumLimit.isEmpty()) {
-                try {
-                    int maxMedium = Integer.parseInt(mediumLimit);
-                    if (actualMedium > maxMedium)
-                        return false;
-                } catch (NumberFormatException e) {
-                }
-            }
-            String smallLimit = limits.get(2);
-            if (!"不限".equals(smallLimit) && !smallLimit.isEmpty()) {
-                try {
-                    int maxSmall = Integer.parseInt(smallLimit);
-                    if (actualSmall > maxSmall)
-                        return false;
-                } catch (NumberFormatException e) {
-                }
-            }
+        // 与登记的限制逐一比较
+        for (Map.Entry<String, AppResourceLimit> entry : resourceNum.entrySet()) {
+            String appName = entry.getKey();
+            AppResourceLimit limit = entry.getValue();
+            Map<String, Integer> actual = actualResource.getOrDefault(appName, new HashMap<>());
+            if (!checkLimit(actual.get("distHigh"), limit.distHigh)) return false;
+            if (!checkLimit(actual.get("distMedium"), limit.distMedium)) return false;
+            if (!checkLimit(actual.get("distLow"), limit.distLow)) return false;
+            if (!checkLimit(actual.get("driveHigh"), limit.driveHigh)) return false;
+            if (!checkLimit(actual.get("driveMedium"), limit.driveMedium)) return false;
+            if (!checkLimit(actual.get("driveLow"), limit.driveLow)) return false;
+            if (!checkLimit(actual.get("hardWire"), limit.hardWire)) return false;
+            if (!checkLimit(actual.get("highSpeedWire"), limit.highSpeedWire)) return false;
         }
         return true;
+    }
+
+    /** 根据 loopAttr 返回资源类别：dist(配电器)/drive(驱动器)/hardWire/highSpeedWire；其余返回 null（不参与限制） */
+    private String resolveResourceCategory(String loopAttr) {
+        if (loopAttr == null) return null;
+        switch (loopAttr) {
+            case "配电回路":
+            case "主供电回路":
+                return "dist";
+            case "驱动回路":
+                return "drive";
+            case "硬线信号回路":
+                return "hardWire";
+            case "高速线缆回路":
+                return "highSpeedWire";
+            default:
+                return null; // 接地回路等
+        }
+    }
+
+    /** 根据 loopWireway 第二分段（线径截面积或铜丝数）判定大/中/小电流，返回 High/Medium/Low；无法解析返回 null */
+    private String resolveCurrentSize(String loopWireway) {
+        if (loopWireway == null || loopWireway.trim().isEmpty()) return null;
+        String[] split = loopWireway.trim().split("\\s+");
+        if (split.length < 2) return null;
+        double value;
+        try {
+            value = Double.parseDouble(split[1]); // 兼容 "FLRY-B 0.35"（截面积 mm²）与整数铜丝数
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        // 阈值沿用旧逻辑语义：>=6 大电流，>2 中电流，否则小电流
+        if (value >= 6.0) return "High";
+        if (value > 2.0) return "Medium";
+        return "Low";
+    }
+
+    /** 实际数 <= 限制 才通过；限制为 null 表示不限 */
+    private boolean checkLimit(Integer actual, Integer limit) {
+        if (limit == null) return true;
+        int a = actual != null ? actual : 0;
+        return a <= limit;
     }
 
     /**
@@ -691,7 +713,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, String> projectInfo,
             Map<String, Set<String>> loopElecById,
             Random random,
-            Map<String, List<String>> resourceNum) throws Exception {
+            Map<String, AppResourceLimit> resourceNum) throws Exception {
 
         List<Map<String, Object>> crossedSchemes = new ArrayList<>();
         int populationSize = topSchemes.size();
@@ -747,7 +769,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, String> projectInfo,
             Map<String, Set<String>> loopElecById,
             Random random,
-            Map<String, List<String>> resourceNum) throws Exception {
+            Map<String, AppResourceLimit> resourceNum) throws Exception {
 
         List<Map<String, String>> parent1Loops = (List<Map<String, String>>) parent1.get("loopInfos");
         List<Map<String, String>> parent2Loops = (List<Map<String, String>>) parent2.get("loopInfos");
@@ -999,7 +1021,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, Set<String>> loopElecById,
             Map<String, Set<String>> loopElecByIdStart,
             Random random,
-            Map<String, List<String>> resourceNum) throws Exception {
+            Map<String, AppResourceLimit> resourceNum) throws Exception {
 
         List<Map<String, Object>> mutatedSchemes = new ArrayList<>();
         System.out.println("开始对 " + topSchemes.size() + " 个方案进行多分支变异...");
@@ -1523,7 +1545,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, String> projectInfo,
             Map<String, Set<String>> loopElecById,
             Map<String, Set<String>> loopElecByIdStart,
-            Map<String, List<String>> resourceNum) throws Exception {
+            Map<String, AppResourceLimit> resourceNum) throws Exception {
         Random random = new Random();
         List<Map<String, Object>> population = new ArrayList<>();
         int maxAttempts = populationSize * 10;
@@ -1648,8 +1670,8 @@ public class PowerDistributionDriveOptimization {
             String mutualId = null;
             for (String loopId : allMemberLoopIds) {
                 Map<String, String> loop = loopById.get(loopId);
-                if (loop != null && loop.get("mutualExclusion") != null && !loop.get("mutualExclusion").isEmpty()) {
-                    mutualId = loop.get("mutualExclusion");
+                if (loop != null && loop.get("exclusiveConnRel") != null && !loop.get("exclusiveConnRel").isEmpty()) {
+                    mutualId = loop.get("exclusiveConnRel");
                     break;
                 }
             }
@@ -1787,8 +1809,8 @@ public class PowerDistributionDriveOptimization {
             if (loop == null)
                 continue;
 
-            String together = loop.get("changeTogether");
-            String mutual = loop.get("mutualExclusion");
+            String together = loop.get("teamConnRel");
+            String mutual = loop.get("exclusiveConnRel");
             if ((together != null && !together.isEmpty()) || (mutual != null && !mutual.isEmpty())) {
                 continue; // 有约束回路已在 perturbConstrainedLoops 中处理，这里不扰动
             }
@@ -1945,8 +1967,8 @@ public class PowerDistributionDriveOptimization {
         // 遍历所有目标回路，找出哪些变量受到互斥约束
         for (Map<String, String> lp : targetLoops) {
             String lid = lp.get("id");
-            String mutual = lp.get("mutualExclusion");
-            String together = lp.get("changeTogether");
+            String mutual = lp.get("exclusiveConnRel");
+            String together = lp.get("teamConnRel");
             if (mutual == null || mutual.isEmpty())
                 continue;
             String vk = (together != null && !together.isEmpty()) ? "E_G_" + together : "E_L_" + lid;
@@ -2051,18 +2073,18 @@ public class PowerDistributionDriveOptimization {
         for (Map<String, String> loop : targetLoops) {
             String loopId = loop.get("id");
             affectedLoopIds.add(loopId);
-            String together = loop.get("changeTogether");
+            String together = loop.get("teamConnRel");
             if (together != null && !together.isEmpty()) {
                 for (Map<String, String> allLoop : loopById.values()) {
-                    if (together.equals(allLoop.get("changeTogether"))) {
+                    if (together.equals(allLoop.get("teamConnRel"))) {
                         affectedLoopIds.add(allLoop.get("id"));
                     }
                 }
             }
-            String mutual = loop.get("mutualExclusion");
+            String mutual = loop.get("exclusiveConnRel");
             if (mutual != null && !mutual.isEmpty()) {
                 for (Map<String, String> allLoop : loopById.values()) {
-                    if (mutual.equals(allLoop.get("mutualExclusion"))) {
+                    if (mutual.equals(allLoop.get("exclusiveConnRel"))) {
                         affectedLoopIds.add(allLoop.get("id"));
                     }
                 }
@@ -2076,7 +2098,7 @@ public class PowerDistributionDriveOptimization {
             }
             String originalStartApp = loop.get("startApp");
             String originalEndApp = loop.get("endApp");
-            String together = loop.get("changeTogether");
+            String together = loop.get("teamConnRel");
 
             String selectedEndApp = originalEndApp;
             if (together != null && !together.isEmpty()) {
@@ -2243,16 +2265,16 @@ public class PowerDistributionDriveOptimization {
         for (Map<String, String> lp : loopInfos)
             extendedLoopIds.add(lp.get("id"));
         for (Map<String, String> lp : loopInfos) {
-            String together = lp.get("changeTogether");
+            String together = lp.get("teamConnRel");
             if (together != null && !together.isEmpty()) {
                 List<String> groupMembers = togetherGroup.get(together);
                 if (groupMembers != null)
                     extendedLoopIds.addAll(groupMembers);
             }
-            String mutual = lp.get("mutualExclusion");
+            String mutual = lp.get("exclusiveConnRel");
             if (mutual != null && !mutual.isEmpty()) {
                 for (Map<String, String> allLoop : loopById.values()) {
-                    if (mutual.equals(allLoop.get("mutualExclusion")))
+                    if (mutual.equals(allLoop.get("exclusiveConnRel")))
                         extendedLoopIds.add(allLoop.get("id"));
                 }
             }
@@ -2336,8 +2358,8 @@ public class PowerDistributionDriveOptimization {
         Map<String, List<String>> varKeyToMutualIds = new LinkedHashMap<>();
         for (Map<String, String> lp : extendedLoops) {
             String lid = lp.get("id");
-            String mutual = lp.get("mutualExclusion");
-            String together = lp.get("changeTogether");
+            String mutual = lp.get("exclusiveConnRel");
+            String together = lp.get("teamConnRel");
             if (mutual == null || mutual.isEmpty())
                 continue;
             String vk = (together != null && !together.isEmpty()) ? "E_G_" + together : "E_L_" + lid;
@@ -2459,5 +2481,49 @@ public class PowerDistributionDriveOptimization {
             stringMap1.put(stringMap.get("appName"), result);
         }
         return stringMap1;
+    }
+
+    /**
+     * 用电器可连接资源数量限制（新格式，8 类）；字段为 null 表示该类别不限。
+     * dist/drive 分别对应配电器/驱动器的大、中、小电流回路数；hardWire/highSpeedWire 为硬线/高速线回路数。
+     */
+    public static class AppResourceLimit {
+        Integer distHigh;     // 配电器大电流回路数
+        Integer distMedium;   // 配电器中电流回路数
+        Integer distLow;      // 配电器小电流回路数
+        Integer driveHigh;    // 驱动器大电流回路数
+        Integer driveMedium;  // 驱动器中电流回路数
+        Integer driveLow;     // 驱动器小电流回路数
+        Integer hardWire;     // 硬线回路数
+        Integer highSpeedWire;// 高速线回路数
+    }
+
+    /** 解析用电器的 8 类资源限制；全部为 null 时返回 null（视为无限制） */
+    private AppResourceLimit parseAppResourceLimit(Map<String, String> appPosition) {
+        AppResourceLimit limit = new AppResourceLimit();
+        limit.distHigh = parseIntField(appPosition.get("distHighCurrentLoop"));
+        limit.distMedium = parseIntField(appPosition.get("distMediumCurrentLoop"));
+        limit.distLow = parseIntField(appPosition.get("distLowCurrentLoop"));
+        limit.driveHigh = parseIntField(appPosition.get("driveHighCurrentLoop"));
+        limit.driveMedium = parseIntField(appPosition.get("driveMediumCurrentLoop"));
+        limit.driveLow = parseIntField(appPosition.get("driveLowCurrentLoop"));
+        limit.hardWire = parseIntField(appPosition.get("hardWire"));
+        limit.highSpeedWire = parseIntField(appPosition.get("highSpeedWire"));
+        if (limit.distHigh == null && limit.distMedium == null && limit.distLow == null
+                && limit.driveHigh == null && limit.driveMedium == null && limit.driveLow == null
+                && limit.hardWire == null && limit.highSpeedWire == null) {
+            return null;
+        }
+        return limit;
+    }
+
+    /** 将 Object（可能是 Integer 或 String）安全转为 Integer；无法解析返回 null */
+    private static Integer parseIntField(Object value) {
+        if (value == null) return null;
+        try {
+            return Integer.parseInt(value.toString().trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }
