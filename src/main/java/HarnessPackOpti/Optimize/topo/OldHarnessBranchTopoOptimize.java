@@ -1,0 +1,3359 @@
+package HarnessPackOpti.Optimize.topo;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+import org.apache.commons.collections4.map.LinkedMap;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import HarnessPackOpti.JsonToMap;
+import HarnessPackOpti.Algorithm.FindBest;
+import HarnessPackOpti.Algorithm.FindTopoBreak;
+import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
+import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
+import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
+import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
+import HarnessPackOpti.utils.GINEInferenceEngine;
+import HarnessPackOpti.utils.Normalize;
+import HarnessPackOpti.utils.ThreadPool;
+
+public class OldHarnessBranchTopoOptimize {
+    // 随机变换样本数量
+    public static Integer LessRandomSamleNumber = 1000;
+    // 迭代最少样本数量
+    public static Integer HybridizationLessRandomSamleNumber = 10000;
+    // top几的数量规定
+    public static final Integer TopNumber = 100;
+    // 最后返回前端的方案数量
+    public static final Integer LastNumber = 20;
+    // 每次迭代最优的成本
+    public static Map<String, Double> BestCost = new HashMap<>();
+    // 最优样本重复次数
+    public static Integer BestRepetitionNumber = 0;
+    // 迭代重复的次数限值
+    public static Integer IterationRestrictNumber = 10;
+    // 定义一个仓库
+    public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
+    // 变异的次数
+    public static Integer VariationNumber = 5;
+    // 每次迭代得到的top20
+    public static List<Map<String, Object>> TopDetail = new ArrayList<>();
+    // 初始化自动补全得次数
+    public static Integer InitializeAutoCompleteNumber = 2000;
+    // 自动补全得次数
+    public static Integer AutoCompleteNumber = 30;
+    // 定义仓库(所有裂变生成的方案，用于AI)
+    public static List<List<String>> WareHouseAI = new CopyOnWriteArrayList<>();
+    // 暂存的仓库
+    public static List<List<String>> WareHouseTemp = new CopyOnWriteArrayList<>();
+    // 线程池
+    public static ThreadPool threadPool = new ThreadPool(11, 50);
+
+    // 定义一个仓库
+    public static List<List<String>> WareHouseTop = new ArrayList<>();
+    // 每次迭代得到的top10
+    public static List<Map<String, Object>> TopCostDetail = new ArrayList<>();
+
+    // 当前方案的id
+    private static String CaseId = null;
+    private static String optimizeRecordId = null;
+
+    private final OptimizeStopStatusStore optimizeStopStatusStore;
+
+    public OldHarnessBranchTopoOptimize() {
+        this.optimizeStopStatusStore = OptimizeStopStatusStore.getInstance(); // 使用Store的单例实例
+    }
+
+    public String topoOptimize(String jsonContent) throws Exception {
+        long start = System.currentTimeMillis();
+        ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
+        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
+        JsonToMap jsonToMap = new JsonToMap();
+        Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
+        List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
+        List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
+        Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
+        Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
+        Map<String, Object> optimizeRecord = (Map<String, Object>) jsonMap.get("optimizeRecord");
+        List<Map<String, String>> loopInfos = (List<Map<String, String>>) jsonMap.get("loopInfos");
+        List<Map<String, String>> points = (List<Map<String, String>>) jsonMap.get("points");
+        CaseId = caseInfo.get("id").toString();
+         optimizeRecordId = optimizeRecord.get("id").toString();
+//        optimizeRecordId = java.util.UUID.randomUUID().toString();
+        optimizeStopStatusStore.setKey(optimizeRecordId);
+        Boolean whetherAI = false;
+
+        // 整车信息计算
+        String initializeCaseResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
+        Map<String, Object> initializeCaseResultMap = jsonToMap.TransJsonToMap(initializeCaseResult);
+        initializeCaseResultMap.put("topoId", topoInfoMap.get("id").toString());
+        initializeCaseResultMap.put("caseId", caseInfo.get("id").toString());
+        List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
+        for (Map<String, Object> map : edges) {
+            Map<String, String> result = new HashMap<>();
+            result.put("edgeId", map.get("id").toString());
+            result.put("statue", map.get("topologyStatusCode").toString());
+            topoOptimizeResult.add(result);
+        }
+        initializeCaseResultMap.put("topoOptimizeResult", topoOptimizeResult);
+        initializeCaseResultMap.put("initializationScheme", true);
+
+        Map<String, String> eleclection = getEleclection(appPositions);
+        // 首先对所有的分支进行一个分类 固定的，非固定的
+        // 固定状态分支(仅B/C/S之一)
+        Map<String, List<String>> completefixedMap = new HashMap<>();
+        // 组团一起变化的分支
+        Map<String, List<String>> togetherBCMap = new HashMap<>();
+        // 可选BC的单独分支
+        List<String> singleBCList = new ArrayList<>();
+        // 可选SC的单独分支
+        List<String> singleSCList = new ArrayList<>();
+        // 可选BS的单独分支
+        List<String> singleBSList = new ArrayList<>();
+        // 可选BSC的单独分支
+        List<String> singleBSCList = new ArrayList<>();
+        List<String> normList = new ArrayList<>();
+        // 初始方案得分支打断状况
+        List<String> primeList = new ArrayList<>();
+        // 穿腔的id(涉及闭环的关键分支)
+        List<String> wearId = new ArrayList<>();
+        // 互斥的情况 互斥分支(一组为B则另一组必须为C)
+        Map<String, Map<String, List<String>>> mutexMap = new HashMap<>();
+        // 互斥团的情况
+        Map<String, List<String>> mutexGroupMap = new HashMap<>();
+        // 多选一的情况(N个分支中至多一个为C)
+        Map<String, Map<String, List<String>>> chooseOneMap = new HashMap<>();
+        // 可以变为S的id集合
+        List<String> canChangeS = new ArrayList<>();
+        // 分支可供选择的是BS的这种集合
+        List<String> edgeChooseBS = new ArrayList<>();
+        // 方案分类与检查初始状态设置
+        long l = System.currentTimeMillis();
+        System.out.println("开始对txt进行一个分类");
+        // 找出那些符合变B的情况：用在随机取B 算闭环平均数
+        List<String> conformList = new ArrayList<>();
+
+        for (Map<String, Object> edge : edges) {
+            normList.add(edge.get("id").toString());
+            primeList.add(edge.get("topologyStatusCode").toString());
+            if (edge.get("statusB") == null) {
+                edge.put("statusB", "");
+            }
+            if (edge.get("statusC") == null) {
+                edge.put("statusC", "");
+            }
+            if (edge.get("statusS") == null) {
+                edge.put("statusS", "");
+            }
+
+            // 只要分支可以为b，则添加到符合变b条件的分支
+            if ((edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")) ||
+                    (edge.get("statusC").toString().equals("C") && edge.get("statusB").toString().equals("B")) ||
+                    (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")
+                            && edge.get("statusC").toString().equals("C"))) {
+                conformList.add(edge.get("id").toString());
+            }
+
+            if (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")
+                    && edge.get("statusC").toString().isEmpty()) {
+                edgeChooseBS.add(edge.get("id").toString());
+            }
+            // 找出那些可变S的情况，可以变为s状态的分支
+            if (edge.get("oneC") == null || "".equals(edge.get("oneC"))) {
+                if ((edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S"))
+                        || (edge.get("statusC").toString().equals("C") && edge.get("statusS").toString().equals("S"))
+                        || (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")
+                                && edge.get("statusC").toString().equals("C"))) {
+                    canChangeS.add(edge.get("id").toString());
+                }
+            }
+
+            // 将穿腔的id添加到wearId中去
+            if (edge.get("closedLoop") != null && !edge.get("closedLoop").toString().isEmpty()) {
+                wearId.add(edge.get("id").toString());
+            }
+            // 存在互斥的情况 将id添加到mutexMap中去
+            if (edge.get("mutualExclusion") != null && !edge.get("mutualExclusion").toString().isEmpty()) {
+                String mutexName = edge.get("mutualExclusion").toString();
+                String[] split = mutexName.split("-");
+                if (mutexMap.containsKey(split[0])) {
+                    Map<String, List<String>> map1 = mutexMap.get(split[0]);
+                    if (map1.containsKey(mutexName)) {
+                        map1.get(mutexName).add(edge.get("id").toString());
+                    } else {
+                        List<String> idList = new ArrayList<>();
+                        idList.add(edge.get("id").toString());
+                        map1.put(mutexName, idList);
+                    }
+                } else {
+                    Map<String, List<String>> sonMap = new HashMap<>();
+                    List<String> idList = new ArrayList<>();
+                    idList.add(edge.get("id").toString());
+                    // 互斥状态-分支id
+                    sonMap.put(mutexName, idList);
+                    mutexMap.put(split[0], sonMap);
+                }
+                // 考虑互斥是否存在组团的情况如果存在 记录下来
+                if (edge.get("changeTogether") != null && !edge.get("changeTogether").toString().isEmpty()) {
+                    if (mutexGroupMap.containsKey(edge.get("changeTogether").toString())) {
+                        mutexGroupMap.get(edge.get("changeTogether").toString()).add(edge.get("id").toString());
+                    } else {
+                        List<String> list = new ArrayList<>();
+                        list.add(edge.get("id").toString());
+                        mutexGroupMap.put(edge.get("changeTogether").toString(), list);
+                    }
+                }
+                continue;
+            }
+
+            // 对多选的一个情况进行一个记录，具有相同onec值的分支属于同一组
+            if (edge.get("oneC") != null && !"".equals(edge.get("oneC"))) {
+                String chooseName = edge.get("oneC").toString();
+                List<String> chooselist = new ArrayList<>();
+                if (edge.get("statusB").toString().equals("B")) {
+                    chooselist.add("B");
+                }
+                if (edge.get("statusS").toString().equals("S")) {
+                    chooselist.add("S");
+                }
+                if (edge.get("statusC").toString().equals("C")) {
+                    chooselist.add("C");
+                }
+
+                if (chooseOneMap.containsKey(chooseName)) {
+                    chooseOneMap.get(chooseName).put(edge.get("id").toString(), chooselist);
+                } else {
+                    Map<String, List<String>> listMap = new HashMap<>();
+                    listMap.put(edge.get("id").toString(), chooselist);
+                    chooseOneMap.put(chooseName, listMap);
+                }
+                continue;
+            }
+
+            // 当只有一个勾选的的情况 将该分支加入对应的框里面
+            int trueCount = 0;
+            if (edge.get("statusB").toString().equals("B")) {
+                trueCount++;
+            }
+            if (edge.get("statusS").toString().equals("S")) {
+                trueCount++;
+            }
+            if (edge.get("statusC").toString().equals("C")) {
+                trueCount++;
+            }
+            if (trueCount == 1) {
+                if (edge.get("statusB").toString().equals("B")) {
+                    if (completefixedMap.containsKey("B")) {
+                        completefixedMap.get("B").add(edge.get("id").toString());
+                    } else {
+                        List<String> list = new ArrayList<>();
+                        list.add(edge.get("id").toString());
+                        completefixedMap.put("B", list);
+                    }
+                }
+
+                if (edge.get("statusC").toString().equals("C")) {
+                    if (completefixedMap.containsKey("C")) {
+                        completefixedMap.get("C").add(edge.get("id").toString());
+                    } else {
+                        List<String> list = new ArrayList<>();
+                        list.add(edge.get("id").toString());
+                        completefixedMap.put("C", list);
+                    }
+                }
+                if (edge.get("statusS").toString().equals("S")) {
+                    if (completefixedMap.containsKey("S")) {
+                        completefixedMap.get("S").add(edge.get("id").toString());
+                    } else {
+                        List<String> list = new ArrayList<>();
+                        list.add(edge.get("id").toString());
+                        completefixedMap.put("S", list);
+                    }
+                }
+                continue;
+            }
+
+            // 是否为cs这种情况 分别放入到对应的集合中去
+            if (edge.get("statusB").toString().isEmpty() && edge.get("statusS").toString().equals("S")
+                    && edge.get("statusC").toString().equals("C")) {
+                if (edge.get("changeTogether") == null || edge.get("changeTogether").toString().isEmpty()) {
+                    singleSCList.add(edge.get("id").toString());
+                    continue;
+                }
+            }
+
+            // 当前为bs的的
+            if (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")
+                    && edge.get("statusC").toString().isEmpty()) {
+                if (edge.get("changeTogether") == null || edge.get("changeTogether").toString().isEmpty()) {
+                    singleBSList.add(edge.get("id").toString());
+                    continue;
+                }
+            }
+            // 当前为bsc的的
+            if (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")
+                    && edge.get("statusC").toString().equals("C")) {
+                if (edge.get("changeTogether") == null || edge.get("changeTogether").toString().isEmpty()) {
+                    singleBSCList.add(edge.get("id").toString());
+                    continue;
+                }
+            }
+            // 当前为bc的的
+            if (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().isEmpty()
+                    && edge.get("statusC").toString().equals("C")) {
+                if (edge.get("changeTogether") == null || edge.get("changeTogether").toString().isEmpty()) {
+                    singleBCList.add(edge.get("id").toString());
+                    continue;
+                }
+
+            }
+            // 剩下的都是都是在BC中进行一个挑选
+            if (edge.get("changeTogether") == null || edge.get("changeTogether").toString().isEmpty()) {
+                singleBCList.add(edge.get("id").toString());
+            } else {
+                if (togetherBCMap.containsKey(edge.get("changeTogether").toString())) {
+                    togetherBCMap.get(edge.get("changeTogether").toString()).add(edge.get("id").toString());
+                } else {
+                    List<String> list = new ArrayList<>();
+                    list.add(edge.get("id").toString());
+                    togetherBCMap.put(edge.get("changeTogether").toString(), list);
+                }
+            }
+
+        }
+        // 对两个组团进行一个处理
+        Set<String> mutexGroupKey = mutexGroupMap.keySet();
+        for (String s : mutexGroupKey) {
+            // 如果组团一起变的中包含互斥组团，那么将该组团加入到互斥组团里，并且从togetherBCMap中删除该组
+            if (togetherBCMap.containsKey(s)) {
+                mutexGroupMap.get(s).addAll(togetherBCMap.get(s));
+                togetherBCMap.remove(s);
+            }
+        }
+        // 将统一的map格式改为list
+        List<List<String>> togetherBCList = new ArrayList<>();
+        for (String key : togetherBCMap.keySet()) {
+            togetherBCList.add(togetherBCMap.get(key));
+        }
+        List<List<String>> mutexGroupList = new ArrayList<>();
+        for (String key : mutexGroupMap.keySet()) {
+            mutexGroupList.add(mutexGroupMap.get(key));
+        }
+        List<Map<String, List<String>>> chooseOneList = new ArrayList<>();
+        for (String key : chooseOneMap.keySet()) {
+            chooseOneList.add(chooseOneMap.get(key));
+        }
+        // 分支可以进行打B的集合
+        // List<String> initialCanchangeBList = new ArrayList<>();
+        // initialCanchangeBList.addAll(singleBCList);
+        // initialCanchangeBList.addAll(singleBSList);
+        // initialCanchangeBList.addAll(singleBSCList);
+        // 分支可以由S转为B的集合
+        List<String> initialCanchangeSToBList = new ArrayList<>();
+        initialCanchangeSToBList.addAll(singleBSList);
+        initialCanchangeSToBList.addAll(singleBSCList);
+        // 只要不是指定为B的 全部设置为C 检查是否符合条件
+        List<String> onlyNameB = new ArrayList<>();
+        if (completefixedMap.containsKey("B")) {
+            onlyNameB.addAll(completefixedMap.get("B"));
+        }
+        List<String> onlyNameS = new ArrayList<>();
+        if (completefixedMap.containsKey("S")) {
+            List<String> list = completefixedMap.get("S");
+            onlyNameS.addAll(list);
+        }
+        // initialScheme 当前方案下的分支打断情况，把不是为b的分支都设置为C，包括S
+        List<String> initialScheme = new ArrayList<>();
+        List<Map<String, Object>> coppyedges = edges.stream().collect(Collectors.toList());
+        for (Map<String, Object> coppyedge : coppyedges) {
+            String id = (String) coppyedge.get("id");
+            if (!onlyNameB.contains(id)) {
+                coppyedge.put("topologyStatusCode", "C");
+                initialScheme.add("C");
+            } else {
+                initialScheme.add("B");
+            }
+        }
+        // 获取一定范围的分支
+        jsonMap.put("edges", coppyedges);
+        // 分支id-分支打断代价 获取每条分支的打断代价
+        Map<String, Double> breakCostMap = new HashMap<>();
+        String detail = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+        Map<String, Object> objectMap = jsonToMap.TransJsonToMap(detail);
+        // 提取经过各个分支的所有回路信息
+        Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) objectMap
+                .get("bundeleRelatedCircuitInfo");
+        // 所有回路详细信息（最优方案）
+        List<Map<String, Object>> circuitInfoList = (List<Map<String, Object>>) objectMap.get("circuitInfo");
+        // 统计所有分支的打断代价
+        for (String s : bundeleRelatedCircuitInfo.keySet()) {
+            Map<String, Object> edgeMap = (Map<String, Object>) bundeleRelatedCircuitInfo.get(s);
+            // 分支详细信息
+            Map<String, Object> edgeDetail = (Map<String, Object>) edgeMap.get("circuitInfoIntergation");
+            breakCostMap.put(s,
+                    Double.parseDouble(edgeDetail.get("分支打断代价") != null ? edgeDetail.get("分支打断代价").toString() : "0"));
+        }
+        ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
+        Map<String, Map<String, String>> elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
+        // 按照导线单位商务价降序排序
+        Map<String, Map<String, String>> sortedMapExcel = sortMapByInnerCostValue(elecFixedLocationLibrary);
+        // 打断代价从高到低排序
+        Map<String, Double> sortedMap = sortMapByDoubleValue(breakCostMap);
+
+        // 从第一个B开始循环 selectNumberB 选取的B的数量
+        int selectNumberB = 1;
+        // 按前端设置的用电器位置来算
+        Map<String, Map<String, String>> elecPosition = new HashMap<>();
+        for (Map<String, String> appPosition : appPositions) {
+            // 用电器名称
+            String appName = appPosition.get("appName");
+            Map<String, String> appPositionMap = new HashMap<>();
+            // 用电器位置是否固化
+            String positionRegular = appPosition.get("positionRegular");
+            if ("N".equals(positionRegular)) {
+                String appId = appPosition.get("unregularPointId");
+                String positionName = appPosition.get("unregularPointName");
+                if (appId != null && !"null".equals(appId)) {
+                    appPositionMap.put(appId, positionName);
+                }
+            } else {
+                String appId = appPosition.get("regularPointId");
+                String positionName = appPosition.get("regularPointName");
+                if (appId != null && !"null".equals(appId)) {
+                    appPositionMap.put(appId, positionName);
+                }
+            }
+            if (elecPosition != null) {
+                elecPosition.put(appName, appPositionMap);
+            }
+        }
+        // 长度统计
+        Map<String, Object> branchLength = getBranchLength(normList, edges);
+        // 连接关系索引构建
+        List<List<Integer>> connection = connection(edges, normList);
+        // 焊点-对应回路位置点名称
+        Map<String, List<String>> multiLoopInfos = new LinkedMap<>();
+        // 位置点-位置点id
+        Map<String, String> pointMap = new HashMap<>();
+        for (Map<String, String> loopInfoTemp : loopInfos) {
+            if (loopInfoTemp.get("startApp").startsWith("[") || loopInfoTemp.get("endApp").startsWith("[")) {
+                if (loopInfoTemp.get("startApp").startsWith("[")) {
+                    // 获取终点用电器名称(非焊点we)
+                    String endApp = loopInfoTemp.get("endApp");
+                    // 查找终点位置名称
+                    String node = findNode(endApp, appPositions);
+                    if (multiLoopInfos.containsKey(loopInfoTemp.get("startApp"))) {
+                        multiLoopInfos.get(loopInfoTemp.get("startApp")).add(node);
+                    } else {
+                        List<String> list = new ArrayList<>();
+                        list.add(node);
+                        multiLoopInfos.put(loopInfoTemp.get("startApp"), list);
+                    }
+                }
+                if (loopInfoTemp.get("endApp").startsWith("[")) {
+                    // 获取终点用电器名称
+                    String startApp = loopInfoTemp.get("startApp");
+                    // 查找终点位置名称
+                    String node = findNode(startApp, appPositions);
+                    if (multiLoopInfos.containsKey(loopInfoTemp.get("endApp"))) {
+                        multiLoopInfos.get(loopInfoTemp.get("endApp")).add(node);
+                    } else {
+                        List<String> list = new ArrayList<>();
+                        list.add(node);
+                        multiLoopInfos.put(loopInfoTemp.get("endApp"), list);
+                    }
+                }
+            }
+        }
+        // 位置点-位置点id
+        for (Map<String, String> point : points) {
+            pointMap.put(point.get("pointName").toString(), point.get("id").toString());
+        }
+        // 每个B对应的的平均闭环数量
+        System.out.println("结束分类以及初始方案检查，所用时间：" + (System.currentTimeMillis() - l));
+        l = System.currentTimeMillis();
+        System.out.println("开始计算不同B闭环的平均值");
+        // 打断B的数量-平均闭环数
+        Map<Integer, Double> averageNumberB = new HashMap<>();
+
+        while (true) {
+            // store存储的默认值为true，一个状态存储对象，用于跟踪优化任务的运行状态
+            if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                initializeCaseResultMap.put("finishStatue", "abnormal");
+                List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "abnormal", singleBCList, singleSCList,
+                        singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList,
+                        togetherBCList);
+                mapList.add(initializeCaseResultMap);
+                String s = objectMapper.writeValueAsString(mapList);
+                return objectMapper.writeValueAsString(mapList);
+            }
+            // 是否结束当前循环
+            Boolean breakLoop = false;
+            // 闭环总数
+            Double loopTotal = 0.0;
+            // 累计样本成功数量
+            Double simpleSuccess = 0.0;
+            // 累计样本失败数量
+            int simpleFail = 0;
+            while (true) {
+                // 分支状态可为b的集合 在符合要求的范围内选定量的数量
+                List<String> list = selectId(conformList, selectNumberB);
+                // needCahngeId 选取的点当中可能存在组团的情况，
+                List<String> needCahngeId = new ArrayList<>();
+                for (String s : list) {
+                    List<String> changeId = new ArrayList<>();
+                    changeId.add(s);
+                    for (List<String> strings : togetherBCList) {
+                        if (strings.contains(s)) {
+                            changeId = strings;
+                        }
+                    }
+                    needCahngeId.addAll(changeId);
+                }
+                // 检查是否符合用电器周围是否存在分支 以及所有回路是否导通的要求
+                // 除了b其他都为c
+                // copy一份初始方案的分支打断情况(B,C)
+                List<String> changeList = initialScheme.stream().collect(Collectors.toList());
+                // copy原始方案分支
+                // 原始方案分支
+                List<Map<String, Object>> coppysonedges = edges.stream().collect(Collectors.toList());
+                for (String s : needCahngeId) {
+                    int i = normList.indexOf(s);
+                    changeList.set(i, "B");
+                }
+                for (String s : onlyNameS) {
+                    int i = normList.indexOf(s);
+                    changeList.set(i, "S");
+                }
+                // 给复制的edge添加打断状态(覆盖之前的)
+                for (Map<String, Object> coppyedge : coppysonedges) {
+                    String id = (String) coppyedge.get("id");
+                    int number = normList.indexOf(id);
+                    String s = changeList.get(number);
+                    coppyedge.put("topologyStatusCode", s);
+                }
+                // 判断生成的方案是否存在断点
+                Boolean sonSate = checkFirstOption(coppysonedges, appPositions, eleclection);
+                // 计算当前方案的分支闭合数量 对应的数量进行一个添加
+                // 计算当前方案是否存在断点，true：不存在断点，所有分支都可以联通
+                if (sonSate) {
+                    // 传入新的方案,计算新的方案的平均闭环数
+                    List<List<String>> lists = recognizeLoopNew(coppysonedges);
+                    // 样本成功数
+                    simpleSuccess++;
+                    // 方案闭环数量
+                    loopTotal = loopTotal + lists.size();
+                } else {
+                    // 存在断点的方案数
+                    simpleFail++;
+                }
+                // 样本成功数大于可打断分支的一半，
+                if (simpleSuccess > (conformList.size() / 2 + 1) || simpleFail > 10000) {
+                    // 当成功生成的个体数量超过这个阈值时，认为已经生成了足够多的有效个体，可以退出
+                    if (simpleSuccess != 0.0) {
+                        // 比如60个方案中产生了180个闭环数，就是180/60
+                        double v = loopTotal / simpleSuccess;
+                        if (v < 1) {
+                            breakLoop = true;
+                            break;
+                        } else {
+                            // 分支打断数量-平均闭环数量
+                            averageNumberB.put(selectNumberB, v);
+                            break;
+                        }
+                    } else {
+                        breakLoop = true;
+                        break;
+                    }
+                }
+            }
+            if (breakLoop) {
+                break;
+            }
+            selectNumberB++;
+        }
+
+        // 对当前的平均数做一个排序找到第一个闭合平均值小于10的B的数量；降序排列
+        List<Map.Entry<Integer, Double>> list = new ArrayList<>(averageNumberB.entrySet());
+        Collections.sort(list, new Comparator<Map.Entry<Integer, Double>>() {
+            @Override
+            public int compare(Map.Entry<Integer, Double> o1, Map.Entry<Integer, Double> o2) {
+                return o2.getValue().compareTo(o1.getValue());
+            }
+        });
+        Integer minLoopNumber = null;
+        Integer maxLoopNumber = null;
+        for (Map.Entry<Integer, Double> entry : list) {
+            // 筛选平均闭环数小于10的B的数量
+            if (entry.getValue() < 10 && minLoopNumber == null) {
+                minLoopNumber = entry.getKey();
+            }
+        }
+        if (list.size() > 0) {
+            maxLoopNumber = list.get(list.size() - 1).getKey();
+        }
+        System.out.println("结束计算不同B闭环的平均值，所用时间：" + (System.currentTimeMillis() - l));
+        l = System.currentTimeMillis();
+        System.out.println("开始生成初代样本");
+        // 接下来就是根据上面找到的key进行一个样本的创建 这里会生成指定数量的方案，满足约束条件，闭环下价值评估的方案
+        List<List<String>> simpleList = initialOptimize(minLoopNumber, maxLoopNumber, initialScheme, togetherBCList,
+                conformList, normList, onlyNameS, edges, appPositions, eleclection, mutexMap,
+                mutexGroupList, chooseOneList, sortedMapExcel, sortedMap, circuitInfoList);
+        // 添加初始方案分支打断状况
+        simpleList.add(primeList);
+        if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+            initializeCaseResultMap.put("finishStatue", "abnormal");
+            List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "abnormal", singleBCList, singleSCList,
+                    singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList,
+                    togetherBCList);
+            mapList.add(initializeCaseResultMap);
+            System.out.println(objectMapper.writeValueAsString(mapList));
+            return objectMapper.writeValueAsString(mapList);
+        }
+        System.out.println("生成初代样本结束，所用时间" + (System.currentTimeMillis() - l));
+        // 将生成的方案存放到仓库当中去
+        WareHouse.addAll(simpleList);
+        // 找出初始样本的的最优值
+        System.out.println("找出初代样本的最优值");
+        l = System.currentTimeMillis();
+
+        // 对初始生成的方案进行处理和优化，找出最佳方案，通过将闭环中可更改分支状态为s来消除闭环
+        // 对上面生成的闭环方案进行计算，计算他们的成本，按价格排序 ，返回成本最优的20条方案
+        // List<Map<String, Object>> findBest = changeAndFindBest(simpleList, edges,
+        // normList, wearId, canChangeS, jsonMap,
+        // edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos,
+        // pointMap, null);
+        List<Map<String, Object>> findBest = changeAndFindBest(simpleList, edges, normList, wearId, canChangeS,
+                jsonMap,
+                edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, null);
+
+        TopDetail = findBest;
+        if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+            initializeCaseResultMap.put("finishStatue", "abnormal");
+            List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "abnormal", singleBCList, singleSCList,
+                    singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList,
+                    togetherBCList);
+            mapList.add(initializeCaseResultMap);
+            System.out.println(objectMapper.writeValueAsString(mapList));
+            return objectMapper.writeValueAsString(mapList);
+        }
+        // 将结果记录到excel中去
+        System.out.println("初代样本的最优值寻找完成，并记录到excel中，所用时间：" + (System.currentTimeMillis() - l));
+        int hybridizationNumber = 1;
+        // 对初始方案进行进行一个记录 并且开启迭代
+        System.out.println("开始进行迭代");
+
+        // 将初始化方案也放入到迭代中去
+        Map<String, Object> addtoMap = new HashMap<>();
+        addtoMap.put("serviceableStatue", primeList);
+        findBest.add(addtoMap);
+        long functionStartTime = System.currentTimeMillis();
+        // 遗传算法
+        while (true) {
+            if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                initializeCaseResultMap.put("finishStatue", "abnormal");
+                List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "abnormal", singleBCList, singleSCList,
+                        singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList,
+                        togetherBCList);
+                mapList.add(initializeCaseResultMap);
+                System.out.println(objectMapper.writeValueAsString(mapList));
+                String s = objectMapper.writeValueAsString(mapList);
+                return objectMapper.writeValueAsString(mapList);
+            }
+            System.out.println(hybridizationNumber + "代迭代开始");
+            long startTime = System.currentTimeMillis();
+            // 只有当迭代的结果top10都是同一个值的时候 才结束迭代
+            findBest = hybridization(hybridizationNumber, findBest, onlyNameS, normList, conformList, togetherBCList,
+                    canChangeS, edges,
+                    appPositions, eleclection,
+                    mutexMap, minLoopNumber, maxLoopNumber, initialScheme, wearId, jsonMap, edgeChooseBS, chooseOneList,
+                    mutexGroupList, sortedMapExcel, sortedMap, circuitInfoList, elecPosition, branchLength, connection,
+                    multiLoopInfos, pointMap, whetherAI);
+            if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                initializeCaseResultMap.put("finishStatue", "abnormal");
+                List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "abnormal", singleBCList, singleSCList,
+                        singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList,
+                        togetherBCList);
+                mapList.add(initializeCaseResultMap);
+                System.out.println(objectMapper.writeValueAsString(mapList));
+                String s = objectMapper.writeValueAsString(mapList);
+                return objectMapper.writeValueAsString(mapList);
+            }
+            if (findBest == null || findBest.size() == 0) {
+                break;
+            }
+            TopDetail = findBest;
+            System.out.println("第" + hybridizationNumber + "代迭代结束，耗时：" + (System.currentTimeMillis() - startTime));
+            if (hybridizationNumber == 1) {
+                double costTotal = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总成本").toString());
+                double costLenth = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总长度").toString());
+                double costWeight = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总重量").toString());
+                BestCost.put("总成本", costTotal);
+                BestCost.put("总长度", costLenth);
+                BestCost.put("总重量", costWeight);
+            } else {
+                // 获取当前最优解的各项指标
+                double costTotal = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总成本").toString());
+                double costLenth = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总长度").toString());
+                double costWeight = Double
+                        .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总重量").toString());
+                // 当前最优解中的长度判断当前的成本、长度、重量是都一样
+                // 判断是否与历史最优解基本相同（允许微小误差)
+                if (Math.abs(BestCost.get("总成本") - costTotal) < 0.000001
+                        && Math.abs(BestCost.get("总长度") - costLenth) < 0.000001
+                        && Math.abs(BestCost.get("总重量") - costWeight) < 0.000001) {
+                    BestRepetitionNumber = BestRepetitionNumber + 1; // 相同则计数器加1
+                    System.out.println("重复次数： " + BestRepetitionNumber);
+                } else if (costTotal < BestCost.get("总成本")) {
+                    // 找到更优解，更新并重置计数器
+                    BestRepetitionNumber = 0;
+                    BestCost.put("总成本", costTotal);
+                    BestCost.put("总长度", costLenth);
+                    BestCost.put("总重量", costWeight);
+                } else {
+                    // 当前最优更差，不更新历史最优，但计数器+1（因为和最优解不同）
+                    BestRepetitionNumber++;
+                }
+            }
+            if (BestRepetitionNumber == IterationRestrictNumber) {
+                System.out.println("迭代次数达到限制，后续与上一代结果相同达到30次");
+                break;
+            }
+            hybridizationNumber++;
+        }
+        long functionendTime = System.currentTimeMillis();
+        System.out.println("遗传算法总迭代耗时：" + (functionendTime - functionStartTime));
+        // SampleSave.writePredictionsToExcel(SampleSave.modelPredictMap,
+        // "F:\\office\\idearProjects\\project20251009\\predict_output.xlsx");
+        TopDetail = findBest;
+        long startTime = System.currentTimeMillis();
+        List<Map<String, Object>> mapList = handleAndShowTop(jsonMap, "normal", singleBCList, singleSCList,
+                singleBSList, singleBSCList, normList, eleclection, wearId, mutexMap, chooseOneList, togetherBCList);
+        System.out.println("找" + TopDetail.size() + "个方案总耗时：" + (System.currentTimeMillis() - startTime));
+        initializeCaseResultMap.put("finishStatue", "normal");
+        mapList.add(initializeCaseResultMap);
+        String s = objectMapper.writeValueAsString(mapList);
+        long end = System.currentTimeMillis();
+        System.out.println("算法总耗时长：" + (end - start));
+        return objectMapper.writeValueAsString(mapList);
+    }
+
+    /**
+     * @Description: 对top的方案进行再次变异 结果中分支打断状况为S的 可以变化的进行变化 在总成本小于3的情况下
+     *               选择当前的方案(主要为了降低S的数量)
+     * @input: findBest 当前最优的top10 方案
+     * @input: singleBCList 分支打断可选BC的集合
+     * @input: singleSCList 分支打断可选SC的集合
+     * @input: singleBSLis 分支打断可选BS的集合
+     * @input: singleBSCList 分支打断可选BSC的集合
+     * @input: normList 按照顺序的id排放顺序
+     * @input: jsonMap 最初获取的json字符串，转为map格式
+     * @input: eleclection 用电器对应的位置点
+     * @input: wearId 穿腔的分支
+     * @input: mutexMap 互斥的情况的分支
+     * @input: chooseOneList 多选一的分支
+     * @input:togetherBCList 组团一起变的分支
+     * @Return: 返回修改后的top的方案
+     */
+    public List<Map<String, Object>> bestOptionVariation(List<Map<String, Object>> findBest,
+            List<String> singleBCList,
+            List<String> singleSCList,
+            List<String> singleBSList,
+            List<String> singleBSCList,
+            List<String> normList,
+            Map<String, Object> jsonMapOrigin,
+            Map<String, String> eleclection,
+            List<String> wearId,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList, Boolean whetherOnLoop) throws Exception {
+        // 状态检查
+        if (threadPool.shouldStop()) {
+            return null;
+        }
+        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
+        ObjectMapper objectMapper = new ObjectMapper();
+        Map<String, Object> jsonMap = new HashMap<>(jsonMapOrigin);
+        JsonToMap jsonToMap = new JsonToMap();
+        List<Map<String, Object>> bestOption = new ArrayList<>();
+        // 深拷贝 edges，避免多线程并发时修改共享边对象导致状态不一致
+        List<Map<String, Object>> edgesOrigin = (List<Map<String, Object>>) jsonMap.get("edges");
+        List<Map<String, Object>> edges = new ArrayList<>();
+        for (Map<String, Object> edge : edgesOrigin) {
+            edges.add(new HashMap<>(edge));
+        }
+        jsonMap.put("edges", edges);
+        List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
+        // 可打B的分支
+        List<String> canChangeToB = new ArrayList<>();
+        canChangeToB.addAll(singleBCList);
+        canChangeToB.addAll(singleBSList);
+        canChangeToB.addAll(singleBSCList);
+        // S可还原为C的集合
+        List<String> restore = new ArrayList<>();
+        restore.addAll(singleSCList);
+        restore.addAll(singleBSCList);
+
+        for (Map<String, Object> map : findBest) {
+            List<String> statueList = (List<String>) map.get("serviceableStatue");
+            // 首先进行一个分支打断代价计算，将当中S的打断代价为0并且在符合分支拓扑约束的条件下 将S改为B
+            List<Map<String, Object>> firstEdgesDetail = createNewEdges(statueList, edges, normList);
+            jsonMap.put("edges", firstEdgesDetail);
+            String firstoptimizeInterface = projectCircuitInfoOutput
+                    .projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+            Map<String, Object> firstObjectMap = jsonToMap.TransJsonToMap(firstoptimizeInterface);
+            // 计算每一个分支的打断代价
+            Map<String, Object> firstbundeleRelatedCircuitInfo = (Map<String, Object>) firstObjectMap
+                    .get("bundeleRelatedCircuitInfo");
+            Map<String, Object> circuitInfo = (Map<String, Object>) firstObjectMap
+                    .get("projectCircuitInfo");
+            double costTotal = Double.parseDouble(circuitInfo.get("总成本").toString());
+            Map<String, Double> firstbreakCostMap = new HashMap<>();
+            for (String s : firstbundeleRelatedCircuitInfo.keySet()) {
+                Map<String, Object> edgeMap = (Map<String, Object>) firstbundeleRelatedCircuitInfo.get(s);
+                Map<String, Object> edgeDetail = (Map<String, Object>) edgeMap.get("circuitInfoIntergation");
+                firstbreakCostMap.put(s, Double
+                        .parseDouble(edgeDetail.get("分支打断代价") != null ? edgeDetail.get("分支打断代价").toString() : "0"));
+            }
+            // 找出分支为S的id 打断代价s为0的改为b
+            for (int i = 0; i < statueList.size(); i++) {
+                if (statueList.get(i).equals("S")) {
+                    String id = normList.get(i);
+                    if (firstbreakCostMap.get(id) == 0) {
+                        List<String> newEdges = statueList.stream().collect(Collectors.toList());
+                        newEdges.set(normList.indexOf(id), "B");
+                        List<Map<String, Object>> edgesDetail = createNewEdges(newEdges, edges, normList);
+                        Boolean flag = checkFirstOption(normList, newEdges, edgesDetail, appPositions, eleclection,
+                                mutexMap, chooseOneList, togetherBCList);
+                        if (flag) {
+                            statueList.set(normList.indexOf(id), "B");
+                        }
+                    }
+                }
+            }
+            // 找出当中可还原S的集合
+            List<String> canRestoreid = new ArrayList<>();
+            for (int i = 0; i < statueList.size(); i++) {
+                if (statueList.get(i).equals("S") && restore.contains(normList.get(i))) {
+                    canRestoreid.add(normList.get(i));
+                }
+            }
+            // 对每一个S 还原成C 检查是否存在闭环 如果存在闭环 在闭环里面能够变为B的分支 检查当前的方案是否合理 合理的情况下计算成本 如果成本与原方案相比小于3
+            // 则用该方案
+            for (String s : canRestoreid) {
+                List<String> newEdges = statueList.stream().collect(Collectors.toList());
+                newEdges.set(normList.indexOf(s), "C");
+                List<Map<String, Object>> edgesDetail = createNewEdges(newEdges, edges, normList);
+                // 对当前的方案进行一个检查
+                // 这里只消除了存在穿腔的闭环回路
+                int loopIterationLimit = 300; // 防止死循环：最多打断 100 次
+                while (loopIterationLimit-- > 0) {
+                    // 闭环检测
+                    List<List<String>> lists = recognizeLoopNew(edgesDetail);
+                    Set<String> loopList = new HashSet<>();
+                    for (String s1 : wearId) {
+                        for (List<String> list : lists) {
+                            if (list.contains(s1)) {
+                                loopList.addAll(list);
+                            }
+                        }
+                    }
+                    // 如果开启了消除闭环，那么将存在闭环的分支也加入进去进行打断，计算成本
+                    if (whetherOnLoop) {
+                        for (List<String> list : lists) {
+                            for (String string : list) {
+                                if (!loopList.contains(string)) {
+                                    loopList.add(string);
+                                }
+                            }
+                        }
+                    }
+                    loopList.retainAll(canChangeToB);
+                    Map<String, Double> costMap = new HashMap<>();
+                    if (loopList.size() == 0) {
+                        // 区分两种情况：
+                        // (a) lists 为空：图中没有任何闭环，可以安全还原
+                        // (b) lists 不为空但 loopList 为空：存在闭环，但所有闭环分支都不可改为 B
+                        // 这种情况必须保持 S 状态（特别是含 wearId 的闭环）
+                        if (lists.isEmpty()) {
+                            statueList.set(normList.indexOf(s), "C");
+                        } else {
+                            System.out.println("警告：闭环存在但无可打断分支，保持 S 状态。canRestoreid=" + s
+                                    + ", lists.size=" + lists.size());
+                            statueList.set(normList.indexOf(s), "S");
+                        }
+                        break;
+                    }
+
+                    if (lists.size() > 0) {
+                        // 优化：一次性计算 breakCostMap（基于当前 newEdges 状态）
+                        // 避免对 loopList 中每个分支逐个调用 projectCircuitInfoOutput（单次 14s）
+                        Map<String, Double> breakCostMap = new HashMap<>();
+                        try {
+                            // 先校验当前 newEdges 状态合法
+                            Boolean baseValid = checkFirstOption(normList, newEdges, edgesDetail, appPositions,
+                                    eleclection, mutexMap, chooseOneList, togetherBCList);
+                            if (baseValid) {
+                                jsonMap.put("edges", edgesDetail);
+                                String circuitResult = projectCircuitInfoOutput
+                                        .projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+                                Map<String, Object> circuitObj = jsonToMap.TransJsonToMap(circuitResult);
+                                Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) circuitObj
+                                        .get("bundeleRelatedCircuitInfo");
+                                for (String s1 : loopList) {
+                                    Map<String, Object> edgeMap = (Map<String, Object>) bundeleRelatedCircuitInfo
+                                            .get(s1);
+                                    if (edgeMap == null) {
+                                        continue;
+                                    }
+                                    Map<String, Object> edgeDetail = (Map<String, Object>) edgeMap
+                                            .get("circuitInfoIntergation");
+                                    if (edgeDetail == null) {
+                                        continue;
+                                    }
+                                    Object costObj = edgeDetail.get("分支打断代价");
+                                    if (costObj == null) {
+                                        continue;
+                                    }
+                                    breakCostMap.put(s1, Double.parseDouble(costObj.toString()));
+                                }
+                            }
+                        } catch (Exception e) {
+                            System.out.println("bestOptionVariation: 计算 breakCostMap 异常: " + e.getMessage());
+                        }
+
+                        // 在闭环分支中找满足约束、增量代价最低的
+                        for (String s1 : loopList) {
+                            List<String> calculateLoop = newEdges.stream().collect(Collectors.toList());
+                            calculateLoop.set(normList.indexOf(s1), "B");
+                            List<Map<String, Object>> calculateEdgesDetail = createNewEdges(calculateLoop, edges,
+                                    normList);
+                            Boolean sonSate = checkFirstOption(normList, calculateLoop, calculateEdgesDetail,
+                                    appPositions, eleclection, mutexMap, chooseOneList, togetherBCList);
+                            if (!sonSate) {
+                                continue;
+                            }
+                            if (breakCostMap.containsKey(s1)) {
+                                // costMap 存增量代价（breakCostMap[s1] 已经是"分支打断代价"= 增量）
+                                costMap.put(s1, breakCostMap.get(s1));
+                            }
+                        }
+                    }
+                    if (costMap.size() > 0) {
+                        String minKey = null;
+                        double minValue = Double.MAX_VALUE;
+                        // 找出增量代价最小的方案（costMap[s1] 现在存的是 breakCostMap 增量）
+                        for (Map.Entry<String, Double> entry : costMap.entrySet()) {
+                            if (entry.getValue() < minValue) {
+                                minValue = entry.getValue();
+                                minKey = entry.getKey();
+                            }
+                        }
+                        if (minValue < 3) {
+                            // 增量代价满足约束，打断该分支
+                            newEdges.set(normList.indexOf(minKey), "B");
+                            edgesDetail = createNewEdges(newEdges, edges, normList);
+                            statueList.set(normList.indexOf(s), "C");
+                            statueList.set(normList.indexOf(minKey), "B");
+                            costTotal = costTotal + minValue;
+                        } else {
+                            // 增量代价大于3继续保持原 S 状态
+                            statueList.set(normList.indexOf(s), "S");
+                            break;
+                        }
+                    } else {
+                        // 闭环存在但没有可打断分支，保持原 S 状态
+                        statueList.set(normList.indexOf(s), "S");
+                        break;
+                    }
+                }
+                if (loopIterationLimit <= 0) {
+                    System.out.println("闭环打断达到最大次数限制，强制退出 while 循环");
+                }
+            }
+            List<Map<String, Object>> EdgesDetail = createNewEdges(statueList, edges, normList);
+            List<String> newEdges1 = statueList.stream().collect(Collectors.toList());
+            Boolean sonSate = checkFirstOption(normList, newEdges1, EdgesDetail, appPositions, eleclection, mutexMap,
+                    chooseOneList, togetherBCList);
+            if (!sonSate) {
+                continue;
+            }
+            jsonMap.put("edges", EdgesDetail);
+            String optimizeInterface = projectCircuitInfoOutput
+                    .projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+            Map<String, Object> objectMap = jsonToMap.TransJsonToMap(optimizeInterface);
+            // 计算每一个分支的打断代价
+            Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) objectMap
+                    .get("bundeleRelatedCircuitInfo");
+            Map<String, Double> breakCostMap = new HashMap<>();
+            for (String s : bundeleRelatedCircuitInfo.keySet()) {
+                Map<String, Object> edgeMap = (Map<String, Object>) bundeleRelatedCircuitInfo.get(s);
+                Map<String, Object> edgeDetail = (Map<String, Object>) edgeMap.get("circuitInfoIntergation");
+                breakCostMap.put(s, Double
+                        .parseDouble(edgeDetail.get("分支打断代价") != null ? edgeDetail.get("分支打断代价").toString() : "0"));
+            }
+            breakCostMap = sortMapByDoubleValue(breakCostMap);
+            // 满足条件的分支打断代价等于0的分支id
+            List<String> list0 = new ArrayList<>();
+            // 找出当中分支打断代价等于0的分支
+            breakCostMap.entrySet().stream().filter(entry -> entry.getValue() == 0).forEach(entry -> {
+                String key = entry.getKey();
+                list0.add(key);
+            });
+            for (String s : list0) {
+                List<String> newEdges = statueList.stream().collect(Collectors.toList());
+                newEdges.set(normList.indexOf(s), "B");
+                List<Map<String, Object>> edgesDetail = createNewEdges(newEdges, edges, normList);
+                // 对当前的方案进行一个检查
+                Boolean flag = checkFirstOption(normList, newEdges, edgesDetail, appPositions, eleclection, mutexMap,
+                        chooseOneList, togetherBCList);
+
+                if (flag) {
+                    statueList.set(normList.indexOf(s), "B");
+                } else {
+                    continue;
+                }
+            }
+
+            // 将分支打断代价小于三块的改为B 计算总成本，如果新的总成本不超过之前的三块 则就用这个方案
+            List<Map<String, Object>> betweenEdgeresult = createNewEdges(statueList, edges, normList);
+            jsonMap.put("edges", betweenEdgeresult);
+            String betweenoptimizeInterfacesresult = projectCircuitInfoOutput
+                    .projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+            Map<String, Object> betweenobjectMapresult = jsonToMap.TransJsonToMap(betweenoptimizeInterfacesresult);
+            Map<String, Object> betweenprojectCircuitInfo = (Map<String, Object>) betweenobjectMapresult
+                    .get("projectCircuitInfo");
+            Double betweencurrentalCost = (Double) betweenprojectCircuitInfo.get("总成本");
+            // 找出分支打断代价小于3的id
+            List<String> list3 = new ArrayList<>();
+            breakCostMap.entrySet().stream().filter(entry -> 0 < entry.getValue() && entry.getValue() < 3)
+                    .forEach(entry -> {
+                        String key = entry.getKey();
+                        if (canChangeToB.contains(key)) {
+                            list3.add(key);
+                        }
+
+                    });
+            // list3逐一进行检擦
+            for (String s : list3) {
+                List<String> newEdges = statueList.stream().collect(Collectors.toList());
+                newEdges.set(normList.indexOf(s), "B");
+                List<Map<String, Object>> edgesDetail = createNewEdges(newEdges, edges, normList);
+                Boolean flag = checkFirstOption(normList, newEdges, edgesDetail, appPositions, eleclection, mutexMap,
+                        chooseOneList, togetherBCList);
+                if (flag) {
+                    jsonMap.put("edges", edgesDetail);
+                    String betweenoptimizeInterfacesresultSon = projectCircuitInfoOutput
+                            .projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+                    Map<String, Object> betweenobjectMapresultSon = jsonToMap
+                            .TransJsonToMap(betweenoptimizeInterfacesresultSon);
+                    Map<String, Object> betweenprojectCircuitInfoSon = (Map<String, Object>) betweenobjectMapresultSon
+                            .get("projectCircuitInfo");
+                    Double betweencurrentalCostSon = (Double) betweenprojectCircuitInfoSon.get("总成本");
+
+                    if (betweencurrentalCostSon < betweencurrentalCost
+                            || betweencurrentalCostSon - betweencurrentalCost < 2) {
+                        statueList.set(normList.indexOf(s), "B");
+                        betweencurrentalCost = betweencurrentalCostSon;
+                    }
+                }
+            }
+
+            // 对最终的方案进行一个计算 并且按照格式进行一个返回
+            List<Map<String, Object>> finalEdgeresult = createNewEdges(statueList, edges, normList);
+            // 输出前进行最终的闭环校验：含 wearId 的闭环不能存在，开启消除闭环时也不能存在
+            List<List<String>> finalLoopList = recognizeLoopNew(finalEdgeresult);
+            boolean hasUnresolvedLoop = false;
+            for (List<String> loop : finalLoopList) {
+                boolean containsWearId = false;
+                for (String s1 : wearId) {
+                    if (loop.contains(s1)) {
+                        containsWearId = true;
+                        break;
+                    }
+                }
+                if (containsWearId) {
+                    hasUnresolvedLoop = true;
+                    System.out.println("警告：最终方案仍存在含 wearId 的闭环！" + loop);
+                    break;
+                }
+                if (whetherOnLoop) {
+                    hasUnresolvedLoop = true;
+                    System.out.println("警告：最终方案仍存在闭环（whetherOnLoop=true）！" + loop);
+                    break;
+                }
+            }
+            if (hasUnresolvedLoop) {
+                // 仍有未消除的闭环，尝试最后一轮强制打断（从闭环中选 cost 最小的 B 打断）
+                boolean broken = forceBreakLoops(statueList, edges, normList, wearId, canChangeToB, whetherOnLoop,
+                        appPositions, eleclection, mutexMap, chooseOneList, togetherBCList,
+                        projectCircuitInfoOutput, objectMapper, jsonMap, jsonToMap);
+                if (broken) {
+                    // 重新计算最终边
+                    finalEdgeresult = createNewEdges(statueList, edges, normList);
+                }
+            }
+            jsonMap.put("edges", finalEdgeresult);
+            String optimizeInterfacesresult = projectCircuitInfoOutput
+                    .projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+            Map<String, Object> objectMapresult = jsonToMap.TransJsonToMap(optimizeInterfacesresult);
+            Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMapresult.get("projectCircuitInfo");
+            Map<String, Double> finalCostDetail = new HashMap<>();
+            finalCostDetail.put("总成本", (Double) projectCircuitInfo.get("总成本"));
+            finalCostDetail.put("总长度", (Double) projectCircuitInfo.get("回路总长度"));
+            finalCostDetail.put("总重量", (Double) projectCircuitInfo.get("回路总重量"));
+            Map<String, Object> finalResult = new HashMap<>();
+            finalResult.put("成本", finalCostDetail);
+            finalResult.put("serviceableStatue", statueList);
+            System.out.println(statueList);
+            finalResult.put("serviceableEdges", finalEdgeresult);
+            bestOption.add(finalResult);
+        }
+        return bestOption;
+    }
+
+    /**
+     * 强制打断未消除的闭环。
+     * 对未消除的闭环（含 wearId 或 whetherOnLoop 开启），迭代打断，直到闭环全部消除或无法继续。
+     *
+     * @return true 表示至少打断了一个分支
+     */
+    private boolean forceBreakLoops(
+            List<String> statueList,
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            List<String> wearId,
+            List<String> canChangeToB,
+            boolean whetherOnLoop,
+            List<Map<String, String>> appPositions,
+            Map<String, String> eleclection,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
+            ObjectMapper objectMapper,
+            Map<String, Object> jsonMap,
+            JsonToMap jsonToMap) {
+        boolean anyBroken = false;
+        int maxIterations = 100;
+        while (maxIterations-- > 0) {
+            List<Map<String, Object>> currentEdges = createNewEdges(statueList, edges, normList);
+            List<List<String>> lists = recognizeLoopNew(currentEdges);
+            if (lists.isEmpty()) {
+                break;
+            }
+            // 找出需处理的闭环：含 wearId 的，或 whetherOnLoop=true 时的所有闭环
+            List<List<String>> targetLoops = new ArrayList<>();
+            for (List<String> loop : lists) {
+                boolean containsWearId = false;
+                for (String w : wearId) {
+                    if (loop.contains(w)) {
+                        containsWearId = true;
+                        break;
+                    }
+                }
+                if (containsWearId) {
+                    targetLoops.add(loop);
+                } else if (whetherOnLoop) {
+                    targetLoops.add(loop);
+                }
+            }
+            if (targetLoops.isEmpty()) {
+                break;
+            }
+            // 收集所有目标闭环中可打断的分支
+            Set<String> breakableIds = new LinkedHashSet<>();
+            for (List<String> loop : targetLoops) {
+                for (String id : loop) {
+                    if (canChangeToB.contains(id) && !id.isEmpty()) {
+                        breakableIds.add(id);
+                    }
+                }
+            }
+            if (breakableIds.isEmpty()) {
+                System.out.println("forceBreakLoops: 无可打断分支，停止");
+                break;
+            }
+            // 选一个打断（优先选 wearId 闭环中的分支）
+            String pickId = null;
+            for (List<String> loop : targetLoops) {
+                for (String id : loop) {
+                    if (breakableIds.contains(id)) {
+                        pickId = id;
+                        break;
+                    }
+                }
+                if (pickId != null)
+                    break;
+            }
+            if (pickId == null) {
+                break;
+            }
+            // 验证打断后方案合法
+            statueList.set(normList.indexOf(pickId), "B");
+            List<Map<String, Object>> afterEdges = createNewEdges(statueList, edges, normList);
+            Boolean ok = checkFirstOption(normList, statueList, afterEdges, appPositions, eleclection, mutexMap,
+                    chooseOneList, togetherBCList);
+            if (!ok) {
+                System.out.println("forceBreakLoops: 打断 " + pickId + " 后方案不合法，回滚");
+                statueList.set(normList.indexOf(pickId), "S"); // 回滚到 S（保留原状态的最佳猜测）
+                break;
+            }
+            System.out.println("forceBreakLoops: 已强制打断 " + pickId);
+            anyBroken = true;
+        }
+        return anyBroken;
+    }
+
+    /**
+     * 分支长度
+     *
+     * @param normList 分支排列顺序id
+     * @param edges
+     * @return
+     */
+    public Map<String, Object> getBranchLength(List<String> normList, List<Map<String, Object>> edges) {
+        List<Float> branchLengthList = new ArrayList<>();
+        Map<String, Object> result = new HashMap<>();
+        for (String branchId : normList) {
+            Float length = 0.0f;
+            for (Map<String, Object> edge : edges) {
+                if (branchId.equals(edge.get("id"))) {
+                    // 参考长度
+                    String referenceLength = null;
+                    // 用户确认的分支长度
+                    String verifyLength = null;
+                    // 参考长度
+                    if (edge.get("referenceLength") != null) {
+                        referenceLength = String.valueOf(edge.get("referenceLength"));
+                    }
+                    // 用户确认的分支长度
+                    if (edge.get("length") != null) {
+                        verifyLength = String.valueOf(edge.get("length"));
+                    }
+                    if (verifyLength != null && !verifyLength.isEmpty()) {
+                        length += Float.parseFloat(verifyLength);
+                    } else {
+                        if (!referenceLength.isEmpty()) {
+                            length += Float.parseFloat(referenceLength);
+                        } else if ("C".equals(edge.get("topologyStatusCode"))
+                                || "S".equals(edge.get("topologyStatusCode"))) {
+                            length += 200;
+                        } else {
+                            // 打断状态直接设0
+                            length = 0f;
+                        }
+                    }
+                    break;
+                }
+            }
+            branchLengthList.add(length);
+        }
+        result.put("branchLength", branchLengthList);
+        return result;
+    }
+
+    public List<List<Integer>> connection(List<Map<String, Object>> edges, List<String> normList) {
+        List<List<Integer>> result = new ArrayList<>();
+        List<String> startName = new ArrayList<>();
+        List<String> endName = new ArrayList<>();
+        Set<String> branchPointNameList = new LinkedHashSet<>();
+        List<Integer> startIndex = new ArrayList<>();
+        List<Integer> endIndex = new ArrayList<>();
+        for (int i = 0; i < normList.size(); i++) {
+            for (Map<String, Object> k : edges) {
+                if (k.get("id").equals(normList.get(i))) {
+                    String startPointName = k.get("startPointName").toString();
+                    String endPointName = k.get("endPointName").toString();
+                    startName.add(startPointName);
+                    endName.add(endPointName);
+                    // 名称添加
+                    branchPointNameList.add(startPointName);
+                    branchPointNameList.add(endPointName);
+                    break;
+                }
+            }
+        }
+        List<String> allNameList = new ArrayList<>(branchPointNameList);
+        for (String s : startName) {
+            startIndex.add(allNameList.indexOf(s));
+        }
+        for (String s : endName) {
+            endIndex.add(allNameList.indexOf(s));
+        }
+        result.add(startIndex);
+        result.add(endIndex);
+        return result;
+    }
+
+    /**
+     * @Description: 对top20的数据进行一个处理返回给前端
+     * @input: jsonMap 最初的json字串转为map格式
+     * @input: finishStatue 返回的状态
+     * @Return: 返回top10的方案，对返回的格式进行了修改
+     */
+    public List<Map<String, Object>> handleAndShowTop(Map<String, Object> jsonMap,
+            String finishStatue,
+            List<String> singleBCList,
+            List<String> singleSCList,
+            List<String> singleBSList,
+            List<String> singleBSCList,
+            List<String> normList,
+            Map<String, String> eleclection,
+            List<String> wearId,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList) throws Exception {
+        FindBest findBest = new FindBest();
+        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
+        ObjectMapper objectMapper = new ObjectMapper();
+        JsonToMap jsonToMap = new JsonToMap();
+        Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
+        Map<String, Object> projectInfo = (Map<String, Object>) jsonMap.get("projectInfo");
+        Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
+        Boolean whetherOnLoop = caseInfo.get("loopcreate").toString().equals("true") ? true : false;
+        List<Map<String, Object>> resultList = new ArrayList<>();
+        List<Map<String, Double>> costDeail = Collections.synchronizedList(new ArrayList<>());
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
+        if (TopCostDetail != null) {
+            List<Map<String, Object>> sortcost = findBest(TopCostDetail, "成本");
+            for (Map<String, Object> sortcostMap : sortcost) {
+                tasks.add(() -> {
+                    // if (resultList.size() == TopNumber) {
+                    // break;
+                    // }
+                    List<Map<String, Object>> mapArrayList = new ArrayList<>();
+                    mapArrayList.add(sortcostMap);
+                    long startTime = System.currentTimeMillis();
+                    List<Map<String, Object>> handleList = bestOptionVariation(mapArrayList, singleBCList, singleSCList,
+                            singleBSList, singleBSCList, normList, jsonMap, eleclection, wearId, mutexMap,
+                            chooseOneList, togetherBCList, whetherOnLoop);
+                    System.out.println("方案变异时间:" + (System.currentTimeMillis() - startTime));
+                    Map<String, Object> objectMap;
+                    if (handleList == null || handleList.size() == 0) {
+                        objectMap = sortcostMap;
+                    } else {
+                        objectMap = handleList.get(0);
+                    }
+                    // 变异后分支状态
+                    Map<String, Double> cost = (Map<String, Double>) objectMap.get("成本");
+                    if (costDeail.contains(cost)) {
+                        System.out.println("成本重复");
+                        return null;
+                    }
+                    synchronized (costDeail) {
+                        if (costDeail.contains(cost)) {
+                            System.out.println("成本重复");
+                            return null;
+                        }
+                        // 保持线程安全
+                        costDeail.add(cost);
+                    }
+                    List<Map<String, Object>> mapList = (List<Map<String, Object>>) objectMap.get("serviceableEdges");
+                    // 输出前最终闭环校验：含 wearId 的闭环不允许存在；whetherOnLoop=true 时不允许任何闭环
+                    List<List<String>> outputLoopList = recognizeLoopNew(mapList);
+                    for (List<String> loop : outputLoopList) {
+                        boolean containsWearId = false;
+                        for (String s1 : wearId) {
+                            if (loop.contains(s1)) {
+                                containsWearId = true;
+                                break;
+                            }
+                        }
+                        if (containsWearId || whetherOnLoop) {
+                            System.out.println("handleAndShowTop: 输出前发现未消除闭环！" + loop
+                                    + (containsWearId ? "[含 wearId]" : "[whetherOnLoop=true]"));
+                        }
+                    }
+                    // 先构建 topoOptimizeResult，确保与后续成本计算使用同一批边状态
+                    List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
+                    for (Map<String, Object> map : mapList) {
+                        Map<String, String> result = new HashMap<>();
+                        result.put("edgeId", map.get("id").toString());
+                        result.put("statue", map.get("topologyStatusCode").toString());
+                        topoOptimizeResult.add(result);
+                    }
+                    // 保持线程安全 浅拷贝一份
+                    HashMap<String, Object> newJsonMap = new HashMap<>(jsonMap);
+                    newJsonMap.put("edges", mapList);
+                    String s = projectCircuitInfoOutput
+                            .projectCircuitInfoOutput(objectMapper.writeValueAsString(newJsonMap));
+                    Map<String, Object> map = jsonToMap.TransJsonToMap(s);
+                    Map<String, Object> projectCircuitInfo = (Map<String, Object>) map.get("projectCircuitInfo");
+                    Map<String, Double> projectCost = new HashMap<>();
+                    projectCost.put("总成本", (Double) projectCircuitInfo.get("总成本"));
+                    projectCost.put("总重量", (Double) projectCircuitInfo.get("回路总重量"));
+                    projectCost.put("总长度", (Double) projectCircuitInfo.get("回路总长度"));
+
+                    map.put("成本", projectCost);
+                    map.put("topoId", topoInfoMap.get("id").toString());
+                    map.put("caseId", projectInfo.get("caseId").toString());
+                    map.put("topoOptimizeResult", topoOptimizeResult);
+                    map.put("finishStatue", finishStatue);
+                    map.put("initializationScheme", false);
+                    return map;
+                });
+            }
+        }
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        List<Future<Map<String, Object>>> completeFutures = new ArrayList<>();
+        int submittedCount = 0;
+        // 每次提交10个任务
+        int batchSize = 10;
+        for (Callable<Map<String, Object>> task : tasks) {
+            // 检查状态，防止多次提交
+            if (resultList.size() == LastNumber) {
+                threadPool.terminateNow();
+                break;
+            }
+            Future<Map<String, Object>> submit = threadPool.submit(task);
+            futures.add(submit);
+            submittedCount++;
+            if (submittedCount % batchSize == 0 || submittedCount == tasks.size()) {
+                // 获取已完成的任务结果
+                for (Future<Map<String, Object>> future : futures) {
+                    if (completeFutures.contains(future)) {
+                        continue; // 已处理过的跳过
+                    }
+                    try {
+                        Map<String, Object> result = future.get(2, TimeUnit.HOURS);
+                        synchronized (resultList) {
+                            if (result != null) {
+                                resultList.add(result);
+                            }
+                            completeFutures.add(future); // 添加到已完成列表
+                        }
+
+                        if (resultList.size() == LastNumber) {
+                            System.out.println("方案数量已经达到20个");
+                            break;
+                        }
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                        synchronized (resultList) {
+                            completeFutures.add(future); // 异常也算完成，添加到已完成列表
+                        }
+                    }
+
+                }
+                if (resultList.size() == LastNumber) {
+                    break;
+                }
+            }
+            if (resultList.size() == LastNumber) {
+                break;
+            }
+        }
+
+        System.out.println("所有任务完成，结果数: " + resultList.size());
+        resultList = findBest(resultList, "成本");
+        for (Map<String, Object> map : resultList) {
+            map.remove("成本");
+        }
+
+        return resultList;
+    }
+
+    /**
+     * @Description: 使用AI预测模型对每个样本预测成本，返回成本最优的topN样本
+     *               替代整车计算方法，直接通过GINE模型预测成本
+     * @input: simpleList 分支打断情况的集合
+     * @input: edges 分支模板
+     * @input: normList 分支id的集合
+     * @input: jsonMap txt内容转为map
+     * @input: edgeChooseBS 分支打断可以选BS的集合
+     * @input: elecPosition 用电器对应的位置
+     * @input: branchLength 分支长度信息
+     * @input: connection 图连接关系
+     * @input: multiLoopInfos 多回路信息
+     * @input: pointMap 点位映射
+     * @Return: 返回AI预测成本最优的topN方案
+     */
+    public List<Map<String, Object>> predictAndFindBest(List<List<String>> simpleList,
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            Map<String, Object> jsonMap,
+            List<String> edgeChooseBS,
+            Map<String, Map<String, String>> elecPosition,
+            Map<String, Object> branchLength,
+            List<List<Integer>> connection,
+            Map<String, List<String>> multiLoopInfos,
+            Map<String, String> pointMap, List<Map<String, Object>> findBestPre) throws Exception {
+        GINEInferenceEngine gine = new GINEInferenceEngine();
+        List<Float> length = (List<Float>) branchLength.get("branchLength");
+        List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) jsonMap.get("loopInfos");
+        List<Map<String, String>> pointsList = (List<Map<String, String>>) jsonMap.get("points");
+        List<Map<String, Object>> resultList = new ArrayList<>();
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
+        int sampleId = 0;
+        for (List<String> strings : simpleList) {
+            tasks.add(() -> {
+                List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
+                for (int i = 0; i < serviceableStatue.size(); i++) {
+                    if (serviceableStatue.get(i).equals("C") && edgeChooseBS.contains(normList.get(i))) {
+                        serviceableStatue.set(i, "S");
+                    }
+                }
+                List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+                // 深拷贝
+                List<Map<String, String>> originalList = (List<Map<String, String>>) jsonMap.get("appPositions");
+                List<Map<String, String>> deepCopyAppPositions = new ArrayList<>(originalList.size());
+                for (Map<String, String> item : originalList) {
+                    deepCopyAppPositions.add(new HashMap<>(item)); // 逐个复制
+                }
+                Map<String, Object> threadLocalJsonMap = new HashMap<>(jsonMap);
+                threadLocalJsonMap.put("edges", serviceableEdge);
+                threadLocalJsonMap.put("appPositions", deepCopyAppPositions);
+
+                // 分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1]
+                List<List<Float>> branchFeatureList = new ArrayList<>();
+                for (String s : serviceableStatue) {
+                    List<Float> statue = new ArrayList<>();
+                    switch (s) {
+                        case "B":
+                            statue = new ArrayList<>(Arrays.asList(0.0f, 0.0f, 0.0f));
+                            break;
+                        case "C":
+                            statue = new ArrayList<>(Arrays.asList(0.0f, 1.0f, 0.0f));
+                            break;
+                        case "S":
+                            statue = new ArrayList<>(Arrays.asList(0.0f, 0.0f, 1.0f));
+                            break;
+                        default:
+                            break;
+                    }
+                    branchFeatureList.add(statue);
+                }
+                for (int i = 0; i < length.size(); i++) {
+                    List<Float> integers = branchFeatureList.get(i);
+                    integers.add(length.get(i));
+                }
+                // 标准化特征矩阵
+                float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap,
+                        pointsList, normList, multiLoopInfos, pointMap);
+                long[][] edgeIndex = new long[2][connection.get(0).size()];
+                for (int i = 0; i < 2; i++) {
+                    for (int j = 0; j < connection.get(i).size(); j++) {
+                        edgeIndex[i][j] = connection.get(i).get(j);
+                    }
+                }
+                float[][] edgeAttr = new float[branchFeatureList.size()][branchFeatureList.get(0).size()];
+                for (int i = 0; i < branchFeatureList.size(); i++) {
+                    for (int j = 0; j < branchFeatureList.get(i).size(); j++) {
+                        edgeAttr[i][j] = branchFeatureList.get(i).get(j);
+                    }
+                }
+                // AI模型预测成本
+                float predict = gine.predict(x, edgeIndex, edgeAttr);
+
+                // 构建返回结果，与changeAndFindBest格式保持一致
+                Map<String, Object> costResultData = new HashMap<>();
+                costResultData.put("总成本", (double) predict);
+                // AI模型仅预测成本，重量和长度置为占位值
+                costResultData.put("总重量", 0.0);
+                costResultData.put("总长度", 0.0);
+
+                Map<String, Object> map = new HashMap<>();
+                map.put("成本", costResultData);
+                map.put("serviceableEdges", serviceableEdge);
+                map.put("serviceableStatue", serviceableStatue);
+                return map;
+            });
+        }
+        // 线程池提交任务
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            Future<Map<String, Object>> submit = threadPool.submit(task);
+            futures.add(submit);
+        }
+        // 获取线程池结果
+        for (Future<Map<String, Object>> future : futures) {
+            try {
+                Map<String, Object> result = future.get(600, java.util.concurrent.TimeUnit.SECONDS);
+                if (result != null) {
+                    resultList.add(result);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+        // 按AI预测成本排序，取topN
+        FindBest findBest = new FindBest();
+        if (findBestPre != null) {
+            int preCount = Math.max(1, (int) (findBestPre.size() * 0.1));
+            if (findBestPre != null) {
+                for (int i = 0; i < preCount; i++) {
+                    resultList.add(findBestPre.get(i));
+                }
+            }
+        }
+        List<Map<String, Object>> topBeat = findBest.findBest(resultList, "成本", TopNumber);
+
+        for (Map<String, Object> map : topBeat) {
+            List<String> list = (List<String>) map.get("serviceableStatue");
+            if (!containsList(list, WareHouseTop)) {
+                WareHouseTop.add(list);
+                TopCostDetail.add(map);
+            }
+        }
+        return topBeat;
+    }
+
+    /**
+     * @Description 根据给定的top10进行一个不断的迭代
+     * @input findBest 给定的top10
+     * @input onlyNameS 只能为S的分支
+     * @input normList 分支的排放顺序
+     * @input conformList 可以变为B的分支id集合
+     * @input togetherBCList 组团的分支id集合
+     * @input canChangeS 可以改为s分支
+     * @input edges txt当中对应的分支信息
+     * @input appPositions txt中对应的用电器西悉尼
+     * @input eleclection 用电器对应的位置点
+     * @input mutexMap 互斥的情况
+     * @input minLoopNumber 最小选取B的数量
+     * @input maxLoopNumber 最大选取B的数量
+     * @input initialScheme 初始化的分支打断情况（除了固定B的别的全为C）
+     * @input wearId 存在穿腔的分支id
+     * @input jsonMap 将txt转为Map
+     * @input edgeChooseBS 分支打断可以选BS的集合
+     * @input chooseOneList 多选一的分支情况
+     * @input mutexGroupList 组团互斥的情况
+     * @input sortedMapExcel 导线选型excel中sheet1中的西悉尼 并且按照导线的商务价格继续进行一个排序
+     * @input sortedMap 分支的打断代价并按照打断代价进行一个升序
+     * @input circuitInfoList 回路信息
+     * @Return 返回迭代过后的top10
+     */
+    public List<Map<String, Object>> hybridization(int hybridizationNumber, List<Map<String, Object>> findBest,
+            List<String> onlyNameS,
+            List<String> normList,
+            List<String> conformList,
+            List<List<String>> togetherBCList,
+            List<String> canChangeS,
+            List<Map<String, Object>> edges,
+            List<Map<String, String>> appPositions,
+            Map<String, String> eleclection,
+            Map<String, Map<String, List<String>>> mutexMap,
+            int minLoopNumber, int maxLoopNumber,
+            List<String> initialScheme,
+            List<String> wearId,
+            Map<String, Object> jsonMap,
+            List<String> edgeChooseBS,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> mutexGroupList,
+            Map<String, Map<String, String>> sortedMapExcel,
+            Map<String, Double> sortedMap,
+            List<Map<String, Object>> circuitInfoList,
+            Map<String, Map<String, String>> elecPosition,
+            Map<String, Object> branchLength,
+            List<List<Integer>> connection,
+            Map<String, List<String>> multiLoopInfos,
+            Map<String, String> pointMap, Boolean whetherAI) throws Exception {
+        // 利用约束变异开始时间
+        long constraintStartTime = System.currentTimeMillis();
+        List<List<String>> simple = new ArrayList<>();
+        Random random = new Random();
+        // 首先将给定的top20的方案进行一个还原 将里面符合要求的S就是可以变s的分支改为C
+        List<List<String>> topTenList = new ArrayList<>();
+        for (Map<String, Object> objectMap : findBest) {
+            List<String> serviceableStatue = (List<String>) objectMap.get("serviceableStatue");
+            List<String> copyList = serviceableStatue.stream().collect(Collectors.toList());
+            for (int i = 0; i < serviceableStatue.size(); i++) {
+                if (serviceableStatue.get(i).equals("S")) {
+                    String id = normList.get(i);
+                    if (canChangeS.contains(id)) {
+                        copyList.set(i, "C");
+                    }
+                }
+            }
+            topTenList.add(copyList);
+        }
+
+        // 对多选一的情况进行随机变异
+        for (List<String> list : topTenList) {
+            for (Map<String, List<String>> listMap : chooseOneList) {
+                Set<String> set = listMap.keySet();
+                // 检查是否存在C的情况
+                Boolean flag = false;
+                for (String s : set) {
+                    int i = normList.indexOf(s);
+                    if (list.get(i).equals("C")) {
+                        flag = true;
+                    }
+                }
+                if (!flag) {
+                    // 不存在C 随机选取一个S变为C 前提是这个S
+                    // 找出分支为S的集合
+                    List<String> canchangeId = new ArrayList<>();
+                    for (String s : set) {
+                        if (list.get(normList.indexOf(s)).equals("S")) {
+                            canchangeId.add(s);
+                        }
+                    }
+                    // 随机选取一个S变为C
+                    if (canchangeId.size() > 0) {
+                        String s = canchangeId.get(random.nextInt(canchangeId.size()));
+                        list.set(normList.indexOf(s), "C");
+                    }
+                }
+            }
+        }
+        // 将之前的top20的方案也添加到新的容器里面
+        simple.addAll(topTenList);
+        // 第一轮变异
+        List<List<String>> changebTOc = new ArrayList<>(topTenList); // B-C
+        List<List<String>> changecTOb = new ArrayList<>(topTenList); // C-B
+        for (int i = 0; i < VariationNumber; i++) {
+            List<List<String>> bTOc = new ArrayList<>();
+            List<List<String>> cTOb = new ArrayList<>();
+            // 将B改成C
+            for (List<String> list : changebTOc) {
+                for (int j = 0; j < list.size(); j++) {
+                    if (conformList.contains(normList.get(j)) && list.get(j).equals("B")) {
+                        // 检查当前id是都是组团的的 如果是 就一起改变
+                        List<String> changeId = new ArrayList<>();
+                        changeId.add(normList.get(j));
+                        for (List<String> strings : togetherBCList) {
+                            if (strings.contains(normList.get(j))) {
+                                changeId = strings;
+                            }
+                        }
+                        List<String> copyList = list.stream().collect(Collectors.toList());
+                        for (String s : changeId) {
+                            int index = normList.indexOf(s);
+                            copyList.set(index, "C");
+                        }
+                        if (!containsList(copyList, bTOc) && !containsList(copyList, changebTOc)) {
+                            bTOc.add(copyList);
+                        }
+
+                    }
+                }
+            }
+            // 将C改成B
+            for (List<String> list : changecTOb) {
+                for (int j = 0; j < list.size(); j++) {
+                    if (conformList.contains(normList.get(j)) && list.get(j).equals("C")) {
+                        // 检查当前id是都是组团的的 如果是 就一起改变
+                        List<String> changeId = new ArrayList<>();
+                        changeId.add(normList.get(j));
+                        for (List<String> strings : togetherBCList) {
+                            if (strings.contains(normList.get(j))) {
+                                changeId = strings;
+                            }
+                        }
+                        List<String> copyList = list.stream().collect(Collectors.toList());
+                        for (String s : changeId) {
+                            int index = normList.indexOf(s);
+                            copyList.set(index, "B");
+                        }
+                        if (!containsList(copyList, cTOb) && !containsList(copyList, changecTOb)) {
+                            cTOb.add(copyList);
+                        }
+
+                    }
+                }
+            }
+            changebTOc.addAll(bTOc);
+            changecTOb.addAll(cTOb);
+        }
+        // 在第一次变异完成后的结果里面面每一个方案在进行一次随机变异
+        List<List<String>> twochangebTOc = new ArrayList<>();
+        List<List<String>> twochangecTOb = new ArrayList<>();
+        for (List<String> list : changebTOc) {
+
+            // 找出可以随机变异的id
+            List<String> changeId = new ArrayList<>();
+            for (int i = 0; i < list.size(); i++) {
+                if (conformList.contains(normList.get(i)) && list.get(i).equals("B")) {
+                    String id = normList.get(i);
+                    changeId.add(id);
+                }
+            }
+            if (changeId.size() > 0) {
+                double percentNumber = 0.25;
+                while (percentNumber < 1) {
+                    Map<String, List<String>> percentage = getPercentage(sortedMapExcel, sortedMap, circuitInfoList,
+                            percentNumber);
+                    List<String> getTop25intersection = percentage.get("getTop25intersection");
+                    List<String> getTopunion = percentage.get("getTopunion");
+                    Set<String> intersection = new HashSet<>(getTop25intersection);
+                    // 上面取出后与符合变更的分支取交集
+                    intersection.retainAll(changeId);
+                    if (intersection.size() > 0) {
+                        changeId = new ArrayList<>(intersection);
+                        break;
+                    }
+                    Set<String> union = new HashSet<>(getTopunion);
+                    union.retainAll(changeId);
+                    if (union.size() > 0) {
+                        changeId = new ArrayList<>(union);
+                        break;
+                    }
+                    percentNumber += 0.01;
+                }
+            }
+            // 随机挑选一个B改为C
+            if (changeId.size() > 0) {
+                int randomIndex = random.nextInt(changeId.size());
+                String randomId = changeId.get(randomIndex);
+                List<String> changeList = new ArrayList<>();
+                changeList.add(randomId);
+                // 考虑我所选的这个是否是组团的情况
+                for (List<String> strings : togetherBCList) {
+                    if (strings.contains(randomId)) {
+                        changeList = strings;
+                    }
+                }
+                List<String> copyList = list.stream().collect(Collectors.toList());
+                for (String s : changeList) {
+                    copyList.set(normList.indexOf(s), "C");
+                }
+                twochangebTOc.add(copyList);
+            }
+        }
+        for (List<String> list : changecTOb) {
+            // 找出可以随机变异的id
+            List<String> changeId = new ArrayList<>();
+            for (int i = 0; i < list.size(); i++) {
+                if (conformList.contains(normList.get(i)) && list.get(i).equals("C")) {
+                    String id = normList.get(i);
+                    changeId.add(id);
+                }
+            }
+            if (changeId.size() > 0) {
+                double percentNumber = 0.25;
+                while (percentNumber < 1) {
+                    Map<String, List<String>> percentage = getPercentage(sortedMapExcel, sortedMap, circuitInfoList,
+                            percentNumber);
+                    List<String> getLast25intersection = percentage.get("getLastintersection");
+                    List<String> getLastunion = percentage.get("getLastunion");
+                    Set<String> intersection = new HashSet<>(getLast25intersection);
+                    intersection.retainAll(changeId);
+                    if (intersection.size() > 0) {
+                        changeId = new ArrayList<>(intersection);
+                        break;
+                    }
+                    Set<String> union = new HashSet<>(getLastunion);
+                    union.retainAll(changeId);
+                    if (union.size() > 0) {
+                        changeId = new ArrayList<>(union);
+                        break;
+                    }
+                    percentNumber += 0.01;
+                }
+            }
+            if (changeId.size() > 0) {
+                int randomIndex = random.nextInt(changeId.size());
+                String randomId = changeId.get(randomIndex);
+                List<String> changeList = new ArrayList<>();
+                changeList.add(randomId);
+                for (List<String> strings : togetherBCList) {
+                    if (strings.contains(randomId)) {
+                        changeList = strings;
+                    }
+                }
+                List<String> copyList = list.stream().collect(Collectors.toList());
+                for (String s : changeList) {
+                    copyList.set(normList.indexOf(s), "B");
+                }
+                twochangecTOb.add(copyList);
+            }
+        }
+
+        for (List<String> list : twochangecTOb) {
+            if (!containsList(list, changecTOb)) {
+                changecTOb.add(list);
+            }
+        }
+        for (List<String> list : twochangebTOc) {
+            if (!containsList(list, changebTOc)) {
+                changebTOc.add(list);
+            }
+        }
+        long constraintEndTime = System.currentTimeMillis();
+        System.out.println("约束变异时间：" + (constraintEndTime - constraintStartTime));
+
+        // 仓库中的方案检查看是否存在在仓库中时间
+        long warehouseStartTime = System.currentTimeMillis();
+        // 变异的样本进行一个检查 如果不存在仓库或者容器当中 添加到容器当中
+        for (List<String> list : changebTOc) {
+            if (!containsList(list, WareHouse) && !containsList(list, simple)) {
+
+                List<Map<String, Object>> coppysonedges = edges.stream().collect(Collectors.toList());
+                for (Map<String, Object> coppyedge : coppysonedges) {
+                    String id = (String) coppyedge.get("id");
+                    int number = normList.indexOf(id);
+                    String s = list.get(number);
+                    coppyedge.put("topologyStatusCode", s);
+                }
+                Boolean sonSate = checkFirstOption(normList, list, coppysonedges, appPositions, eleclection, mutexMap,
+                        chooseOneList, togetherBCList);
+                if (sonSate) {
+                    simple.add(list);
+                }
+            }
+        }
+        for (List<String> list : changecTOb) {
+            if (!containsList(list, WareHouse) && !containsList(list, simple)) {
+
+                List<Map<String, Object>> coppysonedges = edges.stream().collect(Collectors.toList());
+                for (Map<String, Object> coppyedge : coppysonedges) {
+                    String id = (String) coppyedge.get("id");
+                    int number = normList.indexOf(id);
+                    String s = list.get(number);
+                    coppyedge.put("topologyStatusCode", s);
+                }
+                Boolean sonSate = checkFirstOption(normList, list, coppysonedges, appPositions, eleclection, mutexMap,
+                        chooseOneList, togetherBCList);
+                if (sonSate) {
+                    simple.add(list);
+                }
+            }
+        }
+        long warehouseEndTime = System.currentTimeMillis();
+        System.out.println("仓库检查时间：" + (warehouseEndTime - warehouseStartTime));
+
+        // 将simple添加到仓库里面
+        for (List<String> list : simple) {
+            if (!containsList(list, topTenList)) {
+                WareHouse.add(list);
+            }
+        }
+
+        int completeNumber = 1;
+        // 方案补充次数耗时时间
+        long completeStartTime = System.currentTimeMillis();
+        // 如果方案数量不足，那么会生成额外的方案
+        System.out.println("遗传出的方案：" + simple.size());
+        while (simple.size() < HybridizationLessRandomSamleNumber) {
+            List<List<String>> simpleList = initialOptimize(minLoopNumber, maxLoopNumber, initialScheme, togetherBCList,
+                    conformList, normList, onlyNameS, edges, appPositions, eleclection, mutexMap, mutexGroupList,
+                    chooseOneList, sortedMapExcel, sortedMap, circuitInfoList);
+            System.out.println("实际增加的方案数量：" + simpleList.size());
+            if (simpleList != null && simpleList.size() > 0) {
+                for (List<String> list : simpleList) {
+                    if (!containsList(list, WareHouse) && !containsList(list, simple)) {
+                        simple.add(list);
+                        WareHouse.add(list);
+                    }
+                }
+            }
+
+            if (completeNumber > AutoCompleteNumber) {
+                break;
+            }
+            completeNumber++;
+        }
+        List<Map<String, Object>> mapList = changeAndFindBest(simple, edges, normList, wearId, canChangeS,
+                jsonMap,
+                edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, findBest);
+        // 记录迭代统计到Excel
+//        ObjectMapper mapper = new ObjectMapper();
+//        JsonToMap jsonToMap = new JsonToMap();
+//        if (mapList != null && !mapList.isEmpty()) {
+//            Map<String, Object> bestResult = mapList.get(0);
+//            Map<String, Object> costMap = (Map<String, Object>) bestResult.get("成本");
+//            // 计算每轮迭代的最优成本，加到excel预测成本的后一列
+//            List<String> serviceableStatue = (List<String>) bestResult.get("serviceableStatue");
+//            List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+//            Map<String, Object> threadLocalJsonMap = mapper.readValue(
+//                    mapper.writeValueAsString(jsonMap),
+//                    Map.class);
+//            threadLocalJsonMap.put("edges", serviceableEdge);
+//            String betweenoptimizeInterfacesresult = null;
+//            try {
+//                betweenoptimizeInterfacesresult = projectCircuitInfoOutput
+//                        .projectCircuitInfoOutput(mapper.writeValueAsString(jsonMap));
+//            } catch (Exception e) {
+//                return findBest;
+//            }
+//            Map<String, Object> betweenobjectMapresult = jsonToMap.TransJsonToMap(betweenoptimizeInterfacesresult);
+//            Map<String, Object> betweenprojectCircuitInfo = (Map<String, Object>) betweenobjectMapresult
+//                    .get("projectCircuitInfo");
+//            Double betweencurrentalCost = (Double) betweenprojectCircuitInfo.get("总成本");
+//            if (costMap != null) {
+//                double bestCost = Double.parseDouble(costMap.get("总成本").toString());
+//                double bestWeight = Double.parseDouble(costMap.get("总重量").toString());
+//                double bestLength = Double.parseDouble(costMap.get("总长度").toString());
+//                String excelPath = "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\iteration_stats_"
+//                        + "testAItrue"
+//                        + ".xlsx";
+//                recordIterationStatsToExcel(
+//                        hybridizationNumber, generatedCount, aiFilteredCount, filterTimeMs,
+//                        bestCost, bestWeight, bestLength, findBestTimeMs, excelPath, betweencurrentalCost);
+//            }
+//        }
+        return mapList;
+    }
+
+    /**
+     * 记录迭代统计数据到Excel表格
+     * 每轮迭代一行，表头：迭代轮次、生成样本数、AI过滤后样本数、过滤耗时、最优成本、最优重量、最优长度、找最优耗时
+     * 每轮之间空两行
+     *
+     * @param iterationRound  迭代轮次
+     * @param generatedCount  生成样本数
+     * @param aiFilteredCount AI过滤后样本数
+     * @param filterTimeMs    过滤耗时(毫秒)
+     * @param bestCost        最优总成本
+     * @param bestWeight      最优总重量
+     * @param bestLength      最优总长度
+     * @param findBestTimeMs  找最优耗时(毫秒)
+     * @param excelFilePath   Excel文件路径
+     */
+    public void recordIterationStatsToExcel(
+            int iterationRound,
+            int generatedCount,
+            int aiFilteredCount,
+            long filterTimeMs,
+            double bestCost,
+            double bestWeight,
+            double bestLength,
+            long findBestTimeMs,
+            String excelFilePath, Double betweencurrentalCost) {
+        try {
+            org.apache.poi.ss.usermodel.Workbook workbook;
+            org.apache.poi.ss.usermodel.Sheet sheet;
+            java.io.File file = new java.io.File(excelFilePath);
+
+            // 如果文件已存在，读取它；否则新建
+            if (file.exists()) {
+                java.io.FileInputStream fis = new java.io.FileInputStream(file);
+                workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(fis);
+                fis.close();
+                if (workbook.getNumberOfSheets() > 0) {
+                    sheet = workbook.getSheetAt(0);
+                } else {
+                    sheet = workbook.createSheet("迭代统计");
+                }
+            } else {
+                workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
+                sheet = workbook.createSheet("迭代统计");
+                // 写入表头
+                org.apache.poi.ss.usermodel.Row headerRow = sheet.createRow(0);
+                String[] headers = { "迭代轮次", "每代生成样本数", "AI过滤后样本数", "过滤耗时(ms)",
+                        "预测成本", "真实成本", "最优重量", "最优长度", "找最优耗时(ms)" };
+                for (int i = 0; i < headers.length; i++) {
+                    org.apache.poi.ss.usermodel.Cell cell = headerRow.createCell(i);
+                    cell.setCellValue(headers[i]);
+                }
+            }
+
+            // 找到最后一行，空两行后写入新数据
+            int lastRowNum = sheet.getLastRowNum();
+            int nextRowNum = lastRowNum + 3; // 空两行
+            org.apache.poi.ss.usermodel.Row dataRow = sheet.createRow(nextRowNum);
+
+            // 写入数据
+            int col = 0;
+            dataRow.createCell(col++).setCellValue(iterationRound);
+            dataRow.createCell(col++).setCellValue(generatedCount);
+            dataRow.createCell(col++).setCellValue(aiFilteredCount);
+            dataRow.createCell(col++).setCellValue(filterTimeMs);
+            dataRow.createCell(col++).setCellValue(bestCost);
+            dataRow.createCell(col++).setCellValue(betweencurrentalCost);
+            dataRow.createCell(col++).setCellValue(bestWeight);
+            dataRow.createCell(col++).setCellValue(bestLength);
+            dataRow.createCell(col++).setCellValue(findBestTimeMs);
+
+            // 自动调整列宽
+            for (int i = 0; i < 9; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            // 写入文件
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(excelFilePath);
+            workbook.write(fos);
+            fos.close();
+            workbook.close();
+
+            System.out.println("迭代统计已写入Excel: " + excelFilePath);
+        } catch (Exception e) {
+            System.err.println("写入Excel失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * @Description: 根据传入的分支打断状况 返回一条新的分支详情
+     * @input: edgeStatue 分支打断状况
+     * @input: edgeDetails 分支模板
+     * @input: normList 分支的id编号
+     * @Return: 根据传入的分支打断情况 创建一个分支详情
+     */
+    public List<Map<String, Object>> createNewEdges(List<String> edgeStatue, List<Map<String, Object>> edgeDetails,
+            List<String> normList) {
+        List<Map<String, Object>> newEdges = edgeDetails.stream().collect(Collectors.toList());
+        for (Map<String, Object> newEdge : newEdges) {
+            String id = (String) newEdge.get("id");
+            int number = normList.indexOf(id);
+            newEdge.put("topologyStatusCode", edgeStatue.get(number));
+        }
+        return newEdges;
+    }
+
+    /**
+     * @Description: 根据给定的分支打断状况集合（符合要求的） 对他们进行一个分支的闭环检查 修改S 将最终的分支打断情况进行一个计算
+     *               返回最优的是个方案
+     * @input: simpleList 分支打断情况的集合
+     * @input: edges txt中没解析的分支部分
+     * @input: normList 分支id的集合
+     * @input: wearId 穿孔id
+     * @input: canChangeS 可以变s的分支id
+     * @input: jsonMap txt内容单纯的转为map
+     * @input: edgeChooseBS 分支打断可以选BS的集合
+     * @Return: 返回最优的top20方案
+     */
+    public List<Map<String, Object>> changeAndFindBest(List<List<String>> simpleList,
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            List<String> wearId,
+            List<String> canChangeS,
+            Map<String, Object> jsonMap,
+            List<String> edgeChooseBS,
+            Map<String, Map<String, String>> elecPosition,
+            Map<String, Object> branchLength,
+            List<List<Integer>> connection,
+            Map<String, List<String>> multiLoopInfos,
+            Map<String, String> pointMap, List<Map<String, Object>> findBestPre) throws Exception {
+        GINEInferenceEngine gine = new GINEInferenceEngine();
+        Random random = new Random();
+        FindBest findBest = new FindBest();
+        Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
+        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
+        Boolean whetherOnLoop = caseInfo.get("loopcreate").toString().equals("true") ? true : false;
+        List<Float> length = (List<Float>) branchLength.get("branchLength");
+        System.out.println("一共需要计算方案：" + simpleList.size());
+        JsonToMap jsonToMap = new JsonToMap();
+
+        ObjectMapper mapper = new ObjectMapper();
+        // 获取所有用电器对应的位置
+        List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) jsonMap.get("loopInfos");
+        List<Map<String, String>> pointsList = (List<Map<String, String>>) jsonMap.get("points");
+        // 检查生成的方案是否存在穿腔如果存在 将对应的闭环中 将打断成本最小的分支情况进行一个替换
+        System.out.println("每个方案开始加s");
+        List<Map<String, Object>> resultList = new ArrayList<>();
+        // 创建Callable任务列表
+        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
+        int index = 1;
+        for (List<String> strings : simpleList) {
+            ++index;
+            final int currentIndex = index;
+            tasks.add(() -> {
+                long startTime = System.currentTimeMillis();
+                Map<String, Object> map = new HashMap<>();
+                // if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                // break;
+                // }
+                List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
+                for (int i = 0; i < serviceableStatue.size(); i++) {
+                    if (serviceableStatue.get(i).equals("C") && edgeChooseBS.contains(normList.get(i))) {
+                        serviceableStatue.set(i, "S");
+                    }
+                }
+
+                List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+                // 深拷贝
+                Map<String, Object> threadLocalJsonMap = mapper.readValue(
+                        mapper.writeValueAsString(jsonMap),
+                        Map.class);
+                threadLocalJsonMap.put("edges", serviceableEdge);
+
+                Map<String, Double> breakCostMap = new HashMap<>();
+                String projectCircuitInfoOutputRsult = projectCircuitInfoOutput
+                        .projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
+                Map<String, Object> objectMap = jsonToMap.TransJsonToMap(projectCircuitInfoOutputRsult);
+                Map<String, Object> projectCircuitInfo = (Map<String, Object>) objectMap.get("projectCircuitInfo");
+
+                Map<String, Object> costResultData = new HashMap<>();
+                // 存入map
+                costResultData.put("总成本", projectCircuitInfo.get("总成本"));
+                costResultData.put("总长度", projectCircuitInfo.get("回路总长度"));
+                costResultData.put("总重量", projectCircuitInfo.get("回路总重量"));
+
+                Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) objectMap
+                        .get("bundeleRelatedCircuitInfo");
+                for (String s : bundeleRelatedCircuitInfo.keySet()) {
+                    Map<String, Object> edgeMap = (Map<String, Object>) bundeleRelatedCircuitInfo.get(s);
+                    Map<String, Object> edgeDetail = (Map<String, Object>) edgeMap.get("circuitInfoIntergation");
+                    breakCostMap.put(s, Double
+                            .parseDouble(edgeDetail.get("分支打断代价") != null ? edgeDetail.get("分支打断代价").toString() : "0"));
+                }
+                // 对当前的情况进行一个检查 当存在闭环的状况 将当中最打断成本最小的进行打S 直到没有闭环的时候跳出循环
+                boolean scrapOrNot = false;
+                while (true) {
+                    serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+                    List<List<String>> recognizeLoopList = recognizeLoopNew(serviceableEdge);
+                    // 每一个闭环中存在一个穿腔的分支的 整组成整个闭环的分支进行记录
+                    List<String> recognizeLoopIdList = new ArrayList<>();
+                    for (List<String> loop : recognizeLoopList) {
+                        for (String s : loop) {
+                            if (wearId.contains(s)) {
+                                recognizeLoopIdList.addAll(loop);
+                                break;
+                            }
+                        }
+                    }
+
+                    // 检查当前方案中是否存在寻妖处理的闭环
+                    if (recognizeLoopIdList.size() != 0) {
+                        // 将recognizeLoopIdList 里面分支打断成本最小的打断状况修改为S
+                        String minCostKey = null;
+                        List<String> keyList = findMinCostKey(recognizeLoopIdList, breakCostMap);
+                        for (String s : keyList) {
+                            if (canChangeS.contains(s)) {
+                                minCostKey = s;
+                                break;
+                            }
+                        }
+                        if (minCostKey == null) {
+                            scrapOrNot = true;
+                            break;
+                        }
+                        serviceableStatue.set(normList.indexOf(minCostKey), "S");
+                        // 关键：打断后重新计算全图成本和 breakCostMap（不能简单累加增量）
+                        // 打断一个分支后，回路走线、导线选型、连接器配置都变化，
+                        // 后续分支的打断代价是相对"新图状态"的，不是原始图的累加。
+                        if (!refreshCircuitInfo(serviceableStatue, edges, normList, threadLocalJsonMap,
+                                projectCircuitInfoOutput, mapper, jsonToMap, costResultData, breakCostMap)) {
+                            scrapOrNot = true;
+                            break;
+                        }
+                    } else {
+                        // 看是否开启闭环消除
+                        if (whetherOnLoop) {
+                            while (true) {
+                                serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+                                List<List<String>> recognizeLoopListSon = recognizeLoopNew(serviceableEdge);
+                                if (recognizeLoopListSon.size() == 0) {
+                                    break;
+                                } else {
+                                    Set<String> son = new HashSet<>();
+                                    for (List<String> loop : recognizeLoopListSon) {
+                                        son.addAll(loop);
+                                    }
+                                    List<String> keyList = findMinCostKey(son.stream().collect(Collectors.toList()),
+                                            breakCostMap);
+                                    String minCostKey = null;
+                                    for (String s : keyList) {
+                                        if (canChangeS.contains(s)) {
+                                            minCostKey = s;
+                                            break;
+                                        }
+                                    }
+                                    // 如果当前的方案中没有可以打断的分支，则勾选一个打断代价最小的进行打断
+                                    if (minCostKey == null) {
+                                        minCostKey = keyList.get(0);
+                                    }
+                                    serviceableStatue.set(normList.indexOf(minCostKey), "S");
+                                    // 关键：打断后重新计算全图成本和 breakCostMap
+                                    if (!refreshCircuitInfo(serviceableStatue, edges, normList, threadLocalJsonMap,
+                                            projectCircuitInfoOutput, mapper, jsonToMap, costResultData,
+                                            breakCostMap)) {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        // serviceableList.add(serviceableStatue);
+                        map.put("成本", costResultData);
+                        map.put("serviceableEdges", serviceableEdge);
+                        map.put("serviceableStatue", serviceableStatue);
+                        break;
+                    }
+                }
+                // 这里先按null返回，因为如果跳出大的循环，则其余方案无法检测到
+                if (scrapOrNot) {
+                    return null;
+                }
+                System.out.println("遗传算法返回左右top时，每个方案闭环检测结束耗时" + (System.currentTimeMillis() - startTime));
+                return map;
+            });
+        }
+        // 线程池提交任务
+        List<Future<Map<String, Object>>> futures = new ArrayList<>();
+        for (Callable<Map<String, Object>> task : tasks) {
+            Future<Map<String, Object>> submit = threadPool.submit(task);
+            futures.add(submit);
+        }
+        // 获取线程池结果
+        for (Future<Map<String, Object>> future : futures) {
+            try {
+                Map<String, Object> result = future.get(600, java.util.concurrent.TimeUnit.SECONDS);
+                if (result != null) {
+                    resultList.add(result);
+                }
+            } catch (Exception e) {
+                // e.printStackTrace();
+            }
+
+        }
+        // 每个方案进行计算
+        // 加入上一代最优top3
+        if (findBestPre != null) {
+            for (int i = 0; i < 3; i++) {
+                resultList.add(findBestPre.get(i));
+            }
+        }
+        List<Map<String, Object>> topBeat = findBest.findBest(resultList, "成本", TopNumber);
+
+        for (Map<String, Object> map : topBeat) {
+            List<String> list = (List<String>) map.get("serviceableStatue");
+            if (!containsList(list, WareHouseTop)) {
+                WareHouseTop.add(list);
+                TopCostDetail.add(map);
+            }
+        }
+        return topBeat;
+    }
+
+
+
+    /**
+     * @Description: 生成随机方案
+     * @input: minLoopNumber B的最小个数
+     * @input: maxLoopNumber B的最大个数
+     * @input: initialScheme 初始方案
+     * @input: togetherBCList 组合的B集合
+     * @input: conformList 可变的B集合
+     * @input: normList 可变的B集合
+     * @input: onlyNameS 可变的B集合
+     * @input: edges txt中egges部分
+     * @input: appPositions txt中appPositions部分
+     * @input: eleclection 用电器对应的位置
+     * @input: mutexMap 互斥的情况
+     * @input: mutexGroupList 组团互斥的分支
+     * @input: chooseOneList 多选一的分支
+     * @input: sortedMapExcel 导线选型excel中sheet1中的西悉尼 并且按照导线的商务价格继续进行一个排序
+     * @input: sortedMap 分支的打断代价并按照打断代价进行一个升序
+     * @input: circuitInfoList 回路信息
+     * @Return: 返回随机生成的随机方案
+     */
+    public List<List<String>> initialOptimize(int minLoopNumber,
+            int maxLoopNumber,
+            List<String> initialScheme,
+            List<List<String>> togetherBCList,
+            List<String> conformList,
+            List<String> normList,
+            List<String> onlyNameS,
+            List<Map<String, Object>> edges,
+            List<Map<String, String>> appPositions,
+            Map<String, String> eleclection,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<List<String>> mutexGroupList,
+            List<Map<String, List<String>>> chooseOneList,
+            Map<String, Map<String, String>> sortedMapExcel,
+            Map<String, Double> sortedMap,
+            List<Map<String, Object>> circuitInfoList) throws InterruptedException {
+        List<List<String>> resultList = Collections.synchronizedList(new ArrayList<>());
+        Random random = new Random();
+        int totalNumber = 0;
+        // 最少生成随机方案数量 不然一直循环
+        int completeNumber = 0;
+
+        // 方案数量必须为100
+        while (resultList.size() < LessRandomSamleNumber) {
+            // b的数量
+            for (int index = minLoopNumber; index <= maxLoopNumber; index++) {
+                if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                    threadPool.terminateNow();
+                    return null;
+                }
+                final int i = index;
+                threadPool.execute(() -> {
+                    List<String> needChangeBId = new ArrayList<>();
+                    List<String> needChangeSId = new ArrayList<>();
+                    Set<String> mutexKey = mutexMap.keySet();
+                    // 组团互斥的情况 当一组为B的情况下 另一组也可以为B、C、S
+                    for (String s : mutexKey) {
+                        Map<String, List<String>> mutexDetail = mutexMap.get(s);
+                        Set<String> set = mutexDetail.keySet();
+                        Object[] objects = set.toArray();
+                        String firststatue = null;
+                        for (int j = 0; j < objects.length; j++) {
+                            if (j == 0) {
+                                // 根据产生的随机整数 来决定随机选择一个B或者S 0：B 1：C
+                                int randomNumber = random.nextInt(2);
+                                if (randomNumber == 0) {
+                                    firststatue = "B";
+                                    List<String> list1 = mutexDetail.get((String) objects[j]);
+                                    for (String s1 : list1) {
+                                        // 是否存在存在组团的情况
+                                        Boolean flag = false;
+                                        for (List<String> strings : mutexGroupList) {
+                                            if (strings.contains(s1)) {
+                                                needChangeBId.addAll(strings);
+                                                flag = true;
+                                            }
+                                        }
+                                        if (!flag) {
+                                            needChangeBId.add(s1);
+                                        }
+                                    }
+                                } else {
+                                    firststatue = "C";
+                                }
+                            }
+                            if (j == 1) {
+                                if (firststatue.equals("B")) {
+                                    int randomNumber = random.nextInt(2);
+                                    if (randomNumber == 0) {
+                                        List<String> list1 = mutexDetail.get((String) objects[j]);
+                                        for (String s1 : list1) {
+                                            // 是否存在存在组团的情况
+                                            Boolean flag = false;
+                                            for (List<String> strings : mutexGroupList) {
+                                                if (strings.contains(s1)) {
+                                                    needChangeBId.addAll(strings);
+                                                    flag = true;
+                                                }
+                                            }
+                                            if (!flag) {
+                                                needChangeBId.add(s1);
+                                            }
+                                        }
+                                    }
+                                } else if (firststatue.equals("C")) {
+                                    List<String> list1 = mutexDetail.get((String) objects[j]);
+                                    for (String s1 : list1) {
+                                        // 是否存在存在组团的情况
+                                        Boolean flag = false;
+                                        for (List<String> strings : mutexGroupList) {
+                                            if (strings.contains(s1)) {
+                                                needChangeBId.addAll(strings);
+                                                flag = true;
+                                            }
+                                        }
+                                        if (!flag) {
+                                            needChangeBId.add(s1);
+                                        }
+                                    }
+                                }
+
+                            }
+                        }
+                    }
+                    List<Map<String, String>> chooseResultList = new ArrayList<>();
+                    // 对三选一的情况进行一个生成
+                    for (Map<String, List<String>> listMap : chooseOneList) {
+                        Set<String> set = listMap.keySet();
+                        while (true) {
+                            int numberC = 0;
+                            Map<String, String> chooseResult = new HashMap<>();
+                            for (String s : set) {
+                                List<String> list1 = listMap.get(s);
+                                String edgeStatue = list1.get(random.nextInt(list1.size()));
+                                chooseResult.put(s, edgeStatue);
+                                if (edgeStatue.equals("C")) {
+                                    numberC++;
+                                }
+                            }
+                            if (numberC < 2) {
+                                chooseResultList.add(chooseResult);
+                                break;
+                            }
+
+                        }
+                    }
+
+                    for (Map<String, String> map : chooseResultList) {
+                        for (String s : map.keySet()) {
+                            if (map.get(s).equals("B")) {
+                                needChangeBId.add(s);
+                            }
+                            if (map.get(s).equals("S")) {
+                                needChangeSId.add(s);
+                            }
+                        }
+                    }
+
+                    // 组团变化每一个组根据随机生成的数字惊醒选择B 还是C 0为B 1为C
+                    for (List<String> list : togetherBCList) {
+                        int randomNumber = random.nextInt(2);
+                        if (randomNumber == 0) {
+                            needChangeBId.addAll(list);
+                        }
+                    }
+
+                    if (needChangeBId.size() > i) {
+                        return;
+                    }
+
+                    // 这个方法的目的：获取后50%的并集分支列表，这些是打断代价相对较低且低成本导线相关分支，从这些分支中随机选择一部分作为补充B的状态分支
+                    Map<String, List<String>> percentage = getPercentage(sortedMapExcel, sortedMap, circuitInfoList,
+                            0.5);
+                    List<String> getTopintersection = percentage.get("getLastunion");
+                    // 进行筛选，只保留同时存在在conformList中的分支,conformList包含了所有可以设置为b状态的分支id集合
+                    getTopintersection.retainAll(conformList);
+
+                    // 如果经过约束后需要打断的b的数量小于目标打断数量，则从可打断分支集合中随机选择分支进行打断，已达到目标打断数量
+                    List<String> list = selectId(getTopintersection, i - needChangeBId.size());
+                    needChangeBId.addAll(list);
+                    List<String> changeList = initialScheme.stream().collect(Collectors.toList());
+
+                    for (String s : needChangeBId) {
+                        int number = normList.indexOf(s);
+                        changeList.set(number, "B");
+                    }
+                    for (String s : needChangeSId) {
+                        int number = normList.indexOf(s);
+                        changeList.set(number, "S");
+                    }
+                    for (String s : onlyNameS) {
+                        int number = normList.indexOf(s);
+                        changeList.set(number, "S");
+                    }
+                    // 新方案，所有的初始的分支，所有分支id集合,重新返回分支详情
+                    List<Map<String, Object>> coppysonedges = createNewEdges(changeList, edges, normList);
+                    Boolean sonSate = checkFirstOption(normList, changeList, coppysonedges, appPositions, eleclection,
+                            mutexMap, chooseOneList, togetherBCList);
+                    // 判断生成的list方案是否可行，满足所有约束， 是否在仓库里界面 再判断是否在resultList集合里面
+                    if (sonSate) {
+                        synchronized (resultList) {
+                            if (!containsList(changeList, WareHouse)) {
+                                if (!containsList(changeList, resultList)) {
+                                    resultList.add(changeList);
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            completeNumber++;
+            // 如果生成的方案大于1000，跳出循环
+            if (completeNumber > InitializeAutoCompleteNumber) {
+                break;
+            }
+        }
+        List<List<String>> resultListCopy = resultList.stream().collect(Collectors.toList());
+        System.out.println("初始化方案数量：" + resultListCopy.size());
+        return resultListCopy;
+    }
+
+    /**
+     * @Description: List<String> id 在Map < String, Double>
+     *               breakCostMap中每一个id作为一个key对应的 double最小的一个key
+     * @input: ids id集合
+     * @input: breakCostMap 所有分支的打断成本状况
+     * @Return: 按照分支打断代价 对id进行一个排序
+     */
+    public List<String> findMinCostKey(List<String> ids, Map<String, Double> breakCostMap) {
+        List<String> validIds = new ArrayList<>();
+        for (String id : ids) {
+            if (breakCostMap.containsKey(id)) {
+                validIds.add(id);
+            }
+        }
+        Collections.sort(validIds, Comparator.comparing(breakCostMap::get));
+        return validIds;
+    }
+
+    /**
+     * @Description: 打断一个分支后，重新计算全图成本和各分支的打断代价
+     *               （必须重新调用，不能简单累加原始 breakCostMap 的增量，
+     *               因为打断后回路走线、导线选型、连接器配置都变化，
+     *               其他分支的打断代价是相对"新图状态"的）
+     * @input: serviceableStatue 当前分支状态集合（已应用本次打断）
+     * @input: edges 分支模板
+     * @input: normList 分支id集合
+     * @input: threadLocalJsonMap 线程本地 jsonMap（避免每次重新反序列化大对象）
+     * @input: projectCircuitInfoOutput 整车成本计算输出器
+     * @input: mapper JSON序列化器
+     * @input: jsonToMap JSON反序列化器
+     * @param costResultData 输出的成本信息（会被覆盖）
+     * @param breakCostMap   输出的分支打断代价（会被覆盖）
+     * @Return: 是否计算成功
+     * @Complexity: O(V+E)，主要由 projectCircuitInfoOutput 内部计算决定
+     */
+    private boolean refreshCircuitInfo(List<String> serviceableStatue,
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            Map<String, Object> threadLocalJsonMap,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
+            ObjectMapper mapper,
+            JsonToMap jsonToMap,
+            Map<String, Object> costResultData,
+            Map<String, Double> breakCostMap) {
+        try {
+            List<Map<String, Object>> newServiceableEdge = createNewEdges(serviceableStatue, edges, normList);
+            threadLocalJsonMap.put("edges", newServiceableEdge);
+            String result = projectCircuitInfoOutput
+                    .projectCircuitInfoOutput(mapper.writeValueAsString(threadLocalJsonMap));
+            Map<String, Object> obj = jsonToMap.TransJsonToMap(result);
+            Map<String, Object> info = (Map<String, Object>) obj.get("projectCircuitInfo");
+            costResultData.put("总成本", info.get("总成本"));
+            costResultData.put("总长度", info.get("回路总长度"));
+            costResultData.put("总重量", info.get("回路总重量"));
+            Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) obj
+                    .get("bundeleRelatedCircuitInfo");
+            breakCostMap.clear();
+            for (String s : bundeleRelatedCircuitInfo.keySet()) {
+                Map<String, Object> edgeMap = (Map<String, Object>) bundeleRelatedCircuitInfo.get(s);
+                Map<String, Object> edgeDetail = (Map<String, Object>) edgeMap.get("circuitInfoIntergation");
+                breakCostMap.put(s, Double.parseDouble(
+                        edgeDetail.get("分支打断代价") != null ? edgeDetail.get("分支打断代价").toString() : "0"));
+            }
+            return true;
+        } catch (Exception e) {
+            System.out.println("refreshCircuitInfo 异常: " + e.getMessage());
+            return false;
+        }
+    }
+
+    public List<List<String>> recognizeLoopNew(List<Map<String, Object>> edges) {
+        // 1. 收集C状态分支，建立"点-点" -> 边id双向映射
+        Map<String, String> pairToEdgeId = new HashMap<>();
+        for (Map<String, Object> edge : edges) {
+            String code = edge.get("topologyStatusCode") != null
+                    ? edge.get("topologyStatusCode").toString()
+                    : "";
+            if ("B".equalsIgnoreCase(code) || "S".equalsIgnoreCase(code)) {
+                continue;
+            }
+            String start = (String) edge.get("startPointName");
+            String end = (String) edge.get("endPointName");
+            String edgeId = edge.get("id") != null ? edge.get("id").toString() : (start + "-" + end);
+            pairToEdgeId.put(start + "-" + end, edgeId);
+            pairToEdgeId.put(end + "-" + start, edgeId);
+        }
+        if (pairToEdgeId.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // 2. 节点去重并建立索引映射
+        Set<String> pointSet = new LinkedHashSet<>();
+        for (Map<String, Object> edge : edges) {
+            String code = edge.get("topologyStatusCode") != null
+                    ? edge.get("topologyStatusCode").toString()
+                    : "";
+            if ("B".equalsIgnoreCase(code) || "S".equalsIgnoreCase(code)) {
+                continue;
+            }
+            pointSet.add((String) edge.get("startPointName"));
+            pointSet.add((String) edge.get("endPointName"));
+        }
+        List<String> pointList = new ArrayList<>(pointSet);
+        Map<String, Integer> pointToIndex = new HashMap<>();
+        for (int i = 0; i < pointList.size(); i++) {
+            pointToIndex.put(pointList.get(i), i);
+        }
+        int n = pointList.size();
+
+        // 3. 构建邻接表（并行数组：邻接点索引 + 对应边id）
+        List<List<Integer>> adjNodes = new ArrayList<>(n);
+        List<List<String>> adjEdgeIds = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) {
+            adjNodes.add(new ArrayList<>());
+            adjEdgeIds.add(new ArrayList<>());
+        }
+        for (Map<String, Object> edge : edges) {
+            String code = edge.get("topologyStatusCode") != null
+                    ? edge.get("topologyStatusCode").toString()
+                    : "";
+            if ("B".equalsIgnoreCase(code) || "S".equalsIgnoreCase(code)) {
+                continue;
+            }
+            int u = pointToIndex.get((String) edge.get("startPointName"));
+            int v = pointToIndex.get((String) edge.get("endPointName"));
+            String eid = pairToEdgeId.get(pointList.get(u) + "-" + pointList.get(v));
+            adjNodes.get(u).add(v);
+            adjEdgeIds.get(u).add(eid);
+            adjNodes.get(v).add(u);
+            adjEdgeIds.get(v).add(eid);
+        }
+
+        // 4. DFS显式栈构建生成树，收集非树边
+        // parent[i]: -1=未访问, -2=根节点, >=0=父节点索引
+        int[] parent = new int[n];
+        Arrays.fill(parent, -1);
+        List<Integer> nonTreeU = new ArrayList<>();
+        List<Integer> nonTreeV = new ArrayList<>();
+        List<String> nonTreeEid = new ArrayList<>();
+        int[][] stack = new int[n * 2][2];
+
+        for (int start = 0; start < n; start++) {
+            if (parent[start] != -1) {
+                continue;
+            }
+            parent[start] = -2;
+            int stackSize = 0;
+            stack[stackSize][0] = start;
+            stack[stackSize][1] = 0;
+            stackSize++;
+
+            while (stackSize > 0) {
+                int[] top = stack[stackSize - 1];
+                int u = top[0];
+                int ni = top[1];
+                List<Integer> neighbors = adjNodes.get(u);
+
+                if (ni < neighbors.size()) {
+                    top[1]++;
+                    int v = neighbors.get(ni);
+                    int p = parent[u];
+
+                    if (parent[v] == -1) {
+                        parent[v] = u;
+                        stack[stackSize][0] = v;
+                        stack[stackSize][1] = 0;
+                        stackSize++;
+                    } else if (v != p && p != -2) {
+                        if (v < u) {
+                            nonTreeU.add(v);
+                            nonTreeV.add(u);
+                            nonTreeEid.add(adjEdgeIds.get(u).get(ni));
+                        }
+                    }
+                } else {
+                    stackSize--;
+                }
+            }
+        }
+
+        // 5. 对每条非树边，通过LCA找到基础环并转换为边id列表
+        List<List<String>> result = new ArrayList<>();
+        Set<String> cycleFingerprint = new HashSet<>();
+
+        for (int k = 0; k < nonTreeU.size(); k++) {
+            int u = nonTreeU.get(k);
+            int v = nonTreeV.get(k);
+
+            // 收集u到根的所有祖先
+            Set<Integer> uAncestors = new HashSet<>();
+            int cur = u;
+            while (cur >= 0) {
+                uAncestors.add(cur);
+                cur = (parent[cur] >= 0) ? parent[cur] : -1;
+            }
+
+            // 从v向上找LCA
+            cur = v;
+            int lca = -1;
+            while (cur >= 0) {
+                if (uAncestors.contains(cur)) {
+                    lca = cur;
+                    break;
+                }
+                cur = (parent[cur] >= 0) ? parent[cur] : -1;
+            }
+            if (lca == -1) {
+                continue;
+            }
+
+            // 构建环节点序列: u -> ... -> lca -> ... -> v
+            List<Integer> cycleNodes = new ArrayList<>();
+            cur = u;
+            while (cur != lca) {
+                cycleNodes.add(cur);
+                cur = parent[cur];
+            }
+            cycleNodes.add(lca);
+
+            List<Integer> vToLca = new ArrayList<>();
+            cur = v;
+            while (cur != lca) {
+                vToLca.add(cur);
+                cur = parent[cur];
+            }
+            for (int i = vToLca.size() - 1; i >= 0; i--) {
+                cycleNodes.add(vToLca.get(i));
+            }
+
+            // 节点序列转换为边id列表
+            List<String> cycleEdgeIds = new ArrayList<>();
+            int m = cycleNodes.size();
+            for (int i = 0; i < m; i++) {
+                int from = cycleNodes.get(i);
+                int to = cycleNodes.get((i + 1) % m);
+                String key = pointList.get(from) + "-" + pointList.get(to);
+                String eid = pairToEdgeId.get(key);
+                if (eid != null && !cycleEdgeIds.contains(eid)) {
+                    cycleEdgeIds.add(eid);
+                }
+            }
+
+            // 指纹去重
+            if (cycleEdgeIds.size() >= 2) {
+                List<String> sorted = new ArrayList<>(cycleEdgeIds);
+                Collections.sort(sorted);
+                String fp = String.join(",", sorted);
+                if (cycleFingerprint.add(fp)) {
+                    result.add(cycleEdgeIds);
+                }
+            }
+        }
+        return result;
+    }
+
+    // 根据提供的list从中随机选取是个id进行返回
+    public List<String> selectId(List<String> edgeId, int selectnumber) {
+        Set<String> returnSet = new HashSet<>();
+        Random random = new Random();
+        while (returnSet.size() < selectnumber) {
+            int number = random.nextInt(edgeId.size());
+            returnSet.add(edgeId.get(number));
+        }
+
+        return returnSet.stream().collect(Collectors.toList());
+    }
+
+    /**
+     * @Description: 对生成的方案进行一个检查： 1、是否存在互斥的情况 2、回路是否导通 3、用电器周围是否至少存在一个分支
+     * @input: normList 当前分支id的排序情况
+     * @input: changeList 分支的打断状况
+     * @input: edges 生成需要检查的分支
+     * @input: appPositions 没有解析txt中的用电器像信息
+     * @input: eleclection 用电器对应的位置
+     * @input: mutexMap 互斥的情况集合
+     * @Return: 根据给定的方案检查 返回是否符合的状态
+     */
+    public Boolean checkFirstOption(List<String> normList, List<String> changeList, List<Map<String, Object>> edges,
+            List<Map<String, String>> appPositions, Map<String, String> eleclection,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList) {
+        // 组团的检查
+        for (List<String> list : togetherBCList) {
+            String statue = changeList.get(normList.indexOf(list.get(0)));
+            for (String s : list) {
+                if (!statue.equals(changeList.get(normList.indexOf(s)))) {
+                    return false;
+                }
+            }
+        }
+
+        // 对多选一的情况进行一个检查 首先检查分支状态是否符合要求 其次再检查C的数量
+        for (Map<String, List<String>> map : chooseOneList) {
+            int numberC = 0;
+            Set<String> set = map.keySet();
+            for (String s : set) {
+                int i = normList.indexOf(s);
+                String s1 = changeList.get(i);
+                List<String> list = map.get(s);
+                if (!list.contains(s1)) {
+                    return false;
+                }
+                if (s1.equals("C")) {
+                    numberC++;
+                }
+
+            }
+            if (numberC > 1) {
+                return false;
+            }
+        }
+
+        // 对互斥的情况进行一个检查
+        Set<String> mutexName = mutexMap.keySet();
+        for (String s : mutexName) {
+            Map<String, List<String>> listMap = mutexMap.get(s);
+            Set<String> sonset = listMap.keySet();
+            int cycleNumber = 1;
+            String statue = null;
+            for (String edgeId : sonset) {
+                List<String> list = listMap.get(edgeId);
+                if (cycleNumber == 1) {
+                    statue = changeList.get(normList.indexOf(list.get(0)));
+                    if (statue.equals("B")) {
+                        for (String topologyStatusCode : list) {
+                            if (!changeList.get(normList.indexOf(topologyStatusCode)).equals("B")) {
+                                return false;
+                            }
+                        }
+                    } else {
+                        for (String topologyStatusCode : list) {
+                            if (!(changeList.get(normList.indexOf(topologyStatusCode)).equals("C")
+                                    || changeList.get(normList.indexOf(topologyStatusCode)).equals("S"))) {
+                                return false;
+                            }
+                        }
+                    }
+                } else {
+                    if (statue.equals("B")) {
+                        for (String topologyStatusCode : list) {
+                            if (!(changeList.get(normList.indexOf(topologyStatusCode)).equals("C")
+                                    || changeList.get(normList.indexOf(topologyStatusCode)).equals("S")
+                                    || changeList.get(normList.indexOf(topologyStatusCode)).equals("B"))) {
+                                return false;
+                            }
+                        }
+                    } else {
+                        for (String topologyStatusCode : list) {
+                            if (!changeList.get(normList.indexOf(topologyStatusCode)).equals("B")) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                cycleNumber++;
+            }
+        }
+
+        List<String> strPointNameList = new ArrayList<>();
+        List<String> endPointNameList = new ArrayList<>();
+        for (Map<String, Object> k : edges) {
+            strPointNameList.add(k.get("startPointName").toString());
+            endPointNameList.add(k.get("endPointName").toString());
+        }
+        List<List<String>> branchBreakList = new ArrayList<>();
+        for (Map<String, Object> edge : edges) {
+            if (edge.get("topologyStatusCode").equals("B")) {
+                List<String> interruptedEdgelist = new ArrayList<>();
+                interruptedEdgelist.add(edge.get("startPointName").toString());
+                interruptedEdgelist.add(edge.get("endPointName").toString());
+                branchBreakList.add(interruptedEdgelist);
+            }
+        }
+        GenerateTopoMatrix adjacencyMatrixGraph = new GenerateTopoMatrix(strPointNameList, endPointNameList,
+                branchBreakList);// 获取邻接矩阵基本信息
+        adjacencyMatrixGraph.adjacencyMatrix();// 构建邻接矩阵列表及数组
+        adjacencyMatrixGraph.addEdge();// 为邻接矩阵添加”边“元素
+        adjacencyMatrixGraph.getAdj();
+
+        FindTopoBreak breakRecognize = new FindTopoBreak();
+        List<List<String>> breakRec = breakRecognize.recognizeBreak(adjacencyMatrixGraph.getAdj(),
+                adjacencyMatrixGraph.getAllPoint());
+        // 2、 每个用电器周围至少存在一个分支 3、生成的方案必须使得每个回路导通
+        if (breakRec.size() != 1) {
+            return false;
+        }
+
+        Boolean edgesFlag = true;
+
+        for (Map<String, String> appPosition : appPositions) {
+            if (!appPosition.get("appName").startsWith("[")) {
+                String pointName = eleclection.get(appPosition.get("appName"));
+                if (!checkElecEdge(pointName, edges)) {
+                    return false;
+                }
+            }
+        }
+
+        if (breakRec.size() == 1 && edgesFlag) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * @Description: 对生成的方案进行一个检查： 1、回路是否导通 2、用电器周围是否至少存在一个分支
+     * @input: edges 生成需要检查的分支
+     * @input: appPositions 没有解析txt中的用电器像信息
+     * @input: eleclection 用电器对应的位置
+     * @input: mutexMap 互斥的情况集合
+     * @Return: 根据给定的方案检查 返回是否符合的状态
+     */
+    public Boolean checkFirstOption(List<Map<String, Object>> edges, List<Map<String, String>> appPositions,
+            Map<String, String> eleclection) {
+
+        List<String> strPointNameList = new ArrayList<>();
+        List<String> endPointNameList = new ArrayList<>();
+        Integer number = 0;
+        for (Map<String, Object> k : edges) {
+            if (k.get("topologyStatusCode").toString().equals("B")) {
+                number++;
+            }
+            strPointNameList.add(k.get("startPointName").toString());
+            endPointNameList.add(k.get("endPointName").toString());
+        }
+        List<List<String>> branchBreakList = new ArrayList<>();
+        for (Map<String, Object> edge : edges) {
+            if (edge.get("topologyStatusCode").equals("B")) {
+                List<String> interruptedEdgelist = new ArrayList<>();
+                interruptedEdgelist.add(edge.get("startPointName").toString());
+                interruptedEdgelist.add(edge.get("endPointName").toString());
+                branchBreakList.add(interruptedEdgelist);
+            }
+        }
+        GenerateTopoMatrix adjacencyMatrixGraph = new GenerateTopoMatrix(strPointNameList, endPointNameList,
+                branchBreakList);// 获取邻接矩阵基本信息
+        adjacencyMatrixGraph.adjacencyMatrix();// 构建邻接矩阵列表及数组
+        adjacencyMatrixGraph.addEdge();// 为邻接矩阵添加”边“元素
+        adjacencyMatrixGraph.getAdj();
+
+        FindTopoBreak breakRecognize = new FindTopoBreak();
+        List<List<String>> breakRec = breakRecognize.recognizeBreak(adjacencyMatrixGraph.getAdj(),
+                adjacencyMatrixGraph.getAllPoint());
+        // 2、 每个用电器周围至少存在一个分支 3、生成的方案必须使得每个回路导通
+        // 如果size大于1，说明打断导致拓扑图分成了多个族群，说明存在断点，优化算法会拒绝这个方案，只能保留保持拓扑联通的
+        if (breakRec.size() > 1) {
+            return false;
+        }
+
+        Boolean edgesFlag = true;
+
+        for (Map<String, String> appPosition : appPositions) {
+            if (!appPosition.get("appName").startsWith("[")) {
+                String pointName = eleclection.get(appPosition.get("appName"));
+                if (!checkElecEdge(pointName, edges)) {
+                    return false;
+                }
+            }
+        }
+
+        if (breakRec.size() == 1 && edgesFlag) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * @Description: 获取百分比数据
+     * @input: sortedMapExcel 导线选型的excel中导线价格从高到低排序
+     * @input: sortedMap 最理想案下 分支的打断代价
+     * @input: circuitInfoList 最理想方案下 计算完的回路信息
+     * @input: number 百分比 给我用小数展示 0.5 -》百分之五十
+     * @Return: 返回前百分之多少的交集 并集分支 后百分之多少的交集 并集分支
+     */
+    public Map<String, List<String>> getPercentage(Map<String, Map<String, String>> sortedMapExcel,
+            Map<String, Double> sortedMap,
+            List<Map<String, Object>> circuitInfoList,
+            double number) {
+        Map<String, List<String>> result = new HashMap<>();
+        // 后百分之几
+        List<String> getLastKeys = getLast25Keys(sortedMap, 1 - number);
+        List<String> getLastKeysExcel = getLast25KeysExcel(sortedMapExcel, 1 - number);
+        Set<String> getLastedgeId = new HashSet<>();
+        for (Map<String, Object> map : circuitInfoList) {
+            if (getLastKeysExcel.contains(map.get("导线选型").toString())) {
+                List<String> list = (List<String>) map.get("回路所有分支id");
+                for (String s : list) {
+                    if (s.length() > 0) {
+                        getLastedgeId.add(s);
+                    }
+                }
+            }
+        }
+        Set<String> getLastintersection = new HashSet<>(getLastKeys);
+        getLastintersection.retainAll(getLastedgeId);
+        Set<String> getLastunion = new HashSet<>(getLastKeys);
+        getLastunion.addAll(getLastedgeId);
+        // 前百分之几
+        List<String> getTopKeys = getTop25Keys(sortedMap, number);
+        List<String> getTopKeysExcel = getTop25KeysExcel(sortedMapExcel, number);
+        Set<String> getTopedgeId = new HashSet<>();
+        for (Map<String, Object> map : circuitInfoList) {
+            if (getTopKeysExcel.contains(map.get("导线选型").toString())) {
+                List<String> list = (List<String>) map.get("回路所有分支id");
+                for (String s : list) {
+                    if (s.length() > 0) {
+                        getTopedgeId.add(s);
+                    }
+                }
+            }
+        }
+        Set<String> getTop25intersection = new HashSet<>(getTopKeys);
+        getTop25intersection.retainAll(getTopedgeId);
+        Set<String> getTopunion = new HashSet<>(getTopKeys);
+        getTopunion.addAll(getTopedgeId);
+        // 后百分之number的交集，并集，以及前百分之多少的交集，并集
+        result.put("getLastintersection", new ArrayList<>(getLastintersection));
+        result.put("getLastunion", new ArrayList<>(getLastunion));
+        result.put("getTop25intersection", new ArrayList<>(getTop25intersection));
+        result.put("getTopunion", new ArrayList<>(getTopunion));
+        return result;
+    }
+
+    /**
+     * @Description: 获取 最理想案下 分支的打断代价从高到低排序前百分之多少的分支id
+     * @input: sortedMap 最理想案下 分支的打断代价
+     * @input: number 百分比 给我用小数展示 0.5 -》百分之五十
+     * @Return: 返回理想案下 分支的打断代价从高到低排序前百分之多少的分支id
+     */
+    public List<String> getTop25KeysExcel(Map<String, Map<String, String>> sortedMap, Double number) {
+        int size = sortedMap.size();
+        int top25Size = (int) Math.ceil(size * number);
+
+        List<String> keysList = new ArrayList<>(sortedMap.keySet());
+
+        List<String> top25Keys = new ArrayList<>();
+        for (int i = 0; i < top25Size; i++) {
+            top25Keys.add(keysList.get(i));
+        }
+        return top25Keys;
+    }
+
+    /**
+     * @Description: 获取 导线选型的excel中导线价格从高到低排序前百分之多少的分支id
+     * @input: sortedMap 导线选型的excel中导线价格从高到低排序
+     * @input: number 百分比 给我用小数展示 0.5 -》百分之五十
+     * @Return: 返回导线选型的excel中导线价格从高到低排序前百分之多少的分支id
+     */
+    public List<String> getTop25Keys(Map<String, Double> sortedMap, Double number) {
+        int size = sortedMap.size();
+        int top25Size = (int) Math.ceil(size * number);
+
+        List<Map.Entry<String, Double>> entryList = new ArrayList<>(sortedMap.entrySet());
+
+        List<String> top25Keys = new ArrayList<>();
+        for (int i = 0; i < top25Size; i++) {
+            Map.Entry<String, Double> entry = entryList.get(i);
+            top25Keys.add(entry.getKey());
+        }
+
+        return top25Keys;
+    }
+
+    /**
+     * @Description: 获取 最理想案下 分支的打断代价从高到低排序后百分之多少的分支id
+     * @input: sortedMap 最理想案下 分支的打断代价
+     * @input: number 百分比 给我用小数展示 0.5 -》百分之五十
+     * @Return: 返回理想案下 分支的打断代价从高到低排序后百分之多少的分支id
+     */
+    public List<String> getLast25KeysExcel(Map<String, Map<String, String>> sortedMap, Double number) {
+        int size = sortedMap.size();
+        int top25Size = (int) Math.ceil(size * number);
+        List<String> keysList = new ArrayList<>(sortedMap.keySet());
+        List<String> top25Keys = new ArrayList<>();
+        for (int i = top25Size; i < size; i++) {
+            top25Keys.add(keysList.get(i));
+        }
+
+        return top25Keys;
+    }
+
+    /**
+     * @Description: 获取 导线选型的excel中导线价格从高到低排序后百分之多少的分支id
+     * @input: sortedMap 导线选型的excel中导线价格从高到低排序
+     * @input: number 百分比 给我用小数展示 0.5 -》百分之五十
+     * @Return: 返回导线选型的excel中导线价格从高到低排序后百分之多少的分支id
+     */
+    public List<String> getLast25Keys(Map<String, Double> sortedMap, Double number) {
+        int size = sortedMap.size();
+        int top25Size = (int) Math.ceil(size * number);
+
+        List<Map.Entry<String, Double>> entryList = new ArrayList<>(sortedMap.entrySet());
+
+        List<String> top25Keys = new ArrayList<>();
+        for (int i = top25Size; i < size; i++) {
+            Map.Entry<String, Double> entry = entryList.get(i);
+            top25Keys.add(entry.getKey());
+        }
+
+        return top25Keys;
+    }
+
+    /**
+     * @Description: 在理想条件下 按照打断代价从高到低排序
+     * @input: originalMap 理想条件下 按照打断代价
+     * @Return: 按照从高到低排序后的map
+     */
+    public Map<String, Double> sortMapByDoubleValue(Map<String, Double> originalMap) {
+        // 将Map的键值对转换为List
+        List<Map.Entry<String, Double>> entryList = new ArrayList<>(originalMap.entrySet());
+
+        // 对List进行排序，按照Double值从小到大排序
+        entryList.sort((entry1, entry2) -> entry2.getValue().compareTo(entry1.getValue()));
+
+        // 将排序后的List转换回Map，并保持插入顺序（使用LinkedHashMap）
+        return entryList.stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (oldValue, newValue) -> oldValue,
+                        LinkedHashMap::new));
+    }
+
+    /**
+     * @Description: 在理想条件下 按照打断代价从高到低排序
+     * @input: originalMap 理想条件下 按照打断代价
+     * @Return: 按照从高到低排序后的map
+     */
+    public Map<String, Map<String, String>> sortMapByInnerCostValue(Map<String, Map<String, String>> originalMap) {
+        List<Map.Entry<String, Map<String, String>>> entryList = new ArrayList<>(originalMap.entrySet());
+
+        entryList.sort((entry1, entry2) -> {
+            String costValue1 = entry1.getValue().get("导线单位商务价（元/米）");
+            String costValue2 = entry2.getValue().get("导线单位商务价（元/米）");
+            return Double.compare(Double.parseDouble(costValue2), Double.parseDouble(costValue1));
+        });
+
+        return entryList.stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (oldValue, newValue) -> oldValue,
+                        LinkedHashMap::new));
+    }
+
+    // 找到所有同电器对应的位置点
+    public Map<String, String> getEleclection(List<Map<String, String>> mapList) {
+        Map<String, String> resultMap = new HashMap<>();
+        for (Map<String, String> stringMap : mapList) {
+            String result = "";
+            if (stringMap.get("unregularPointName") != null) {
+                result = stringMap.get("unregularPointName");
+            } else if (stringMap.get("unregularPointName") == null && stringMap.get("regularPointName") != null) {
+                result = stringMap.get("regularPointName");
+            } else if (stringMap.get("unregularPointName") == null && stringMap.get("regularPointName") == null) {
+                result = null;
+            }
+
+            resultMap.put(stringMap.get("appName"), result);
+
+        }
+        // System.out.println("从txt中读取到的用电器，经过位置判断后共计"+resultList.size()+"个");
+        return resultMap;
+    }
+
+    /**
+     * @Description 判断用电器对应位置点两端是否存在分支为C
+     * @input 用电器对应的位置点
+     * @input 所有的分支信息
+     */
+    public boolean checkElecEdge(String pointName, List<Map<String, Object>> edges) {
+        for (Map<String, Object> edge : edges) {
+            if ((edge.get("startPointName").toString().equals(pointName)
+                    || edge.get("endPointName").toString().equals(pointName))
+                    && !edge.get("topologyStatusCode").toString().equalsIgnoreCase("B")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @Description: 判断targetList 是否在 listOfLists中
+     * @input: targetList
+     * @input: listOfLists
+     * @Return:
+     */
+    public boolean containsList(List<String> targetList, List<List<String>> listOfLists) {
+        for (List<String> list : listOfLists) {
+            if (list.equals(targetList)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @Description 获取最优的几条方案（首先找出这些回路中的 回路总成本、回路总量、回路长度的最大值和最小值 然后按照
+     *              （总成本-总成本最小值）/（总成本最大值-总成本最大值）+（回路长度-回路长度最小值）/（回路长度最大值-回路长度最大值）+（回路重量-回路重量最小值）/（回路重量最大值-回路重量最大值）
+     *              其值最小的一条回路 ）
+     * @input radomList:所有路径信息
+     * @input name:所有路径信息
+     * @Return 最优的几条方案
+     */
+    public List<Map<String, Object>> findBest(List<Map<String, Object>> radomList, String name) {
+        // 找出当中的最大值最小值
+        double minCost = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总成本").toString());
+        double maxCost = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总成本").toString());
+        double minWeight = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总重量").toString());
+        double maxWeight = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总重量").toString());
+        double minLength = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总长度").toString());
+        double maxLength = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总长度").toString());
+        // 首先最大最小值
+        for (Map<String, Object> map : radomList) {
+            if (minCost > Double.parseDouble(((Map<String, Object>) map.get(name)).get("总成本").toString())) {
+                minCost = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总成本").toString());
+            }
+            if (maxCost < Double.parseDouble(((Map<String, Object>) map.get(name)).get("总成本").toString())) {
+                maxCost = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总成本").toString());
+            }
+            if (minWeight > Double.parseDouble(((Map<String, Object>) map.get(name)).get("总重量").toString())) {
+                minWeight = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总重量").toString());
+            }
+            if (maxWeight < Double.parseDouble(((Map<String, Object>) map.get(name)).get("总重量").toString())) {
+                maxWeight = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总重量").toString());
+            }
+
+            if (minLength > Double.parseDouble(((Map<String, Object>) map.get(name)).get("总长度").toString())) {
+                minLength = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总长度").toString());
+            }
+            if (maxLength < Double.parseDouble(((Map<String, Object>) map.get(name)).get("总长度").toString())) {
+                maxLength = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总长度").toString());
+            }
+        }
+        // 对每一个list 添加一个评分
+        for (Map<String, Object> map : radomList) {
+            double allCost = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总成本").toString());
+            double weight = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总重量").toString());
+            double length = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总长度").toString());
+            double score = (allCost - minCost) / ((maxCost - minCost) + 0.0001) * 0.98
+                    + (weight - minWeight) / ((maxWeight - minWeight) + 0.0001) * 0.01
+                    + (length - minLength) / ((maxLength - minLength) + 0.0001) * 0.01;
+            map.put("score", score);
+        }
+        List<Map<String, Object>> score = findTopTenMinDoubleMaps(radomList, "score");
+        for (Map<String, Object> objectMap : score) {
+            objectMap.remove("score");
+        }
+        return score;
+    }
+
+    /**
+     * @Description: 找出分数前几的数据
+     * @input: maps 需要筛选的数据
+     * @input: key 以什么字段进行筛选
+     * @Return: 返回前几的数据
+     */
+    public List<Map<String, Object>> findTopTenMinDoubleMaps(List<Map<String, Object>> maps, String key) {
+        return maps.stream()
+                .sorted((m1, m2) -> {
+                    Double value1 = getDoubleValue(m1, key);
+                    Double value2 = getDoubleValue(m2, key);
+                    return value1.compareTo(value2);
+                }).collect(Collectors.toList());
+    }
+
+    /**
+     * @Description: 从给定的 Map<String, Object> 中获取指定键对应的值 并将其转换为 Double 类型
+     * @input: map 需要获取的数据
+     * @input: key 以什么字段进行筛选
+     * @Return: 返回double类型的值
+     */
+    private Double getDoubleValue(Map<String, Object> map, String key) {
+        Object value = map.get(key);
+        if (value instanceof Double) {
+            return (Double) value;
+        } else {
+            return Double.MAX_VALUE;
+        }
+    }
+
+    /**
+     * @Description: 根据用电器名称获取对应的位置点名称
+     * @input: appName 用电器名称
+     * @input: appPositions 用电器位置信息
+     * @Return: 返回接收到用电器名称对应的位置
+     */
+    public String findNode(String appName, List<Map<String, String>> appPositions) {
+        for (Map<String, String> appPosition : appPositions) {
+            if (appPosition.get("appName").equalsIgnoreCase(appName)) {
+                if (appPosition.get("unregularPointName") != null) {
+                    return appPosition.get("unregularPointName");
+                } else if (appPosition.get("unregularPointName") == null
+                        && appPosition.get("regularPointName") != null) {
+                    return appPosition.get("regularPointName");
+                } else if (appPosition.get("unregularPointName") == null
+                        && appPosition.get("regularPointName") == null) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+}

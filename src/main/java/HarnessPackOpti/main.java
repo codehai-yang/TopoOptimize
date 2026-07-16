@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
 import HarnessPackOpti.ErrorOutput.HarnessBranchTopoOptiErrorOutPut;
-import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
+import HarnessPackOpti.Optimize.topo.OldHarnessBranchTopoOptimize;
 
 public class main {
         public static void main(String[] args) throws Exception {
@@ -26,7 +26,7 @@ public class main {
            }
            reader.close();
            String jsonContent = sb.toString();
-           HarnessBranchTopoOptimize harnessBranchTopoOptimize=new HarnessBranchTopoOptimize();
+           OldHarnessBranchTopoOptimize harnessBranchTopoOptimize=new OldHarnessBranchTopoOptimize();
            String result = harnessBranchTopoOptimize.topoOptimize(jsonContent);
             File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\500数据测试bs4em.txt");
             Files.write(outputFile.toPath(), result.getBytes());

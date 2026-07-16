@@ -1,7 +1,7 @@
 package HarnessPackOpti.utils;
 
 import HarnessPackOpti.JsonToMap;
-import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
+import HarnessPackOpti.Optimize.topo.OldHarnessBranchTopoOptimize;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import HarnessPackOpti.main;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -22,7 +22,7 @@ import java.util.Map;
  */
 public class recognizeLoopNewTest {
     public static void main(String[] args) throws Exception {
-        HarnessBranchTopoOptimize harnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
+        OldHarnessBranchTopoOptimize harnessBranchTopoOptimize = new OldHarnessBranchTopoOptimize();
         JsonToMap jsonToMap = new JsonToMap();
         ObjectMapper objectMapper = new ObjectMapper();
 
