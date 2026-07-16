@@ -84,10 +84,6 @@ public class NewHarnessBranchTopoOptimize {
     public static Double WeightFactor = 0.7;
     public static Double MaxProbability = 0.9;
     public static Double MinProbability = 0.05;
-    // 父本邻域预估容量不足的倍数阈值：邻域总候选数 < 目标 * 该倍数时直接跳过父本桶、走全空间兜底
-    // 1.5 含义：邻域最多能产目标 1.5 倍就别让父本桶空转了（实际通过率远小于候选数）
-    // 避免第 7-8 代"几百个几百个加"卡顿；前 6 代邻域候选数远 > 目标不受影响
-    public static Double ParentCapacityShortageRatio = 1.5;
 
     // 父本邻域单桶枚举/抽样上限：避免 C(pC, k2) 极大时炸内存
     // 桶内总组合数 ≤ 该值时枚举；> 该值时随机抽样该值次
