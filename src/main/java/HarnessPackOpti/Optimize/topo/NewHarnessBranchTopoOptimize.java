@@ -55,7 +55,7 @@ public class NewHarnessBranchTopoOptimize {
     // 迭代最少样本数量（提高每代候选池规模，保证进化方向充分探索）
     public static Integer HybridizationLessRandomSamleNumber = 10000;
     // top几的数量规定
-    public static final Integer TopNumber = 100;
+    public static final Integer TopNumber = 1000;
     // 最终返回前端的参数
     public static final Integer resultNumber = 20;
     // 绕线优化:分支累计绕线成本贡献阈值,超过则 B 改 C
@@ -79,10 +79,11 @@ public class NewHarnessBranchTopoOptimize {
     public static List<Map<String, Object>> TopDetail = new ArrayList<>();
     // 自动补全得次数
     public static Integer AutoCompleteNumber = 2000;
-    // 分支打断代价降序排序时使用的权重衰减系数，越低打断越激进，高打断代价的分支也会又概率打断
+    // 父本邻域抽样概率公式: p = norm^WeightFactor * MaxProbability + MinProbability
+    // 0.7 衰减系数让中间分支概率不至于太极端,0.9 概率上限 + 0.05 下限保证每个分支都能被抽到
     public static Double WeightFactor = 0.7;
-    // 决定最高打断概率
     public static Double MaxProbability = 0.9;
+    public static Double MinProbability = 0.05;
     // 父本邻域预估容量不足的倍数阈值：邻域总候选数 < 目标 * 该倍数时直接跳过父本桶、走全空间兜底
     // 1.5 含义：邻域最多能产目标 1.5 倍就别让父本桶空转了（实际通过率远小于候选数）
     // 避免第 7-8 代"几百个几百个加"卡顿；前 6 代邻域候选数远 > 目标不受影响
@@ -2467,16 +2468,17 @@ public class NewHarnessBranchTopoOptimize {
                 + (System.currentTimeMillis() - phase2CheckTime) + " ms");
 
         // 5) 合并两阶段方案(阶段一已入仓,阶段二已入仓,这里只做候选池聚合)
-        List<List<String>> allSchemes = new ArrayList<>(phase1.size() + phase2Valid.size());
+        List<List<String>> allSchemes = new ArrayList<>();
         allSchemes.addAll(phase1);
         allSchemes.addAll(phase2Valid);
-
+        List<List<String>> topThirty = new ArrayList<>();
         // 6) 注入上一代 top 30%(精英保留,确保新一代最优 ≤ 上一代最优)
         int eliteCount = Math.max(1, (int) Math.ceil(TopDetail.size() * 0.3));
         for (int i = 0; i < eliteCount && i < TopDetail.size(); i++) {
             List<String> eliteStatue = (List<String>) TopDetail.get(i).get("serviceableStatue");
             if (eliteStatue != null && eliteStatue.size() == initialScheme.size()) {
                 allSchemes.add(eliteStatue);
+                topThirty.add(eliteStatue);
             }
         }
 
@@ -2486,12 +2488,19 @@ public class NewHarnessBranchTopoOptimize {
         // 7) AI 预测 + 排序取 TopNumber
         // findBestPre 传 null 避免 predictAndFindBest 内部再注入 10%(精英由本方法统一控制)
         long predTime = System.currentTimeMillis();
-        List<Map<String, Object>> mapList = predictAndFindBest(allSchemes, edges, normList, jsonMap,
+        phase2Valid.addAll(topThirty);
+        List<Map<String, Object>> mapList = predictAndFindBest(phase2Valid, edges, normList, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection,
                 multiLoopInfos, pointMap, null, objectMapper);
         long findBestTimeMs = System.currentTimeMillis() - predTime;
+        //对阶段一何阶段二生成的样本再次进行找top
+        List<Map<String, Object>> finaleResult = new ArrayList<>();
+        finaleResult.addAll(mapList);
+        finaleResult.addAll(phase1Top);
+        FindBest findBest = new FindBest();
+        List<Map<String, Object>> topBeat = findBest.findBest(finaleResult, "成本", TopNumber);
         System.out.println("预测" + allSchemes.size() + "个样本成本耗时：" + findBestTimeMs);
-        return mapList;
+        return topBeat;
     }
 
     /**
@@ -3026,6 +3035,79 @@ public class NewHarnessBranchTopoOptimize {
     }
 
     /**
+     * 按打断代价加权不放回抽 k 个:reverse=false 时低 cost 优先,reverse=true 时高 cost 优先。
+     * 概率公式: p[i] = norm^0.7 * 0.9 + 0.05,反向时 norm 取 1-norm。
+     * 0.7 衰减系数让中间分支概率不至于太极端,0.9 概率上限+0.05 概率下限保证每个分支都能被抽到(不会 0% 或 100%)。
+     * 所有 cost 相同时降级为均匀随机,pool 不足 k 个时直接返回全 pool。
+     */
+    private List<String> weightedSampleByCost(
+            List<String> pool, int k, boolean reverse,
+            Map<String, Double> breakCostMap, Random rnd) {
+        int n = pool.size();
+        List<String> result = new ArrayList<>(k);
+        if (k <= 0 || n == 0) {
+            return result;
+        }
+        if (k >= n) {
+            result.addAll(pool);
+            return result;
+        }
+
+        // 归一化 cost
+        double minCost = Double.MAX_VALUE;
+        double maxCost = -Double.MAX_VALUE;
+        double[] costs = new double[n];
+        for (int i = 0; i < n; i++) {
+            double c = breakCostMap != null ? breakCostMap.getOrDefault(pool.get(i), 0.0) : 0.0;
+            costs[i] = c;
+            if (c < minCost)
+                minCost = c;
+            if (c > maxCost)
+                maxCost = c;
+        }
+        double range = maxCost - minCost;
+        if (range < 1e-9) {
+            // 所有 cost 一样,降级为均匀随机
+            List<String> shuffled = new ArrayList<>(pool);
+            Collections.shuffle(shuffled, rnd);
+            return new ArrayList<>(shuffled.subList(0, k));
+        }
+
+        // 计算每个分支的权重
+        double[] weights = new double[n];
+        double total = 0.0;
+        for (int i = 0; i < n; i++) {
+            double norm = (costs[i] - minCost) / range;
+            if (reverse)
+                norm = 1.0 - norm;
+            double p = Math.pow(norm, WeightFactor) * MaxProbability + MinProbability;
+            weights[i] = p;
+            total += p;
+        }
+
+        // 不放回抽 k 个
+        boolean[] used = new boolean[n];
+        for (int s = 0; s < k; s++) {
+            double dart = rnd.nextDouble() * total;
+            double cum = 0.0;
+            int pick = n - 1;
+            for (int i = 0; i < n; i++) {
+                if (used[i])
+                    continue;
+                cum += weights[i];
+                if (dart <= cum) {
+                    pick = i;
+                    break;
+                }
+            }
+            result.add(pool.get(pick));
+            used[pick] = true;
+            total -= weights[pick];
+        }
+        return result;
+    }
+
+    /**
      * 快速约束检查(不含拓扑):给定完整状态,检查互斥/多选一/组团约束。
      * 用于约束感知变异后的最终校验,比完整的 checkFirstOption 轻量。
      * true 表示通过所有约束。
@@ -3475,31 +3557,15 @@ public class NewHarnessBranchTopoOptimize {
             if (target > 0 && globalResultSize.get() >= target) {
                 break;
             }
-            // 1) 随机抽 k1 个减打断
+            // 1) 加权抽 k1 个减打断:高 cost 优先(把"代价高但被打断"的分支撤掉,降低方案成本)
             Set<String> unBreakSet = new LinkedHashSet<>();
             if (k1 > 0 && !parentBs.isEmpty()) {
-                int take1 = Math.min(k1, parentBs.size());
-                List<String> shuffledBs = new ArrayList<>(parentBs);
-                for (int i = 0; i < take1; i++) {
-                    int j = i + rnd.nextInt(shuffledBs.size() - i);
-                    String tmp = shuffledBs.get(i);
-                    shuffledBs.set(i, shuffledBs.get(j));
-                    shuffledBs.set(j, tmp);
-                    unBreakSet.add(shuffledBs.get(i));
-                }
+                unBreakSet.addAll(weightedSampleByCost(parentBs, k1, true, breakCostMap, rnd));
             }
-            // 2) 随机抽 k2 个加打断
+            // 2) 加权抽 k2 个加打断:低 cost 优先(挑"代价低"的分支打断,提升方案经济性)
             Set<String> newBreakSet = new LinkedHashSet<>();
             if (k2 > 0 && !parentBreakableCs.isEmpty()) {
-                int take2 = Math.min(k2, parentBreakableCs.size());
-                List<String> shuffledCs = new ArrayList<>(parentBreakableCs);
-                for (int i = 0; i < take2; i++) {
-                    int j = i + rnd.nextInt(shuffledCs.size() - i);
-                    String tmp = shuffledCs.get(i);
-                    shuffledCs.set(i, shuffledCs.get(j));
-                    shuffledCs.set(j, tmp);
-                    newBreakSet.add(shuffledCs.get(i));
-                }
+                newBreakSet.addAll(weightedSampleByCost(parentBreakableCs, k2, false, breakCostMap, rnd));
             }
             // 3) 合成 candidateBs = (parentBs - unBreak) ∪ newBreak
             Set<String> candidateBs = new LinkedHashSet<>(parentBs);
@@ -3533,113 +3599,6 @@ public class NewHarnessBranchTopoOptimize {
             enumerateCombinations(list, k, i + 1, current, result);
             current.remove(current.size() - 1);
         }
-    }
-
-    /**
-     * 加权随机抽样(不内部去重),由调用方通过 WAREHOUSE_KEYS 统一去重。
-     * 去掉 seen/set 的开销,单次抽样可以重复(不同顺序/不同 random 序列)。
-     * 配合轮次制抽样量放大,确保有足够候选入仓。
-     */
-    private List<List<String>> weightedSampleCombinationsNoDedupe(List<String> list, int k,
-            int count, Map<String, Double> probMap, Random random) {
-        List<List<String>> result = new ArrayList<>();
-        int n = list.size();
-        if (k <= 0 || k > n || count <= 0) {
-            return result;
-        }
-        for (int c = 0; c < count; c++) {
-            int[] topIndices;
-            if (k <= 2) {
-                topIndices = selectTopKLinear(list, k, probMap, random);
-            } else {
-                topIndices = selectTopKHeap(list, k, probMap, random);
-            }
-            List<String> picked = new ArrayList<>(k);
-            for (int idx : topIndices) {
-                picked.add(list.get(idx));
-            }
-            result.add(picked);
-        }
-        return result;
-    }
-
-    /**
-     * 线性扫描取 top-k 个最大加权随机键对应索引（k≤2 时比堆快）。
-     * 加权随机键 = pow(random.nextDouble(), 1.0 / w),w 越大 key 越大。
-     * k=1 / k=2 各走专门快路径,无堆分配。
-     */
-    private int[] selectTopKLinear(List<String> list, int k, Map<String, Double> probMap, Random random) {
-        int n = list.size();
-        double[] keys = new double[n];
-        for (int i = 0; i < n; i++) {
-            double w = probMap.getOrDefault(list.get(i), 0.0);
-            if (w <= 0) {
-                w = 1e-9;
-            }
-            keys[i] = Math.pow(random.nextDouble(), 1.0 / w);
-        }
-        int[] result = new int[k];
-        if (k == 1) {
-            int best = 0;
-            for (int i = 1; i < n; i++) {
-                if (keys[i] > keys[best]) {
-                    best = i;
-                }
-            }
-            result[0] = best;
-        } else {
-            // k == 2
-            int best1 = 0, best2 = 1;
-            if (keys[best1] < keys[best2]) {
-                int tmp = best1;
-                best1 = best2;
-                best2 = tmp;
-            }
-            for (int i = 2; i < n; i++) {
-                if (keys[i] > keys[best1]) {
-                    best2 = best1;
-                    best1 = i;
-                } else if (keys[i] > keys[best2]) {
-                    best2 = i;
-                }
-            }
-            result[0] = best1;
-            result[1] = best2;
-        }
-        return result;
-    }
-
-    /**
-     * 最小堆选择 top-k 个最大加权随机键对应索引。
-     * 堆中存 double[] {index, key},按 key 升序排列,堆顶是当前第 k 大门槛。
-     * 复杂度 O(n log k),适合 k≥3 的情况(比 selectTopKLinear 快)。
-     */
-    private int[] selectTopKHeap(List<String> list, int k, Map<String, Double> probMap, Random random) {
-        int n = list.size();
-        java.util.PriorityQueue<double[]> minHeap = new java.util.PriorityQueue<>(
-                (a, b) -> Double.compare(a[1], b[1])); // 最小堆：堆顶是第 k 大的门槛，key 最小的在堆顶
-        for (int i = 0; i < n; i++) {
-            double w = probMap.getOrDefault(list.get(i), 0.0);
-            if (w <= 0) {
-                w = 1e-9;
-            }
-            double key = Math.pow(random.nextDouble(), 1.0 / w);
-            if (minHeap.size() < k) {
-                minHeap.offer(new double[] { i, key });
-            } else {
-                double[] peek = minHeap.peek();
-                if (key > peek[1]) {
-                    minHeap.poll();
-                    minHeap.offer(new double[] { i, key });
-                }
-            }
-        }
-        int[] result = new int[k];
-        int idx = 0;
-        for (double[] entry : minHeap) {
-            result[idx++] = (int) entry[0];
-        }
-        return result;
     }
 
     /**

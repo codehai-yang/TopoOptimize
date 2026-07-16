@@ -856,7 +856,7 @@ public class ProjectCircuitInfoOutput {
                 // 开根号 × 1.3 得到等效直径
                 Double equivalentDiameter = Math.sqrt(totalLength) * ModelDiameterFactor;
                 // 判断颜色
-                String edgeColor = getlengthColor(equivalentDiameter);
+                String edgeColor = getDirectionColor(equivalentDiameter);
                 // 两个分支点-对应的颜色
                 colorMap.put(combination, edgeColor);
             });
@@ -2545,6 +2545,7 @@ public class ProjectCircuitInfoOutput {
      * @input number 湿区补偿成本
      * @Return 返回传入值的对应的颜色
      */
+    //TODO 新增2跨度出线方向
     public static String getCostColor(double number) {
         if (number == 0) {
             return "rgb(248,246,231)";
@@ -2585,6 +2586,53 @@ public class ProjectCircuitInfoOutput {
         } else if (number >= 85 && number <= 90) {
             return "rgb(192,192,203)";
         } else if (number >= 90 && number <= 95) {
+            return "rgb(82,82,82)";
+        } else {
+            return "rgb(0,0,0)";
+        }
+    }
+
+    //分支出线方向颜色
+    public static String getDirectionColor(double number) {
+        if (number == 0) {
+            return "rgb(248,246,231)";
+        } else if (number >= 0 && number <= 2) {
+            return "rgb(75,0,130)";
+        } else if (number >= 2 && number <= 4) {
+            return "rgb(131,100,246)";
+        } else if (number >= 4 && number <= 6) {
+            return "rgb(0,0,204)";
+        } else if (number >= 6 && number <= 8) {
+            return "rgb(0,102,255)";
+        } else if (number >= 8 && number <= 10) {
+            return "rgb(0,153,255)";
+        } else if (number >= 10 && number <= 12) {
+            return "rgb(0,255,255)";
+        } else if (number >= 12 && number <= 14) {
+            return "rgb(0,255,102)";
+        } else if (number >= 14 && number <= 16) {
+            return "rgb(153,255,0)";
+        } else if (number >= 16 && number <= 18) {
+            return "rgb(204,255,0)";
+        } else if (number >= 18 && number <= 20) {
+            return "rgb(255,255,0)";
+        } else if (number >= 20 && number <= 22) {
+            return "rgb(255,204,0)";
+        } else if (number >= 22 && number <= 24) {
+            return "rgb(255,153,0)";
+        } else if (number >= 24 && number <= 26) {
+            return "rgb(255,102,0)";
+        } else if (number >= 26 && number <= 28) {
+            return "rgb(255,105,180)";
+        } else if (number >= 28 && number <= 30) {
+            return "rgb(244,38,241)";
+        } else if (number >= 30 && number <= 32) {
+            return "rgb(255,0,0)";
+        } else if (number >= 32 && number <= 34) {
+            return "rgb(153,0,0)";
+        } else if (number >= 36 && number <= 36) {
+            return "rgb(192,192,203)";
+        } else if (number >= 38 && number <= 38) {
             return "rgb(82,82,82)";
         } else {
             return "rgb(0,0,0)";
