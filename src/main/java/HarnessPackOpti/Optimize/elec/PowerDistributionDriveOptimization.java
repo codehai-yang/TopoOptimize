@@ -75,7 +75,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电分配测试数据.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\分配优化.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -346,7 +346,7 @@ public class PowerDistributionDriveOptimization {
                         String loopId = entry.getKey();
                         String value = entry.getValue();
                         String[] parts = value.split("\\|");
-                        // 一根贿赂两个用电器都没有可变回路就采用默认位置
+                        // 一根回路两个用电器都没有可变回路就采用默认位置
                         if (parts.length == 2) {
                             continue;
                         }

@@ -35,7 +35,7 @@ public class CreateData {
         for (Map<String, Object> appPosition : appPositions) {
             String appName = appPosition.get("appName").toString();
             if (!appName.startsWith("[")) {
-                appPosition.put("elecAttribute", type[random.nextInt(type.length)]);
+                appPosition.put("appType", type[random.nextInt(type.length)]);
                 appPosition.put("resourceNumb", objectMapper.writeValueAsString(Arrays.asList("不限", "不限", "不限")));
                 appPositionCopy.add(appPosition);
             }
@@ -52,7 +52,6 @@ public class CreateData {
                 loopInfos2.put("startSpecifyPoints", "");
                 loopInfoCopy.add(loopInfos2);
             }
-
         }
 
         // 将修改后的数据转回JSON并保存
