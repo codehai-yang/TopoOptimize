@@ -774,45 +774,7 @@ public class ProjectCircuitInfoOutput {
             Map<String, Object> loopdetails) {
         List<String> allPoint = generateTopoMatrix.getAllPoint();
         List<List<Integer>> adj = generateTopoMatrix.getAdj();
-        // 分支id-颜色
-        Map<String, String> branchColor = new HashMap<>();
-        Set<String> brandIdList = bundeleRelatedCircuitInfo.keySet();
-        for (String s : brandIdList) {
-            Map<String, Object> objectMap = (Map<String, Object>) bundeleRelatedCircuitInfo.get(s);
-            Map<String, Object> circuitInfoIntergation = (Map<String, Object>) objectMap.get("circuitInfoIntergation");
-            branchColor.put(s, (String) circuitInfoIntergation.get("分支直径RGB坐标"));
-        }
 
-        Map<String, Double> circuitLengthMap = new HashMap<>();
-        loopdetails.forEach((loopId, loop) -> {
-            Map<String, Object> loopInfo = (Map<String, Object>) loop;
-            String startName = loopInfo.get("起点用电器名称").toString();
-            String endName = loopInfo.get("终点用电器名称").toString();
-            Object startPositionName = loopInfo.get("起点位置名称");
-            Object endPositionName = loopInfo.get("终点位置名称");
-            // 是焊点，则用焊点名称
-            if (startName.startsWith("[")) {
-                if (loopInfo.get("焊点位置名称") == null) {
-                    return;
-                }
-                startPositionName = loopInfo.get("焊点位置名称").toString();
-            }
-            if (endName.startsWith("[")) {
-                if (loopInfo.get("焊点位置名称") == null) {
-                    return;
-                }
-                endPositionName = loopInfo.get("焊点位置名称").toString();
-            }
-            // 如果起点和终点都是邻居节点
-            Double lengthOne = circuitLengthMap.get(startPositionName + "&" + endPositionName);
-            Double diameter = (Double) loopInfo.get("回路理论直径");
-            if (lengthOne != null) {
-                lengthOne = lengthOne + diameter * diameter;
-                circuitLengthMap.put(startPositionName + "&" + endPositionName,lengthOne);
-            } else {
-                circuitLengthMap.put(startPositionName + "&" + endPositionName, diameter * diameter);
-            }
-        });
         // 分支点id，两两分支点之间的颜色名称用&拼接
         Map<String, Map<String, String>> result = new HashMap<>();
         for (Map<String, Object> point : points) {
@@ -833,38 +795,59 @@ public class ProjectCircuitInfoOutput {
             for (Integer index : connectedIndices) {
                 connectedPoints.add(allPoint.get(index));
             }
+
             // 4. 生成无序两两组合 (a-b 和 b-a 视为同一种)
             List<String> combinations = new ArrayList<>();
             for (int i = 0; i < connectedPoints.size(); i++) {
                 for (int j = i + 1; j < connectedPoints.size(); j++) {
-                    String point1 = connectedPoints.get(i);
-                    String point2 = connectedPoints.get(j);
-                    // 按字典序排序，确保 a-b 和 b-a 格式一致
-                    if (point1.compareTo(point2) <= 0) {
-                        combinations.add(point1 + "&" + point2);
+                    String p1 = connectedPoints.get(i);
+                    String p2 = connectedPoints.get(j);
+                    if (p1.compareTo(p2) <= 0) {
+                        combinations.add(p1 + "&" + p2);
                     } else {
-                        combinations.add(point2 + "&" + point1);
+                        combinations.add(p2 + "&" + p1);
                     }
                 }
             }
-            // 根据上面的组合找回路直径判定颜色
-            Map<String, String> colorMap = new HashMap<>();
-            combinations.forEach(combination -> {
-                String[] pointsName = combination.split("&");
-                Double length = circuitLengthMap.get(combination);
-                Double length2 = circuitLengthMap.get(pointsName[1] + "&" + pointsName[0]);
-                // 两个分支点之间的总理论直径
-                Double totalLength = (length == null && length2 == null) ? 0.0
-                        : (length == null) ? length2
-                          : (length2 == null) ? length
-                            : length * length2;
-                // 开根号 × 1.3 得到等效直径
-                Double equivalentDiameter = Math.sqrt(totalLength) * ModelDiameterFactor;
-                // 判断颜色
-                String edgeColor = getDirectionColor(equivalentDiameter);
-                // 两个分支点-对应的颜色
-                colorMap.put(combination, edgeColor);
+
+            // 5. 遍历所有回路，找同时经过(pointName, p1, p2)三个点的回路
+            Map<String, Double> tripletDiameterSum = new HashMap<>();
+            for (String combination : combinations) {
+                tripletDiameterSum.put(combination, 0.0);
+            }
+
+            loopdetails.forEach((loopId, loop) -> {
+                Map<String, Object> loopInfo = (Map<String, Object>) loop;
+                List<String> pointNameList = (List<String>) loopInfo.get("回路途径分支点");
+                if (pointNameList == null) {
+                    return;
+                }
+                Double diameter = (Double) loopInfo.get("回路理论直径");
+                if (diameter == null) {
+                    return;
+                }
+
+                for (String combination : combinations) {
+                    String[] parts = combination.split("&");
+                    String p1 = parts[0];
+                    String p2 = parts[1];
+                    // 三个点都在回路途径分支点中才算命中
+                    if (pointNameList.contains(pointName)
+                            && pointNameList.contains(p1)
+                            && pointNameList.contains(p2)) {
+                        tripletDiameterSum.merge(combination, diameter * diameter, Double::sum);
+                    }
+                }
             });
+
+            // 6. 套用公式计算等效直径并取色
+            Map<String, String> colorMap = new HashMap<>();
+            for (String combination : combinations) {
+                Double totalLength = tripletDiameterSum.getOrDefault(combination, 0.0);
+                Double equivalentDiameter = Math.sqrt(totalLength) * ModelDiameterFactor;
+                String edgeColor = getlengthColor(equivalentDiameter);
+                colorMap.put(combination, edgeColor);
+            }
             result.put(id, colorMap);
         }
         return result;
