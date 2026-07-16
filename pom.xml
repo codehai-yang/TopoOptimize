@@ -62,21 +62,9 @@
                     <includes>
                         <include>**/*.class</include>
                         <include>**/HarnessOpti.properties</include>
+                        <include>**/ElecFixedLocationLibrary.xlsx</include>
+                        <include>**/WireInfo.xlsx</include>
                     </includes>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.3.0</version>
-                <configuration>
-                    <archive>
-                        <manifest>
-                            <addClasspath>true</addClasspath>
-                            <classpathPrefix>lib/</classpathPrefix>
-                            <mainClass>HarnessPackOpti.main</mainClass>
-                        </manifest>
-                    </archive>
                 </configuration>
             </plugin>
         </plugins>
