@@ -222,6 +222,11 @@ public class PowerDistributionDriveOptimization {
                 list.add(eleclection.get(appName)); // 把自身位置加进去
                 elecChangeablePosition.put(appName, list);
             } else if ("2".equals(appPosition.get("changeType"))) {
+                // 全量位置可变：若 allPoint 为空则无法枚举位置，给出明确告警避免静默 0 方案
+                if (allPoint == null || allPoint.isEmpty()) {
+                    System.out.println("警告: 用电器[" + appName + "] changeType=2 但可用位置 allPoint 为空，"
+                            + "该用电器位置将不会被枚举，请检查拓扑/位置点数据。");
+                }
                 elecChangeablePosition.put(appName, new ArrayList<>(allPoint));
             }
             elecNameId.put(appPosition.get("id"), appName);
@@ -416,6 +421,8 @@ public class PowerDistributionDriveOptimization {
             List<Map<String, Object>> topBest = new  ArrayList<>();
             if(resultList.size() > 1) {
                  topBest = findBest.findBest(resultList, "成本", TopNumber);
+            }else {
+                topBest.add(jsonToMap.TransJsonToMap(originalResult));
             }
             System.out.println("枚举总耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
             return objectMapper.writeValueAsString(topBest);
@@ -1859,30 +1866,42 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 枚举所有可行方案
-     * 
-     * @param targetLoops
-     * @param elecChangeablePosition
-     * @param togetherGroup
-     * @param mutualGroup
-     * @param allLoopInfos
-     * @param loopElecById           回路终点可连接的
-     * @param loopElecByIdStart
+     * 连接关系变量域与互斥约束的承载结构（枚举与计数共用，避免口径漂移）
      */
-    private void enumerateAllSchemes(
-            List<Map<String, String>> targetLoops,
-            Map<String, List<String>> elecChangeablePosition,
-            Map<String, List<String>> togetherGroup,
-            Map<String, List<String>> mutualGroup,
-            List<Map<String, String>> allLoopInfos,
-            Map<String, Set<String>> loopElecById,
-            Map<String, Set<String>> loopElecByIdStart) {
-        long startTime = System.currentTimeMillis();
-        // 回路id-回路信息
-        Map<String, Map<String, String>> loopById = new HashMap<>();
-        for (Map<String, String> lp : allLoopInfos)
-            loopById.put(lp.get("id"), lp);
+    private static final class ConnectionPlan {
+        final Map<String, List<String>> varDomains;
+        final Map<String, List<String>> mutualIdToVarKeys;
+        final Set<String> varsInAnyMutualGroup;
+        final List<String> varKeys;
 
+        ConnectionPlan(Map<String, List<String>> varDomains,
+                Map<String, List<String>> mutualIdToVarKeys,
+                Set<String> varsInAnyMutualGroup,
+                List<String> varKeys) {
+            this.varDomains = varDomains;
+            this.mutualIdToVarKeys = mutualIdToVarKeys;
+            this.varsInAnyMutualGroup = varsInAnyMutualGroup;
+            this.varKeys = varKeys;
+        }
+    }
+
+    /**
+     * 构建"连接关系变量域 + 互斥约束"（枚举与计数共用，逻辑与 enumerateAllSchemes 原内联代码逐行等价）
+     *
+     * @param targetLoops           待优化的目标回路（与 enumerateAllSchemes 入参一致）
+     * @param togetherGroup         组团一起变归组
+     * @param loopElecById         回路终点可连接的用电器
+     * @param loopElecByIdStart    回路起点可连接的用电器
+     * @param elecChangeablePosition 用电器位置可变映射（含 changeType==2 的全量点）
+     * @param loopById             回路id -> 回路信息
+     */
+    private ConnectionPlan buildConnectionVarDomains(
+            List<Map<String, String>> targetLoops,
+            Map<String, List<String>> togetherGroup,
+            Map<String, Set<String>> loopElecById,
+            Map<String, Set<String>> loopElecByIdStart,
+            Map<String, List<String>> elecChangeablePosition,
+            Map<String, Map<String, String>> loopById) {
         Map<String, List<String>> varDomains = new LinkedHashMap<>();
         // 判断哪些回路已经被分组覆盖，哪些是未处理
         Set<String> coveredLoopIds = new HashSet<>();
@@ -1990,6 +2009,41 @@ public class PowerDistributionDriveOptimization {
         // 收集所有受互斥组约束影响的变量，方便后续回溯算法进行约束检查和剪枝
         Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualIds.keySet()); // 记录哪些变量参与了互斥约束，回溯时检查
         List<String> varKeys = new ArrayList<>(varDomains.keySet()); // 所有待复制的变量列表
+        return new ConnectionPlan(varDomains, mutualIdToVarKeys, varsInAnyMutualGroup, varKeys);
+    }
+
+    /**
+     * 枚举所有可行方案
+     * 
+     * @param targetLoops
+     * @param elecChangeablePosition
+     * @param togetherGroup
+     * @param allLoopInfos
+     * @param loopElecById           回路终点可连接的
+     * @param loopElecByIdStart
+     */
+    private void enumerateAllSchemes(
+            List<Map<String, String>> targetLoops,
+            Map<String, List<String>> elecChangeablePosition,
+            Map<String, List<String>> togetherGroup,
+            Map<String, List<String>> mutualGroup,
+            List<Map<String, String>> allLoopInfos,
+            Map<String, Set<String>> loopElecById,
+            Map<String, Set<String>> loopElecByIdStart) {
+        long startTime = System.currentTimeMillis();
+        // 回路id-回路信息
+        Map<String, Map<String, String>> loopById = new HashMap<>();
+        for (Map<String, String> lp : allLoopInfos)
+            loopById.put(lp.get("id"), lp);
+
+        // 复用与计数一致的共享方法构建连接关系变量域与互斥约束（行为与原内联逻辑等价）
+        ConnectionPlan plan = buildConnectionVarDomains(
+                targetLoops, togetherGroup,
+                loopElecById, loopElecByIdStart, elecChangeablePosition, loopById);
+        Map<String, List<String>> varDomains = plan.varDomains;
+        Map<String, List<String>> mutualIdToVarKeys = plan.mutualIdToVarKeys;
+        Set<String> varsInAnyMutualGroup = plan.varsInAnyMutualGroup;
+        List<String> varKeys = plan.varKeys;
 
         // 统一入口：连接关系变化和用电器位置变化都参与枚举（乘积关系）
         // 当 varKeys 为空时（无连接关系变化），仍为"空赋值"枚举所有位置组合
@@ -2261,193 +2315,171 @@ public class PowerDistributionDriveOptimization {
             Map<String, Set<String>> loopElecById,
             Map<String, Set<String>> loopElecByIdStart) {
         long calcStart = System.currentTimeMillis();
+        // 回路id-回路信息（与枚举侧一致，使用目标回路集合构建）
         Map<String, Map<String, String>> loopById = new HashMap<>();
         for (Map<String, String> lp : loopInfos)
             loopById.put(lp.get("id"), lp);
-        Set<String> extendedLoopIds = new HashSet<>();
-        for (Map<String, String> lp : loopInfos)
-            extendedLoopIds.add(lp.get("id"));
-        for (Map<String, String> lp : loopInfos) {
-            String together = lp.get("teamConnRel");
-            if (together != null && !together.isEmpty()) {
-                List<String> groupMembers = togetherGroup.get(together);
-                if (groupMembers != null)
-                    extendedLoopIds.addAll(groupMembers);
-            }
-            String mutual = lp.get("exclusiveConnRel");
-            if (mutual != null && !mutual.isEmpty()) {
-                for (Map<String, String> allLoop : loopById.values()) {
-                    if (mutual.equals(allLoop.get("exclusiveConnRel")))
-                        extendedLoopIds.add(allLoop.get("id"));
-                }
-            }
-        }
-        List<Map<String, String>> extendedLoops = new ArrayList<>();
-        for (String loopId : extendedLoopIds) {
-            Map<String, String> loop = loopById.get(loopId);
-            if (loop != null)
-                extendedLoops.add(loop);
-        }
-        Map<String, List<String>> varDomains = new LinkedHashMap<>();
-        Set<String> coveredLoopIds = new HashSet<>();
-        for (Map.Entry<String, List<String>> entry : togetherGroup.entrySet()) {
-            String groupId = entry.getKey();
-            List<String> memberLoopIds = entry.getValue();
-            Set<String> endAppIntersection = null;
-            for (String lid : memberLoopIds) {
-                Set<String> allowedEndApps = loopElecById.get(lid);
-                if (allowedEndApps == null || allowedEndApps.isEmpty()) {
-                    Map<String, String> lp = loopById.get(lid);
-                    if (lp != null && lp.get("endApp") != null)
-                        allowedEndApps = Collections.singleton(lp.get("endApp"));
-                    else
-                        allowedEndApps = Collections.emptySet();
-                }
-                if (endAppIntersection == null)
-                    endAppIntersection = new HashSet<>(allowedEndApps);
-                else
-                    endAppIntersection.retainAll(allowedEndApps);
-                coveredLoopIds.add(lid);
-            }
-            varDomains.put("E_G_" + groupId,
-                    endAppIntersection != null ? new ArrayList<>(endAppIntersection) : Collections.emptyList());
-        }
-        for (Map<String, String> lp : extendedLoops) {
-            String lid = lp.get("id");
-            if (coveredLoopIds.contains(lid))
-                continue;
-            Set<String> allowedEndApps = loopElecById.get(lid);
-            if (allowedEndApps != null && !allowedEndApps.isEmpty()) {
-                varDomains.put("E_L_" + lid, new ArrayList<>(allowedEndApps));
-            } else {
-                String endApp = lp.get("endApp");
-                varDomains.put("E_L_" + lid, Collections.singletonList(endApp != null ? endApp : ""));
-            }
-        }
-        // 起点用电器变量域
-        Set<String> coveredStartLoopIds = new HashSet<>();
-        for (Map.Entry<String, List<String>> entry : togetherGroup.entrySet()) {
-            String groupId = entry.getKey();
-            List<String> memberLoopIds = entry.getValue();
-            Set<String> startAppIntersection = null;
-            for (String lid : memberLoopIds) {
-                Set<String> allowedStartApps = loopElecByIdStart != null ? loopElecByIdStart.get(lid) : null;
-                if (allowedStartApps == null || allowedStartApps.isEmpty()) {
-                    Map<String, String> lp = loopById.get(lid);
-                    if (lp != null && lp.get("startApp") != null)
-                        allowedStartApps = Collections.singleton(lp.get("startApp"));
-                    else
-                        allowedStartApps = Collections.emptySet();
-                }
-                if (startAppIntersection == null)
-                    startAppIntersection = new HashSet<>(allowedStartApps);
-                else
-                    startAppIntersection.retainAll(allowedStartApps);
-                coveredStartLoopIds.add(lid);
-            }
-            if (startAppIntersection != null && !startAppIntersection.isEmpty()) {
-                varDomains.put("S_G_" + groupId, new ArrayList<>(startAppIntersection));
-            }
-        }
-        for (Map<String, String> lp : extendedLoops) {
-            String lid = lp.get("id");
-            if (coveredStartLoopIds.contains(lid))
-                continue;
-            Set<String> allowedStartApps = loopElecByIdStart != null ? loopElecByIdStart.get(lid) : null;
-            if (allowedStartApps != null && !allowedStartApps.isEmpty()) {
-                varDomains.put("S_L_" + lid, new ArrayList<>(allowedStartApps));
-            }
-        }
-        Map<String, List<String>> varKeyToMutualIds = new LinkedHashMap<>();
-        for (Map<String, String> lp : extendedLoops) {
-            String lid = lp.get("id");
-            String mutual = lp.get("exclusiveConnRel");
-            String together = lp.get("teamConnRel");
-            if (mutual == null || mutual.isEmpty())
-                continue;
-            String vk = (together != null && !together.isEmpty()) ? "E_G_" + together : "E_L_" + lid;
-            varKeyToMutualIds.computeIfAbsent(vk, k -> new ArrayList<>()).add(mutual);
-        }
-        Map<String, List<String>> mutualIdToVarKeys = new LinkedHashMap<>();
-        for (Map.Entry<String, List<String>> e : varKeyToMutualIds.entrySet()) {
-            String varKey = e.getKey();
-            for (String mutualId : e.getValue()) {
-                List<String> varList = mutualIdToVarKeys.computeIfAbsent(mutualId, k -> new ArrayList<>());
-                if (!varList.contains(varKey))
-                    varList.add(varKey);
-            }
-        }
-        Set<String> varsInAnyMutualGroup = new HashSet<>(varKeyToMutualIds.keySet());
-        long totalCombinations = 1L;
-        for (Map.Entry<String, List<String>> e : varDomains.entrySet()) {
-            if (!varsInAnyMutualGroup.contains(e.getKey())) {
-                int sz = e.getValue().size();
-                if (sz <= 0) {
-                    totalCombinations = 0;
-                    break;
-                }
-                totalCombinations *= sz;
-            }
-        }
-        if (totalCombinations > 0) {
-            for (Map.Entry<String, List<String>> e : mutualIdToVarKeys.entrySet()) {
-                List<List<String>> doms = new ArrayList<>();
-                for (String vk : e.getValue()) {
-                    List<String> d = varDomains.get(vk);
-                    doms.add(d != null ? d : Collections.emptyList());
-                }
-                long mc = countAllDifferent(doms);
-                if (mc <= 0) {
-                    totalCombinations = 0;
-                    break;
-                }
-                totalCombinations *= mc;
-            }
-        }
-        if (totalCombinations > 0) {
-            Set<String> allPossibleApps = new HashSet<>();
-            for (Map<String, String> lp : extendedLoops) {
-                String startApp = lp.get("startApp");
-                if (startApp != null && !startApp.isEmpty())
-                    allPossibleApps.add(startApp);
-                String endApp = lp.get("endApp");
-                if (endApp != null && !endApp.isEmpty())
-                    allPossibleApps.add(endApp);
-            }
-            for (List<String> domain : varDomains.values())
-                allPossibleApps.addAll(domain);
-            for (String appName : allPossibleApps) {
-                List<String> positions = elecChangeablePosition.get(appName);
-                if (positions != null && !positions.isEmpty())
-                    totalCombinations *= positions.size();
-            }
-        }
+
+        // 复用与枚举完全一致的"连接关系变量域 + 互斥约束"
+        ConnectionPlan plan = buildConnectionVarDomains(
+                loopInfos, togetherGroup,
+                loopElecById, loopElecByIdStart, elecChangeablePosition, loopById);
+        Map<String, List<String>> varDomains = plan.varDomains;
+        Map<String, List<String>> mutualIdToVarKeys = plan.mutualIdToVarKeys;
+        Set<String> varsInAnyMutualGroup = plan.varsInAnyMutualGroup;
+        List<String> varKeys = plan.varKeys;
+
+        // 连接关系回溯 + 互斥剪枝：在每一个完整连接赋值上，
+        // 按 generateSchemesForAssignment 的口径累加"真正被选中且位置可变"的用电器位置组合数，
+        // 使 总方案数 == 实际枚举出的方案总数（不再把位置数无条件乘进全局乘积）。
+        long[] total = {0L};
+        boolean[] overflow = {false};
+        Map<String, String> currentAssignment = new LinkedHashMap<>();
+        Set<String> usedEndApps = new HashSet<>();
+        countSchemesByBacktrack(varDomains, varsInAnyMutualGroup,
+                0, varKeys, currentAssignment, usedEndApps,
+                total, overflow, loopInfos, loopById, elecChangeablePosition);
+
+        long totalCombinations = overflow[0] ? caseNumbe + 1L : total[0];
         System.out.println("可行方案总数（含约束）: " + totalCombinations);
         System.out.println("方案数计算耗时: " + (System.currentTimeMillis() - calcStart) + "ms");
         return totalCombinations;
     }
 
-    private long countAllDifferent(List<List<String>> domains) {
-        if (domains == null || domains.isEmpty())
-            return 1L;
-        return backtrackCount(domains, 0, new HashSet<>());
+    /**
+     * 连接关系回溯统计方案数（与 enumerateSchemesByBacktrack 同口径：变量域、互斥剪枝一致）。
+     * 到达叶子（一个完整连接赋值）时，调用 countSchemesForAssignment 累加该赋值下的位置组合数。
+     * 超过 caseNumbe 时通过 overflow 标记提前结束（此时总数必然 > caseNumbe，枚举分支会被跳过）。
+     */
+    private void countSchemesByBacktrack(
+            Map<String, List<String>> varDomains,
+            Set<String> varsInAnyMutualGroup,
+            int varIndex,
+            List<String> varKeys,
+            Map<String, String> currentAssignment,
+            Set<String> usedEndApps,
+            long[] total,
+            boolean[] overflow,
+            List<Map<String, String>> targetLoops,
+            Map<String, Map<String, String>> loopById,
+            Map<String, List<String>> elecChangeablePosition) {
+        if (overflow[0])
+            return;
+        if (varIndex == varKeys.size()) {
+            total[0] += countSchemesForAssignment(currentAssignment, targetLoops, loopById, elecChangeablePosition);
+            if (total[0] > caseNumbe)
+                overflow[0] = true;
+            return;
+        }
+        String varKey = varKeys.get(varIndex);
+        List<String> domain = varDomains.get(varKey);
+        if (domain == null || domain.isEmpty())
+            return;
+        boolean isInMutualGroup = varsInAnyMutualGroup.contains(varKey);
+        for (String endApp : domain) {
+            if (overflow[0])
+                return;
+            if (isInMutualGroup && usedEndApps.contains(endApp))
+                continue;
+            currentAssignment.put(varKey, endApp);
+            usedEndApps.add(endApp);
+            countSchemesByBacktrack(varDomains, varsInAnyMutualGroup,
+                    varIndex + 1, varKeys, currentAssignment, usedEndApps,
+                    total, overflow, targetLoops, loopById, elecChangeablePosition);
+            if (overflow[0]) {
+                usedEndApps.remove(endApp);
+                currentAssignment.remove(varKey);
+                return;
+            }
+            usedEndApps.remove(endApp);
+            currentAssignment.remove(varKey);
+        }
     }
 
-    private long backtrackCount(List<List<String>> domains, int idx, Set<String> usedValues) {
-        if (idx == domains.size())
-            return 1L;
-        List<String> domain = domains.get(idx);
-        if (domain == null || domain.isEmpty())
-            return 0L;
-        long count = 0L;
-        for (String val : domain) {
-            if (!usedValues.contains(val)) {
-                usedValues.add(val);
-                count += backtrackCount(domains, idx + 1, usedValues);
-                usedValues.remove(val);
+    /**
+     * 单个完整连接赋值下的位置组合数（与 generateSchemesForAssignment Step1/Step2 口径完全一致）。
+     * 收集该赋值下真正被选中（起点/终点）且 elecChangeablePosition 非空的用电器，返回其位置数乘积；
+     * 无位置可变用电器时返回 1（对应枚举里 appPositionDomains 为空时生成 1 个方案）。
+     */
+    private long countSchemesForAssignment(
+            Map<String, String> assignment,
+            List<Map<String, String>> targetLoops,
+            Map<String, Map<String, String>> loopById,
+            Map<String, List<String>> elecChangeablePosition) {
+        // Step1: affectedLoopIds（与 generateSchemesForAssignment 一致，展开 together/mutual 成员）
+        Set<String> affectedLoopIds = new LinkedHashSet<>();
+        for (Map<String, String> loop : targetLoops) {
+            String loopId = loop.get("id");
+            affectedLoopIds.add(loopId);
+            String together = loop.get("teamConnRel");
+            if (together != null && !together.isEmpty()) {
+                for (Map<String, String> allLoop : loopById.values()) {
+                    if (together.equals(allLoop.get("teamConnRel")))
+                        affectedLoopIds.add(allLoop.get("id"));
+                }
+            }
+            String mutual = loop.get("exclusiveConnRel");
+            if (mutual != null && !mutual.isEmpty()) {
+                for (Map<String, String> allLoop : loopById.values()) {
+                    if (mutual.equals(allLoop.get("exclusiveConnRel")))
+                        affectedLoopIds.add(allLoop.get("id"));
+                }
             }
         }
-        return count;
+
+        // Step2: 收集"真正被选中且位置可变"的用电器（口径同 generateSchemesForAssignment）
+        Map<String, List<String>> appPositionDomains = new LinkedHashMap<>();
+        for (String loopId : affectedLoopIds) {
+            Map<String, String> loop = loopById.get(loopId);
+            if (loop == null)
+                continue;
+            String originalStartApp = loop.get("startApp");
+            String originalEndApp = loop.get("endApp");
+            String together = loop.get("teamConnRel");
+
+            String selectedEndApp = originalEndApp;
+            if (together != null && !together.isEmpty()) {
+                String assigned = assignment.get("E_G_" + together);
+                if (assigned != null)
+                    selectedEndApp = assigned;
+            } else {
+                String assigned = assignment.get("E_L_" + loopId);
+                if (assigned != null)
+                    selectedEndApp = assigned;
+            }
+
+            String selectedStartApp = originalStartApp;
+            if (together != null && !together.isEmpty()) {
+                String assigned = assignment.get("S_G_" + together);
+                if (assigned != null)
+                    selectedStartApp = assigned;
+            } else {
+                String assigned = assignment.get("S_L_" + loopId);
+                if (assigned != null)
+                    selectedStartApp = assigned;
+            }
+
+            if (selectedStartApp != null && !selectedStartApp.isEmpty() && !appPositionDomains.containsKey(selectedStartApp)) {
+                List<String> positions = elecChangeablePosition.get(selectedStartApp);
+                if (positions != null && !positions.isEmpty())
+                    appPositionDomains.put(selectedStartApp, positions);
+            }
+            if (selectedEndApp != null && !selectedEndApp.isEmpty() && !appPositionDomains.containsKey(selectedEndApp)) {
+                List<String> positions = elecChangeablePosition.get(selectedEndApp);
+                if (positions != null && !positions.isEmpty())
+                    appPositionDomains.put(selectedEndApp, positions);
+            }
+        }
+
+        if (appPositionDomains.isEmpty())
+            return 1L;
+        long product = 1L;
+        for (List<String> positions : appPositionDomains.values()) {
+            product *= positions.size();
+            if (product > caseNumbe)
+                break; // 仅为防止后续越界，外层 overflow 会据此判定 > caseNumbe
+        }
+        return product;
     }
 
     //找用电器位置名称
