@@ -56,6 +56,8 @@ public class HarnessBranchTopoOptimize {
     public static Integer HybridizationLessRandomSamleNumber = 10000;
     // top几的数量规定
     public static final Integer TopNumber = 1000;
+    //遗传最后一轮要精确计算的top
+    public static Integer InteratorLastTop = 100;
     // 最终返回前端的参数
     public static final Integer resultNumber = 20;
     // 绕线优化:分支累计绕线成本贡献阈值,超过则 B 改 C
@@ -730,13 +732,15 @@ public class HarnessBranchTopoOptimize {
         }
         long hybridizationDuration = System.currentTimeMillis() - hybridizationTime;
         System.out.println("遗传算法结束，耗时：" + hybridizationDuration);
-
+        FindBest findBestUtil = new FindBest();
+        List<Map<String, Object>> topBeat = findBestUtil.findBest(findBest, "成本", InteratorLastTop);
         // 对遗传生成的方案进行闭环检测，打断代价低的分支改S
         List<List<String>> lists = new ArrayList<>();
-        for (Map<String, Object> stringObjectMap : findBest) {
+        for (Map<String, Object> stringObjectMap : topBeat) {
             List<String> serviceableStatue = (List<String>) stringObjectMap.get("serviceableStatue");
             lists.add(serviceableStatue);
         }
+
         // 拿到的top最优方案，没有闭环
         long time = System.currentTimeMillis();
         List<Map<String, Object>> mapList = changeAndFindBest(lists, edges, normList, wearId, canChangeS,

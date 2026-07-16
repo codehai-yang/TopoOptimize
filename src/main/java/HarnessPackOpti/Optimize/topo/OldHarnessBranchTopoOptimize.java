@@ -51,7 +51,7 @@ public class OldHarnessBranchTopoOptimize {
     // 定义一个仓库
     public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
     // 变异的次数
-    public static Integer VariationNumber = 5;
+    public static Integer VariationNumber = 1;
     // 每次迭代得到的top20
     public static List<Map<String, Object>> TopDetail = new ArrayList<>();
     // 初始化自动补全得次数
@@ -2288,7 +2288,7 @@ public class OldHarnessBranchTopoOptimize {
                 if (scrapOrNot) {
                     return null;
                 }
-                System.out.println("遗传算法返回左右top时，每个方案闭环检测结束耗时" + (System.currentTimeMillis() - startTime));
+                System.out.println("遗传算法返回top耗时，每个方案闭环检测结束耗时" + (System.currentTimeMillis() - startTime));
                 return map;
             });
         }
