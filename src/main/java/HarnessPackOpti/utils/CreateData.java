@@ -31,12 +31,20 @@ public class CreateData {
         Map<String, String> projectInfo = (Map<String, String>) jsonMap.get("projectInfo");
         projectInfo.put("optimizeType", "3");
         String[] type = { "用电器", "配电单元", "接地点", "控制器", "储电单元", "发电单元" };
+        String[] loopArrtList = { "配电回路", "硬线信号回路", "接地回路", "配电回路", "高速线缆回路", "主供电回路" };
         List<Map<String, Object>> appPositionCopy = new ArrayList<>();
         for (Map<String, Object> appPosition : appPositions) {
             String appName = appPosition.get("appName").toString();
             if (!appName.startsWith("[")) {
                 appPosition.put("appType", type[random.nextInt(type.length)]);
-                appPosition.put("resourceNumb", objectMapper.writeValueAsString(Arrays.asList("不限", "不限", "不限")));
+                appPosition.put("distHighCurrentLoop",null);
+                appPosition.put("distMediumCurrentLoop",null);
+                appPosition.put("distLowCurrentLoop",null);
+                appPosition.put("driveHighCurrentLoop",null);
+                appPosition.put("driveMediumCurrentLoop",null);
+                appPosition.put("driveLowCurrentLoop",null);
+                appPosition.put("hardWire",null);
+                appPosition.put("highSpeedWire",null);
                 appPositionCopy.add(appPosition);
             }
         }
@@ -45,11 +53,11 @@ public class CreateData {
             String startApp = loopInfos2.get("startApp");
             String endApp = loopInfos2.get("endApp");
             if (!startApp.startsWith("[") && !endApp.startsWith("[")) {
-                loopInfos2.put("loopAttribute", "");
-                loopInfos2.put("mutualExclusion", "");
-                loopInfos2.put("changeTogether", "");
-                loopInfos2.put("endSpecifyPoints", "");
-                loopInfos2.put("startSpecifyPoints", "");
+                loopInfos2.put("loopAttr", loopArrtList[random.nextInt(loopArrtList.length)]);
+                loopInfos2.put("teamConnRel", "");
+                loopInfos2.put("exclusiveConnRel", "");
+                loopInfos2.put("selectedEndApp", "");
+                loopInfos2.put("startConnEndApps", "");
                 loopInfoCopy.add(loopInfos2);
             }
         }

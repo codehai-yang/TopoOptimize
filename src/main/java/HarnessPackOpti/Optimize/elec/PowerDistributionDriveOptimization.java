@@ -75,7 +75,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\分配优化.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动优化测试数据.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -413,7 +413,10 @@ public class PowerDistributionDriveOptimization {
             }
             System.out.println("重复方案数: " + duplicateCount);
             System.out.println("有效方案数: " + validSchemeCount);
-            List<Map<String, Object>> topBest = findBest.findBest(resultList, "成本", TopNumber);
+            List<Map<String, Object>> topBest = new  ArrayList<>();
+            if(resultList.size() > 1) {
+                 topBest = findBest.findBest(resultList, "成本", TopNumber);
+            }
             System.out.println("枚举总耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
             return objectMapper.writeValueAsString(topBest);
         }

@@ -13,6 +13,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections4.map.LinkedMap;
@@ -807,6 +808,7 @@ public class ProjectCircuitInfoOutput {
             Double diameter = (Double) loopInfo.get("回路理论直径");
             if (lengthOne != null) {
                 lengthOne = lengthOne + diameter * diameter;
+                circuitLengthMap.put(startPositionName + "&" + endPositionName,lengthOne);
             } else {
                 circuitLengthMap.put(startPositionName + "&" + endPositionName, diameter * diameter);
             }
@@ -852,7 +854,10 @@ public class ProjectCircuitInfoOutput {
                 Double length = circuitLengthMap.get(combination);
                 Double length2 = circuitLengthMap.get(pointsName[1] + "&" + pointsName[0]);
                 // 两个分支点之间的总理论直径
-                Double totalLength = length == null ? 0 : length + (length2 == null ? 0 : length2);
+                Double totalLength = (length == null && length2 == null) ? 0.0
+                        : (length == null) ? length2
+                          : (length2 == null) ? length
+                            : length * length2;
                 // 开根号 × 1.3 得到等效直径
                 Double equivalentDiameter = Math.sqrt(totalLength) * ModelDiameterFactor;
                 // 判断颜色
