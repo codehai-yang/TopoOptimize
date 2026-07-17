@@ -107,8 +107,8 @@ public class PowerDistributionDriveOptimization {
         // 整车信息计算(初始方案)
         String originalResult = powerProjectCircuitInfoOutput.powerOptimize(jsonContent);
         // 判断是哪种类型优化（新格式：优化类型取自 optimizeRecord.type）
-        // 1=驱动回路，2=配电回路，3=配电回路+主供电回路+驱动回路（排除硬线/高速线缆/接地回路）
-        String optimizeType = optimizeRecord.get("type") != null ? optimizeRecord.get("type").toString() : "3";
+        // 4=驱动回路，3=配电回路，5=配电回路+主供电回路+驱动回路（包括硬线/高速线缆/接地回路）
+        String optimizeType = optimizeRecord.get("type") != null ? optimizeRecord.get("type").toString() : "5";
         String[] split = optimizeType.split(",");
         List<String> typeList = Arrays.asList(split);
         Random random = new Random();
@@ -283,25 +283,25 @@ public class PowerDistributionDriveOptimization {
         // 同时优化配电回路和驱动器回路
         List<Map<String, String>> combinedList = new ArrayList<>(elecLoopList);
         combinedList.addAll(driveLoopList);
-        if (typeList.contains("1") && typeList.contains("2")) {
+        if (typeList.contains("3") && typeList.contains("4")) {
             combinations = calculateOptimizationCombinations(combinedList, elecChangeablePosition, togetherGroup,
                     loopElecById, loopElecByIdStart);
         }
 
         // 优化驱动回路
-        if ("1".equals(optimizeType)) {
+        if ("4".equals(optimizeType)) {
             combinations = calculateOptimizationCombinations(driveLoopList, elecChangeablePosition, togetherGroup,
                     loopElecById, loopElecByIdStart);
         }
 
         // 优化类型 2：配电器回路
-        if ("2".equals(optimizeType)) {
+        if ("3".equals(optimizeType)) {
             combinations = calculateOptimizationCombinations(elecLoopList, elecChangeablePosition, togetherGroup,
                     loopElecById, loopElecByIdStart);
         }
 
         // 优化类型 3：配电回路+主供电回路+驱动回路（combinedList 已天然排除硬线/高速线缆/接地回路）
-        if ("3".equals(optimizeType)) {
+        if ("5".equals(optimizeType)) {
             combinations = calculateOptimizationCombinations(combinedList, elecChangeablePosition, togetherGroup,
                     loopElecById, loopElecByIdStart);
         }
@@ -316,13 +316,13 @@ public class PowerDistributionDriveOptimization {
 
             // 根据优化类型选择目标回路并枚举
             List<Map<String, String>> targetLoops = null;
-            if (typeList.contains("1") && typeList.contains("2")) {
+            if (typeList.contains("3") && typeList.contains("4")) {
                 targetLoops = combinedList;
-            } else if ("1".equals(optimizeType)) {
+            } else if ("4".equals(optimizeType)) {
                 targetLoops = driveLoopList;
-            } else if ("2".equals(optimizeType)) {
-                targetLoops = elecLoopList;
             } else if ("3".equals(optimizeType)) {
+                targetLoops = elecLoopList;
+            } else if ("5".equals(optimizeType)) {
                 targetLoops = combinedList;
             }
             List<Map<String, Object>> resultList = new ArrayList<>();
