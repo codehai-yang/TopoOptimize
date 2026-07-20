@@ -458,7 +458,18 @@ public class PowerDistributionDriveOptimization {
                 topBest.add(origMap);
             }
             System.out.println("枚举总耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
-            return objectMapper.writeValueAsString(topBest);
+            // 最终输出前：为 top 方案补齐完整整车计算结果
+            List<Map<String, Object>> enriched = new ArrayList<>();
+            for (Map<String, Object> slim : topBest) {
+                try {
+                    enriched.add(enrichToFullScheme(slim, jsonMap, objectMapper,
+                            powerProjectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo));
+                } catch (Exception e) {
+                    System.err.println("方案还原失败，使用精简版: " + e.getMessage());
+                    enriched.add(slim);
+                }
+            }
+            return objectMapper.writeValueAsString(enriched);
         }
 
         // 开始生成初代样本
@@ -645,7 +656,18 @@ public class PowerDistributionDriveOptimization {
         }
 
         System.out.println("遗传算法完成，共迭代 " + hybridizationNumber + " 代");
-        return objectMapper.writeValueAsString(currentTopBest);
+        // 最终输出前：为 top 方案补齐完整整车计算结果（仅 ~20 个，不存缓存不会 OOM）
+        List<Map<String, Object>> enrichedTopBest = new ArrayList<>();
+        for (Map<String, Object> slim : currentTopBest) {
+            try {
+                enrichedTopBest.add(enrichToFullScheme(slim, jsonMap, objectMapper,
+                        powerProjectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo));
+            } catch (Exception e) {
+                System.err.println("方案还原失败，使用精简版: " + e.getMessage());
+                enrichedTopBest.add(slim);
+            }
+        }
+        return objectMapper.writeValueAsString(enrichedTopBest);
     }
 
     /**
@@ -1667,6 +1689,39 @@ public class PowerDistributionDriveOptimization {
             }
         }
         return fingerprint.toString();
+    }
+
+    /**
+     * 最终输出前：对 GA 内部 3 字段精简 Map 重新计算一次整车信息，
+     * 补齐 topoId/caseId/finishStatue/initializationScheme 等输出字段。
+     * 只对 top~20 个方案调用，不会 OOM。
+     */
+    private Map<String, Object> enrichToFullScheme(
+            Map<String, Object> slim,
+            Map<String, Object> jsonMap,
+            ObjectMapper objectMapper,
+            PowerProjectCircuitInfoOutput powerProjectCircuitInfoOutput,
+            JsonToMap jsonToMap,
+            Map<String, Object> topoInfoMap,
+            Map<String, String> projectInfo) throws Exception {
+        List<Map<String, String>> loops = (List<Map<String, String>>) slim.get("loopInfos");
+        List<Map<String, String>> apps = (List<Map<String, String>>) slim.get("appPositions");
+
+        Map<String, Object> tempJsonMap = deepCopyJsonMap(jsonMap);
+        tempJsonMap.put("loopInfos", loops);
+        tempJsonMap.put("appPositions", apps);
+        String result = powerProjectCircuitInfoOutput.powerOptimize(objectMapper.writeValueAsString(tempJsonMap));
+        if (result == null || result.isEmpty()) return slim;
+
+        Map<String, Object> map2 = jsonToMap.TransJsonToMap(result);
+        map2.put("成本", slim.get("成本"));
+        map2.put("loopInfos", loops);
+        map2.put("appPositions", apps);
+        map2.put("topoId", topoInfoMap.get("id").toString());
+        map2.put("caseId", projectInfo.get("caseId").toString());
+        map2.put("finishStatue", "normal");
+        map2.put("initializationScheme", false);
+        return map2;
     }
 
     /**
