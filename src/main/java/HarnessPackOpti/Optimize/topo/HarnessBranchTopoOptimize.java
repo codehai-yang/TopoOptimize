@@ -55,7 +55,7 @@ public class HarnessBranchTopoOptimize {
     // 迭代最少样本数量（提高每代候选池规模，保证进化方向充分探索）
     public static Integer HybridizationLessRandomSamleNumber = 10000;
     // top几的数量规定
-    public static final Integer TopNumber = 1000;
+    public static final Integer TopNumber = 100;
     //遗传最后一轮要精确计算的top
     public static Integer InteratorLastTop = 100;
     // 最终返回前端的参数
@@ -110,7 +110,7 @@ public class HarnessBranchTopoOptimize {
     // 每次迭代得到的top10
     public static List<Map<String, Object>> TopCostDetail = new ArrayList<>();
     //是否启用AI
-    public static boolean whetherAI = false;
+    public static boolean whetherAI = true;
 
     // 当前方案的id
     private static String CaseId = null;

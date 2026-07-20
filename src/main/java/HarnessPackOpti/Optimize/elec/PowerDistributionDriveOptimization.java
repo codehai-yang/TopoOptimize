@@ -1008,62 +1008,72 @@ public class PowerDistributionDriveOptimization {
 
         boolean success = enforceMutualGroupConstraints(childLoops, childApps, mutualGroup,
                 loopElecById, elecChangeablePosition, pointNameId, random);
-        if (!success) {
-            System.out.println("[交叉诊断] enforceMutualGroupConstraints 失败");
+        if (!success)
             return null;
-        }
 
         // 关键修正：确保子代中同一用电器位置唯一且优先保留已有位置
         syncAppPositionsPreservingExisting(childLoops, childApps, elecChangeablePosition, pointNameId, random);
 
         Boolean b = elecResourceCheck(childLoops, resourceNum);
-        if (!b) {
-            System.out.println("[交叉诊断] elecResourceCheck 失败");
+        if (!b)
             return null;
-        }
 
         String fingerprint = generateSchemeFingerprint(childLoops, childApps);
-        if (!WareHouse.add(fingerprint)) {
-            System.out.println("[交叉诊断] WareHouse 指纹冲突");
+        if (!WareHouse.add(fingerprint))
             return null;
-        }
 
         // 高速增量评估：缓存 findTwoPointInfo/coiling + 增量 totals
+        // 失败兜底走 evaluateDeltaFromContext，保证 GA 在边界场景下不丢方案
         Set<String> changedLoopIds = computeChangedLoopIds(
                 childLoops, childApps, baselineLoopStartEnd, baselineAppPosition);
+        Map<String, Double> deltaTotals = null;
         try {
-            Map<String, Double> deltaTotals = powerProjectCircuitInfoOutput.evaluateDeltaFast(
+            deltaTotals = powerProjectCircuitInfoOutput.evaluateDeltaFast(
                     projectContext, childApps, childLoops, changedLoopIds, baselineLoopdetails);
-            if (deltaTotals == null) {
-                System.out.println("[交叉诊断] evaluateDeltaFast 返回 null, changedLoopIds=" + changedLoopIds);
-                WareHouse.remove(fingerprint);
-                return null;
-            }
-            Double totalCost = deltaTotals.get("总成本");
-            Double totalWeight = deltaTotals.get("回路总重量");
-            Double totalLength = deltaTotals.get("回路总长度");
-            if (totalCost == null || totalWeight == null || totalLength == null) {
-                System.out.println(
-                        "[交叉诊断] totals 字段缺失: cost=" + totalCost + " weight=" + totalWeight + " length=" + totalLength);
-                WareHouse.remove(fingerprint);
-                return null;
-            }
-            // 精简方案 Map：仅保留 findBest/交叉/变异 真正需要的三个字段
-            Map<String, Double> projectCost = new HashMap<>();
-            projectCost.put("总成本", totalCost);
-            projectCost.put("总重量", totalWeight);
-            projectCost.put("总长度", totalLength);
-            Map<String, Object> map = new HashMap<>();
-            map.put("成本", projectCost);
-            map.put("loopInfos", childLoops);
-            map.put("appPositions", childApps);
-            return map;
         } catch (Exception e) {
-            System.out.println("[交叉诊断] 异常: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-            e.printStackTrace();
+            // 静默回退到慢速路径
+        }
+        if (deltaTotals == null) {
+            try {
+                Map<String, Object> slow = powerProjectCircuitInfoOutput.evaluateDeltaFromContext(
+                        projectContext, childApps, childLoops, changedLoopIds, baselineLoopdetails);
+                if (slow != null) {
+                    Object tc = slow.get("总成本");
+                    Object tw = slow.get("回路总重量");
+                    Object tl = slow.get("回路总长度");
+                    if (tc instanceof Number && tw instanceof Number && tl instanceof Number) {
+                        deltaTotals = new HashMap<>();
+                        deltaTotals.put("总成本", ((Number) tc).doubleValue());
+                        deltaTotals.put("回路总重量", ((Number) tw).doubleValue());
+                        deltaTotals.put("回路总长度", ((Number) tl).doubleValue());
+                    }
+                }
+            } catch (Exception e2) {
+                WareHouse.remove(fingerprint);
+                return null;
+            }
+        }
+        if (deltaTotals == null) {
             WareHouse.remove(fingerprint);
             return null;
         }
+        Double totalCost = deltaTotals.get("总成本");
+        Double totalWeight = deltaTotals.get("回路总重量");
+        Double totalLength = deltaTotals.get("回路总长度");
+        if (totalCost == null || totalWeight == null || totalLength == null) {
+            WareHouse.remove(fingerprint);
+            return null;
+        }
+        // 精简方案 Map：仅保留 findBest/交叉/变异 真正需要的三个字段
+        Map<String, Double> projectCost = new HashMap<>();
+        projectCost.put("总成本", totalCost);
+        projectCost.put("总重量", totalWeight);
+        projectCost.put("总长度", totalLength);
+        Map<String, Object> map = new HashMap<>();
+        map.put("成本", projectCost);
+        map.put("loopInfos", childLoops);
+        map.put("appPositions", childApps);
+        return map;
     }
 
     /**
@@ -1255,36 +1265,59 @@ public class PowerDistributionDriveOptimization {
                             continue;
 
                         // 高速增量评估：缓存 findTwoPointInfo/coiling + 增量 totals
+                        // 失败兜底走 evaluateDeltaFromContext，保证 GA 在边界场景下不丢方案
                         Set<String> changedLoopIds = computeChangedLoopIds(
                                 variantLoops, appPositionsCopy,
                                 baselineLoopStartEnd, baselineAppPosition);
+                        Map<String, Double> deltaTotals = null;
                         try {
-                            Map<String, Double> deltaTotals = powerProjectCircuitInfoOutput.evaluateDeltaFast(
+                            deltaTotals = powerProjectCircuitInfoOutput.evaluateDeltaFast(
                                     projectContext, appPositionsCopy, variantLoops,
                                     changedLoopIds, baselineLoopdetails);
-                            if (deltaTotals == null) {
-                                WareHouse.remove(fingerprint);
-                                continue;
-                            }
-                            Double totalCost = deltaTotals.get("总成本");
-                            Double totalWeight = deltaTotals.get("回路总重量");
-                            Double totalLength = deltaTotals.get("回路总长度");
-                            if (totalCost == null || totalWeight == null || totalLength == null) {
-                                WareHouse.remove(fingerprint);
-                                continue;
-                            }
-                            Map<String, Double> projectCost = new HashMap<>();
-                            projectCost.put("总成本", totalCost);
-                            projectCost.put("总重量", totalWeight);
-                            projectCost.put("总长度", totalLength);
-                            Map<String, Object> map = new HashMap<>();
-                            map.put("成本", projectCost);
-                            map.put("loopInfos", variantLoops);
-                            map.put("appPositions", appPositionsCopy);
-                            mutatedSchemes.add(map);
                         } catch (Exception e) {
-                            WareHouse.remove(fingerprint);
+                            // 静默回退
                         }
+                        if (deltaTotals == null) {
+                            try {
+                                Map<String, Object> slow = powerProjectCircuitInfoOutput.evaluateDeltaFromContext(
+                                        projectContext, appPositionsCopy, variantLoops,
+                                        changedLoopIds, baselineLoopdetails);
+                                if (slow != null) {
+                                    Object tc = slow.get("总成本");
+                                    Object tw = slow.get("回路总重量");
+                                    Object tl = slow.get("回路总长度");
+                                    if (tc instanceof Number && tw instanceof Number && tl instanceof Number) {
+                                        deltaTotals = new HashMap<>();
+                                        deltaTotals.put("总成本", ((Number) tc).doubleValue());
+                                        deltaTotals.put("回路总重量", ((Number) tw).doubleValue());
+                                        deltaTotals.put("回路总长度", ((Number) tl).doubleValue());
+                                    }
+                                }
+                            } catch (Exception e2) {
+                                WareHouse.remove(fingerprint);
+                                continue;
+                            }
+                        }
+                        if (deltaTotals == null) {
+                            WareHouse.remove(fingerprint);
+                            continue;
+                        }
+                        Double totalCost = deltaTotals.get("总成本");
+                        Double totalWeight = deltaTotals.get("回路总重量");
+                        Double totalLength = deltaTotals.get("回路总长度");
+                        if (totalCost == null || totalWeight == null || totalLength == null) {
+                            WareHouse.remove(fingerprint);
+                            continue;
+                        }
+                        Map<String, Double> projectCost = new HashMap<>();
+                        projectCost.put("总成本", totalCost);
+                        projectCost.put("总重量", totalWeight);
+                        projectCost.put("总长度", totalLength);
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("成本", projectCost);
+                        map.put("loopInfos", variantLoops);
+                        map.put("appPositions", appPositionsCopy);
+                        mutatedSchemes.add(map);
                     }
                 } catch (Exception e) {
                     // 单个方案变异失败不影响其他
@@ -1292,10 +1325,10 @@ public class PowerDistributionDriveOptimization {
             });
         }
 
-        threadPool.awaitCompletion();
-        long mElapsed = System.currentTimeMillis() - mStartMs;
-        System.out.println("变异完成: " + mutatedSchemes.size() + " 个有效方案, 耗时 " + mElapsed + "ms");
-        return mutatedSchemes;
+    threadPool.awaitCompletion();
+
+    long mElapsed = System.currentTimeMillis()
+            - mStartMs;System.out.println("变异完成: "+mutatedSchemes.size()+" 个有效方案, 耗时 "+mElapsed+"ms");return mutatedSchemes;
     }
 
     // 以下为辅助方法（保持原有逻辑，但部分签名修改以支持约束检查）
@@ -1866,6 +1899,7 @@ public class PowerDistributionDriveOptimization {
                             continue;
 
                         // 高速增量评估：缓存 findTwoPointInfo/coiling + 增量 totals（避免每候选重算全车）
+                        // 失败兜底走 evaluateDeltaFromContext，保证 GA 在边界场景下不丢方案
                         Set<String> changedLoopIds = computeChangedLoopIds(
                                 loopInfoCopy, appPositionsCopy,
                                 baselineLoopStartEnd, baselineAppPosition);
@@ -1875,8 +1909,28 @@ public class PowerDistributionDriveOptimization {
                                     projectContext, appPositionsCopy, loopInfoCopy,
                                     changedLoopIds, baselineLoopdetails);
                         } catch (Exception e) {
-                            WareHouse.remove(fingerprint);
-                            continue;
+                            // 静默回退
+                        }
+                        if (deltaTotals == null) {
+                            try {
+                                Map<String, Object> slow = powerProjectCircuitInfoOutput.evaluateDeltaFromContext(
+                                        projectContext, appPositionsCopy, loopInfoCopy,
+                                        changedLoopIds, baselineLoopdetails);
+                                if (slow != null) {
+                                    Object tc = slow.get("总成本");
+                                    Object tw = slow.get("回路总重量");
+                                    Object tl = slow.get("回路总长度");
+                                    if (tc instanceof Number && tw instanceof Number && tl instanceof Number) {
+                                        deltaTotals = new HashMap<>();
+                                        deltaTotals.put("总成本", ((Number) tc).doubleValue());
+                                        deltaTotals.put("回路总重量", ((Number) tw).doubleValue());
+                                        deltaTotals.put("回路总长度", ((Number) tl).doubleValue());
+                                    }
+                                }
+                            } catch (Exception e2) {
+                                WareHouse.remove(fingerprint);
+                                continue;
+                            }
                         }
                         if (deltaTotals == null) {
                             WareHouse.remove(fingerprint);

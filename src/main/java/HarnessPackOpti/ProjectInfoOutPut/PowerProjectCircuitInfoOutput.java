@@ -483,13 +483,18 @@ public class PowerProjectCircuitInfoOutput {
         }
 
         // 1) 构建候选 appName → 当前位置 索引（仅遍历一次）
+        // 位置解析遵循 findNode 语义：优先 unregularPointName，缺失则回退到 regularPointName
         Map<String, String> candidateAppPos = new HashMap<>();
         for (Map<String, ?> ap : candidateAppPositions) {
             Object name = ap.get("appName");
-            Object pos = ap.get("unregularPointName");
-            if (name != null) {
-                candidateAppPos.put(name.toString(), pos == null ? null : pos.toString());
+            if (name == null) {
+                continue;
             }
+            Object pos = ap.get("unregularPointName");
+            if (pos == null || (pos instanceof String && ((String) pos).isEmpty())) {
+                pos = ap.get("regularPointName");
+            }
+            candidateAppPos.put(name.toString(), pos == null ? null : pos.toString());
         }
 
         // 2) 收集 changed loop 对应 loopInfo；构建候选 loopId → loopInfo 索引
@@ -557,8 +562,9 @@ public class PowerProjectCircuitInfoOutput {
                 liCn.put("方案号", o.toString());
             }
 
-            // 4.2) findTwoPointInfo 缓存
-            String twoPointKey = loopId + "|" + startApp + "|" + endApp + "|" + startPos + "|" + endPos;
+            // 4.2) findTwoPointInfo 缓存（key 必须含 materials，否则不同线径会错误命中）
+            String twoPointKey = loopId + "|" + startApp + "|" + endApp + "|" + startPos + "|" + endPos + "|"
+                    + materials;
             Map<String, Object> twoPointInfo = ctx.twoPointInfoCache.get(twoPointKey);
             if (twoPointInfo == null) {
                 // 构造完整 candidateProjectInfo（一次性）
