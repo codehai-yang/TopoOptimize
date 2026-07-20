@@ -41,7 +41,7 @@ public class PowerDistributionDriveOptimization {
     public static Integer caseNumbe = 10000;
 
     // 生成初始样本数量限制
-    public static Integer LessRandomSamleNumber = 100;
+    public static Integer LessRandomSamleNumber = 1000;
 
     // 遗传最优样本重复次数
     public static Integer BestRepetitionNumber = 0;
@@ -68,9 +68,8 @@ public class PowerDistributionDriveOptimization {
     public static ThreadPool threadPool = new ThreadPool(10, 20);
 
     // 定义一个仓库，遗传每次生成的方案存储，防止重复
+    // ConcurrentHashMap 的 putIfAbsent 本身原子，无需外部 synchronized
     public static Set<String> WareHouse = Collections.newSetFromMap(new ConcurrentHashMap<>());
-    // 仓库读写锁（contains+add 原子化）
-    private static final Object warehouseLock = new Object();
 
     // 枚举收集的所有方案
     private List<Map<String, String>> enumeratedSchemes = new ArrayList<>();
@@ -530,7 +529,8 @@ public class PowerDistributionDriveOptimization {
         List<Map<String, Object>> currentTopBest = topBest;
 
         while (true) {
-            System.out.println((hybridizationNumber + 1) + "代迭代开始, 当前仓库方案数: " + WareHouse.size());
+            long iterStartMs = System.currentTimeMillis();
+            System.out.println((hybridizationNumber + 1) + "代迭代开始, 仓库方案数: " + WareHouse.size());
 
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                 System.out.println("优化被用户中断");
@@ -615,8 +615,9 @@ public class PowerDistributionDriveOptimization {
                 resuliList.addAll(supplementedSchemes);
             }
             currentTopBest = findBest.findBest(resuliList, "成本", TopNumber);
-            System.out.println("第" + (hybridizationNumber + 1) + "代完成，最优成本: " +
-                    currentTopBest.get(0).get("成本"));
+            long iterElapsed = System.currentTimeMillis() - iterStartMs;
+            System.out.println("第" + (hybridizationNumber + 1) + "代完成, 最优成本: " +
+                    currentTopBest.get(0).get("成本") + ", 本代耗时: " + iterElapsed + "ms");
 
             // 修正：首次迭代（hybridizationNumber == 0）记录最优成本
             if (hybridizationNumber == 0) {
@@ -809,6 +810,7 @@ public class PowerDistributionDriveOptimization {
             Random random,
             Map<String, AppResourceLimit> resourceNum, Map<String, Object> jsonMap) throws Exception {
 
+        long xStartMs = System.currentTimeMillis();
         List<Map<String, Object>> crossedSchemes = Collections.synchronizedList(new ArrayList<>());
         int populationSize = topSchemes.size();
         System.out.println("开始并行交叉操作，种群大小: " + populationSize);
@@ -850,7 +852,8 @@ public class PowerDistributionDriveOptimization {
         }
 
         threadPool.awaitCompletion();
-        System.out.println("交叉生成 " + crossedSchemes.size() + " 个方案");
+        long xElapsed = System.currentTimeMillis() - xStartMs;
+        System.out.println("交叉完成: " + crossedSchemes.size() + " 个方案, 耗时 " + xElapsed + "ms");
         return crossedSchemes;
     }
 
@@ -967,15 +970,11 @@ public class PowerDistributionDriveOptimization {
             return null;
 
         String fingerprint = generateSchemeFingerprint(childLoops, childApps);
-        boolean claimed;
-        synchronized (warehouseLock) {
-            claimed = WareHouse.add(fingerprint);
-        }
-        if (!claimed)
+        if (!WareHouse.add(fingerprint))
             return null;
 
         // 基于原始 jsonMap 深拷贝（保留所有顶层字段），仅覆盖 loopInfos 和 appPositions
-        Map<String, Object> tempJsonMap = deepCopyJsonMap(jsonMap);
+        Map<String, Object> tempJsonMap = new HashMap<>(jsonMap);
         tempJsonMap.put("loopInfos", childLoops);
         tempJsonMap.put("appPositions", childApps);
 
@@ -1001,9 +1000,7 @@ public class PowerDistributionDriveOptimization {
             System.err.println("交叉方案计算失败: " + e.getMessage());
         }
         // powerOptimize 失败或 projectCircuitInfo 为空 → 释放预占指纹
-        synchronized (warehouseLock) {
-            WareHouse.remove(fingerprint);
-        }
+        WareHouse.remove(fingerprint);
         return null;
     }
 
@@ -1143,6 +1140,7 @@ public class PowerDistributionDriveOptimization {
             Random random,
             Map<String, AppResourceLimit> resourceNum) throws Exception {
 
+        long mStartMs = System.currentTimeMillis();
         List<Map<String, Object>> mutatedSchemes = Collections.synchronizedList(new ArrayList<>());
         System.out.println("开始并行对 " + topSchemes.size() + " 个方案进行多分支变异...");
 
@@ -1183,13 +1181,9 @@ public class PowerDistributionDriveOptimization {
                         if (!elecResourceCheck(variantLoops, resourceNum)) continue;
 
                         String fingerprint = generateSchemeFingerprint(variantLoops, appPositionsCopy);
-                        boolean claimed;
-                        synchronized (warehouseLock) {
-                            claimed = WareHouse.add(fingerprint);
-                        }
-                        if (!claimed) continue;
+                        if (!WareHouse.add(fingerprint)) continue;
 
-                        Map<String, Object> tempJsonMap = deepCopyJsonMap(jsonMap);
+                        Map<String, Object> tempJsonMap = new HashMap<>(jsonMap);
                         tempJsonMap.put("loopInfos", variantLoops);
                         tempJsonMap.put("appPositions", appPositionsCopy);
                         String schemeJson = objectMapper.writeValueAsString(tempJsonMap);
@@ -1197,13 +1191,13 @@ public class PowerDistributionDriveOptimization {
                         try {
                             String result = powerProjectCircuitInfoOutput.powerOptimize(schemeJson);
                             if (result == null || result.isEmpty()) {
-                                synchronized (warehouseLock) { WareHouse.remove(fingerprint); }
+                                WareHouse.remove(fingerprint);
                                 continue;
                             }
                             Map<String, Object> rawMap = jsonToMap.TransJsonToMap(result);
                             Map<String, Object> pcInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
                             if (pcInfo == null) {
-                                synchronized (warehouseLock) { WareHouse.remove(fingerprint); }
+                                WareHouse.remove(fingerprint);
                                 continue;
                             }
                             Object totalCost = pcInfo.get("总成本");
@@ -1211,7 +1205,7 @@ public class PowerDistributionDriveOptimization {
                             Object totalLength = pcInfo.get("回路总长度");
                             if (!(totalCost instanceof Number) || !(totalWeight instanceof Number)
                                     || !(totalLength instanceof Number)) {
-                                synchronized (warehouseLock) { WareHouse.remove(fingerprint); }
+                                WareHouse.remove(fingerprint);
                                 continue;
                             }
                             Map<String, Double> projectCost = new HashMap<>();
@@ -1224,7 +1218,7 @@ public class PowerDistributionDriveOptimization {
                             map.put("appPositions", appPositionsCopy);
                             mutatedSchemes.add(map);
                         } catch (Exception e) {
-                            synchronized (warehouseLock) { WareHouse.remove(fingerprint); }
+                            WareHouse.remove(fingerprint);
                         }
                     }
                 } catch (Exception e) {
@@ -1234,7 +1228,8 @@ public class PowerDistributionDriveOptimization {
         }
 
         threadPool.awaitCompletion();
-        System.out.println("变异完成，生成 " + mutatedSchemes.size() + " 个有效方案");
+        long mElapsed = System.currentTimeMillis() - mStartMs;
+        System.out.println("变异完成: " + mutatedSchemes.size() + " 个有效方案, 耗时 " + mElapsed + "ms");
         return mutatedSchemes;
     }
 
@@ -1628,36 +1623,6 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 深拷贝原始 jsonMap（保留 edges/points/caseInfo/topoInfo/optimizeRecord/projectInfo
-     * 等所有顶层字段）。
-     * 方案生成时仅需覆盖 loopInfos 和 appPositions 两个变化字段，其他保持原始数据。
-     */
-    private Map<String, Object> deepCopyJsonMap(Map<String, Object> source) {
-        if (source == null)
-            return null;
-        Map<String, Object> copy = new HashMap<>();
-        for (Map.Entry<String, Object> entry : source.entrySet()) {
-            Object value = entry.getValue();
-            if (value instanceof Map) {
-                copy.put(entry.getKey(), deepCopyJsonMap((Map<String, Object>) value));
-            } else if (value instanceof List) {
-                List<Object> listCopy = new ArrayList<>();
-                for (Object item : (List<?>) value) {
-                    if (item instanceof Map) {
-                        listCopy.add(deepCopyJsonMap((Map<String, Object>) item));
-                    } else {
-                        listCopy.add(item);
-                    }
-                }
-                copy.put(entry.getKey(), listCopy);
-            } else {
-                copy.put(entry.getKey(), value);
-            }
-        }
-        return copy;
-    }
-
-    /**
      * 生成唯一指纹（完整版）
      */
     private String generateSchemeFingerprint(List<Map<String, String>> loopInfos,
@@ -1707,7 +1672,7 @@ public class PowerDistributionDriveOptimization {
         List<Map<String, String>> loops = (List<Map<String, String>>) slim.get("loopInfos");
         List<Map<String, String>> apps = (List<Map<String, String>>) slim.get("appPositions");
 
-        Map<String, Object> tempJsonMap = deepCopyJsonMap(jsonMap);
+        Map<String, Object> tempJsonMap = new HashMap<>(jsonMap);
         tempJsonMap.put("loopInfos", loops);
         tempJsonMap.put("appPositions", apps);
         String result = powerProjectCircuitInfoOutput.powerOptimize(objectMapper.writeValueAsString(tempJsonMap));
@@ -1751,6 +1716,7 @@ public class PowerDistributionDriveOptimization {
         // 任务数：略多于目标数，补偿失败率
         int totalTasks = Math.min(populationSize * 2, populationSize * 10);
 
+        long genStartMs = System.currentTimeMillis();
         System.out.println("开始并行生成 " + populationSize + " 个初代个体（" + threadPool.getThreadCount() + " 线程）...");
 
         for (int t = 0; t < totalTasks; t++) {
@@ -1785,16 +1751,12 @@ public class PowerDistributionDriveOptimization {
                         // 资源检查
                         if (!elecResourceCheck(loopInfoCopy, resourceNum)) continue;
 
-                        // 指纹去重（原子 check-and-add，防止并发冲突）
+                        // 指纹去重（ConcurrentHashMap.putIfAbsent 自带原子性）
                         String fingerprint = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
-                        boolean claimed;
-                        synchronized (warehouseLock) {
-                            claimed = WareHouse.add(fingerprint);
-                        }
-                        if (!claimed) continue; // 已有其他线程生成
+                        if (!WareHouse.add(fingerprint)) continue;
 
                         // 构造 JSON 并调用 powerOptimize（不需锁，CPU 密集操作）
-                        Map<String, Object> tempJsonMap = deepCopyJsonMap(jsonMap);
+                        Map<String, Object> tempJsonMap = new HashMap<>(jsonMap);
                         tempJsonMap.put("loopInfos", loopInfoCopy);
                         tempJsonMap.put("appPositions", appPositionsCopy);
                         String schemeJson = objectMapper.writeValueAsString(tempJsonMap);
@@ -1802,17 +1764,17 @@ public class PowerDistributionDriveOptimization {
                         try {
                             result = powerProjectCircuitInfoOutput.powerOptimize(schemeJson);
                         } catch (Exception e) {
-                            synchronized (warehouseLock) { WareHouse.remove(fingerprint); }
+                            WareHouse.remove(fingerprint);
                             continue;
                         }
                         if (result == null || result.isEmpty()) {
-                            synchronized (warehouseLock) { WareHouse.remove(fingerprint); }
+                            WareHouse.remove(fingerprint);
                             continue;
                         }
                         Map<String, Object> rawMap = jsonToMap.TransJsonToMap(result);
                         Map<String, Object> projectCircuitInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
                         if (projectCircuitInfo == null) {
-                            synchronized (warehouseLock) { WareHouse.remove(fingerprint); }
+                            WareHouse.remove(fingerprint);
                             continue;
                         }
                         Object totalCost = projectCircuitInfo.get("总成本");
@@ -1820,7 +1782,7 @@ public class PowerDistributionDriveOptimization {
                         Object totalLength = projectCircuitInfo.get("回路总长度");
                         if (!(totalCost instanceof Number) || !(totalWeight instanceof Number)
                                 || !(totalLength instanceof Number)) {
-                            synchronized (warehouseLock) { WareHouse.remove(fingerprint); }
+                            WareHouse.remove(fingerprint);
                             continue;
                         }
                         Map<String, Double> projectCost = new HashMap<>();
@@ -1833,8 +1795,11 @@ public class PowerDistributionDriveOptimization {
                         map.put("appPositions", appPositionsCopy);
 
                         population.add(map);
-                        if (population.size() % 50 == 0) {
-                            System.out.println("已生成 " + population.size() + " 个有效个体...");
+                        int curSize = population.size();
+                        if (curSize % 200 == 0 || curSize == populationSize) {
+                            long elapsed = System.currentTimeMillis() - genStartMs;
+                            System.out.println("已生成 " + curSize + "/" + populationSize
+                                    + " 个有效个体, 耗时 " + elapsed + "ms");
                         }
                         return; // 本任务成功，退出重试
                     } catch (Exception e) {
@@ -1849,7 +1814,10 @@ public class PowerDistributionDriveOptimization {
 
         int resultSize = Math.min(populationSize, population.size());
         List<Map<String, Object>> result = new ArrayList<>(population.subList(0, resultSize));
-        System.out.println("初代种群生成完成，共 " + result.size() + " 个个体");
+        long elapsed = System.currentTimeMillis() - genStartMs;
+        System.out.println("初代种群生成完成: " + result.size() + " 个个体, "
+                + "总耗时 " + elapsed + "ms, "
+                + (elapsed > 0 ? (result.size() * 1000L / elapsed) : "?") + " 个/秒");
         return result;
     }
 
