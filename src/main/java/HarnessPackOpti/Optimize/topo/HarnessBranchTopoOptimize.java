@@ -51,9 +51,9 @@ import HarnessPackOpti.utils.ThreadPool;
  */
 public class HarnessBranchTopoOptimize {
     // 初代样本最低生成数量（提高多样性，避免遗传起点过于集中）
-    public static Integer LessRandomSamleNumber = 1000;
+    public static Integer LessRandomSamleNumber = 100;
     // 迭代最少样本数量（提高每代候选池规模，保证进化方向充分探索）
-    public static Integer HybridizationLessRandomSamleNumber = 10000;
+    public static Integer HybridizationLessRandomSamleNumber = 200;
     // top几的数量规定
     public static final Integer TopNumber = 100;
     //遗传最后一轮要精确计算的top
