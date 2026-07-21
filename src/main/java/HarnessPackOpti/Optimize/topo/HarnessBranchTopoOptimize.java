@@ -57,7 +57,7 @@ public class HarnessBranchTopoOptimize {
     // top几的数量规定
     public static final Integer TopNumber = 100;
     //遗传最后一轮要精确计算的top
-    public static Integer InteratorLastTop = 100;
+    public static Integer InteratorLastTop = 50;
     // 最终返回前端的参数
     public static final Integer resultNumber = 20;
     // 绕线优化:分支累计绕线成本贡献阈值,超过则 B 改 C
@@ -584,7 +584,7 @@ public class HarnessBranchTopoOptimize {
         canChangeToCSet.addAll(singleBCList);
         canChangeToCSet.addAll(singleSCList);
         canChangeToCSet.addAll(singleBSCList);
-        canChangeToCSet.addAll(normList);
+        
         // 固定状态分支集合（B/S 状态保留，不动）
         Set<String> keepFixedSet = new HashSet<>(onlyNameB);
         keepFixedSet.addAll(onlyNameS);
@@ -597,6 +597,9 @@ public class HarnessBranchTopoOptimize {
         for (Map<String, Object> coppyedge : coppyedges) {
             String id = (String) coppyedge.get("id");
             if (!keepFixedSet.contains(id) && canChangeToCSet.contains(id)) {
+                if(id.equals("ae92ed08-797f-4cd6-991c-c72ba3889f27")){
+                    System.out.println("");
+                }
                 coppyedge.put("topologyStatusCode", "C");
                 initialScheme.add("C");
             } else {
