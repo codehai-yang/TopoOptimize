@@ -51,6 +51,42 @@ def load_scheme(scheme_path, idx=0):
         raise ValueError(f"未识别的方案格式: type={type(data)}")
 
 
+def load_scheme_from_excel(xlsx_path, scheme_idx, stage='绕线后'):
+    """从方案状态变更追踪 Excel 读指定方案某阶段的状态列表。
+    Excel 列布局(每方案 3 列 + 2 列间隔,1-based):
+        方案 i: 精确前=(i-1)*5+1, 精确后=(i-1)*5+2, 绕线后=(i-1)*5+3
+    注:Java 端写入时"分支 ID"列被后续状态写入覆盖(0-based 列 0 重复),
+    汇总行 label 也被 k=0 覆盖为 "-",所以靠内容判断边界不可靠。
+    用 max_row 反推:最后 3 行是总成本/总重量/总长度,数据行 = 6 .. max_row-3-1
+    (中间还可能有一空行)。行序 = normList 顺序。
+    """
+    from openpyxl import load_workbook
+
+    stage_to_col = {'精确前': 1, '精确后': 2, '绕线后': 3}
+    if stage not in stage_to_col:
+        raise ValueError(f"stage 必须是 '精确前'/'精确后'/'绕线后' 之一, 收到: {stage}")
+    col = (scheme_idx - 1) * 5 + stage_to_col[stage]  # 1-based 列号
+
+    wb = load_workbook(xlsx_path, read_only=True, data_only=True)
+    sheet = wb.active
+
+    # 倒数 3 行是总成本/总重量/总长度,前 1 行是空行,数据只读到 max_row - 4
+    data_end_row = max(6, sheet.max_row - 3)
+
+    statuses = []
+    for row in sheet.iter_rows(min_row=6, max_row=data_end_row, max_col=col, values_only=True):
+        first_col = row[0] if row else None
+        if first_col is None:
+            continue
+        first_str = str(first_col).strip()
+        if not first_str:
+            continue
+        status = row[col - 1] if col <= len(row) else None
+        statuses.append('-' if status is None else str(status).strip())
+    wb.close()
+    return statuses
+
+
 def build_graph_and_find_cycles(edges, statuses):
     """
     1. 构造 networkx 图
@@ -233,15 +269,6 @@ def draw(G, pos, break_edges, cycles, save_path='cycle.png'):
             x, y = pos[mid[0]]
             ax.annotate(f"Loop-{idx+1}", (x, y), color='orange',
                         fontsize=8, weight='bold')
-        # 在每条回路边上标注其 edge id（分支 id）
-        for (u, v) in cycle_edges:
-            eid = G[u][v].get('edge_id', '')
-            if eid and u in pos and v in pos:
-                mx = (pos[u][0] + pos[v][0]) / 2
-                my = (pos[u][1] + pos[v][1]) / 2
-                ax.annotate(str(eid), (mx, my), color='darkorange',
-                            fontsize=6, weight='bold',
-                            bbox=dict(boxstyle='round,pad=0.1', fc='yellow', alpha=0.75))
 
     # 画点（小灰点，不显示名字）
     nx.draw_networkx_nodes(G, pos, ax=ax, node_size=8, node_color='gray',
@@ -279,10 +306,15 @@ if __name__ == '__main__':
                         default=r'F:\office\idearProjects\project20251009\src\main\resources\BS4EM项目json优化设置.txt',
                         help='线束 txt 路径')
     parser.add_argument('scheme_path', nargs='?',
-                        default=r'F:\office\pythonProjects\GineService\测试新遗传算法2.json',
-                        help='方案 json 路径')
-    parser.add_argument('--scheme-idx', type=int, default=15,
-                        help='list 根方案文件中取第几个（默认 0 = 第一个 = 通常最优）')
+                        # default=r'F:\office\idearProjects\project20251009\src\main\resources\测试新遗传算法2266成本.json',
+                        help='方案 json 路径(与 --from-excel 二选一)')
+    parser.add_argument('--scheme-idx', type=int, default=0,
+                        help='方案号,0-based:json 模式取 list[idx],Excel 模式取方案(idx+1)')
+    parser.add_argument('--from-excel', type=str, default=r'F:\office\idearProjects\project20251009\src\main\resources\SchemeChangeTrace_9b40fcbd-47b8-4724-b6ce-7b17e5dd1b7b_20260721_162739.xlsx',
+                        help='从方案状态变更追踪 Excel(.xlsx)读方案状态,指定后忽略 scheme_path')
+    parser.add_argument('--stage', type=str, default='精确前',
+                        choices=['精确前', '精确后', '绕线后'],
+                        help='--from-excel 模式下选哪个阶段,默认 绕线后')
     args = parser.parse_args()
     txt_path = args.txt_path
     scheme_path = args.scheme_path
@@ -293,9 +325,15 @@ if __name__ == '__main__':
     norm_list = json_obj.get('normList', [e.get('id') for e in edges])
     print(f"[INFO] edges 数: {len(edges)}, normList 数: {len(norm_list)}")
 
-    print(f"[INFO] 读方案: {scheme_path}")
-    statuses = load_scheme(scheme_path, idx=args.scheme_idx)
-    print(f"[INFO] statuses 数: {len(statuses)}（取方案 #{args.scheme_idx}）")
+    if args.from_excel:
+        print(f"[INFO] 读 Excel: {args.from_excel} (方案 #{args.scheme_idx + 1}, 阶段={args.stage})")
+        statuses = load_scheme_from_excel(
+            args.from_excel, args.scheme_idx + 1, args.stage)
+        print(f"[INFO] Excel 读到 {len(statuses)} 条状态(行序与 normList 一致)")
+    else:
+        print(f"[INFO] 读方案: {scheme_path}")
+        statuses = load_scheme(scheme_path, idx=args.scheme_idx)
+        print(f"[INFO] statuses 数: {len(statuses)}（取方案 #{args.scheme_idx}）")
 
     if len(edges) != len(statuses):
         print(f"[WARN] 长度不一致！edges={len(edges)} != statuses={len(statuses)}")

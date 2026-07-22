@@ -42,7 +42,7 @@ public class recognizeLoopNewTest {
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
         ObjectMapper mapper = new ObjectMapper();
 
-        InputStream topoInputStream = main.class.getClassLoader().getResourceAsStream("测试新遗传算法2.json");
+        InputStream topoInputStream = main.class.getClassLoader().getResourceAsStream("测试新遗传算法2266成本.json");
         if (topoInputStream == null) {
             throw new RuntimeException("找不到资源文件: topooutputAI.json");
         }
