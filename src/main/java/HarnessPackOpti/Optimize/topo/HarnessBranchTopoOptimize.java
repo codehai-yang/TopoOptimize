@@ -673,6 +673,8 @@ public class HarnessBranchTopoOptimize {
             TopDetail = findBest;
             long genDuration = System.currentTimeMillis() - startTime;
             System.out.println("第" + hybridizationNumber + "代迭代结束，耗时：" + genDuration);
+            // 提示 GC 回收本代生成的大量临时对象（10000+ 方案的中转数据）
+            System.gc();
             if (hybridizationNumber == 1) {
                 double costTotal = Double
                         .parseDouble(((Map<String, Object>) findBest.get(0).get("成本")).get("总成本").toString());
@@ -2597,6 +2599,8 @@ public class HarnessBranchTopoOptimize {
         }
         System.out.println("[hybridization] 阶段二通过约束 " + phase2Valid.size() + " 个,耗时 "
                 + (System.currentTimeMillis() - phase2CheckTime) + " ms");
+        // 交叉变异原始产物已用完（仅 valid 子集保留），释放引用
+        phase2Raw = null;
 
         // 5) 合并两阶段方案(阶段一已入仓,阶段二已入仓,这里只做候选池聚合)
         List<List<String>> allSchemes = new ArrayList<>();
@@ -2613,6 +2617,10 @@ public class HarnessBranchTopoOptimize {
             }
         }
 
+        // 阶段一方案列表已用完（已通过 predictAndFindBest 预测完毕），释放引用
+        // phase1 约 10000 条 List<String>，每条约 N 个分支状态，占用大量内存
+        phase1 = null;
+
         if (allSchemes.isEmpty()) {
             return null;
         }
@@ -2623,6 +2631,10 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, Object>> mapList = predictAndFindBest(phase2Valid, edges, normList, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection,
                 multiLoopInfos, pointMap, null, objectMapper);
+        // 阶段二方案列表已用完（已通过 predictAndFindBest 预测完毕），释放引用
+        int allSchemesSize = allSchemes.size();
+        allSchemes = null;
+        phase2Valid = null;
         long findBestTimeMs = System.currentTimeMillis() - predTime;
         // 对阶段一何阶段二生成的样本再次进行找top
         List<Map<String, Object>> finaleResult = new ArrayList<>();
@@ -2630,7 +2642,7 @@ public class HarnessBranchTopoOptimize {
         finaleResult.addAll(phase1Top);
         FindBest findBest = new FindBest();
         List<Map<String, Object>> topBeat = findBest.findBest(finaleResult, "成本", TopNumber);
-        System.out.println("预测" + allSchemes.size() + "个样本成本耗时：" + findBestTimeMs);
+        System.out.println("预测" + allSchemesSize + "个样本成本耗时：" + findBestTimeMs);
         return topBeat;
     }
 
@@ -4076,7 +4088,8 @@ public class HarnessBranchTopoOptimize {
                     }
                 }
                 float predict = gine.predict(x, edgeIndex, edgeAttr);
-                // 构建返回结果，与changeAndFindBest格式保持一致
+                // 构建返回结果：仅保留 serviceableStatue 和成本，不携带 serviceableEdges
+                // serviceableEdges（所有边的深拷贝）约 100KB/方案，10000 方案 ≈ 1GB，下游不需要
                 Map<String, Object> costResultData = new HashMap<>();
                 costResultData.put("总成本", (double) predict);
                 // AI模型仅预测成本，重量和长度置为占位值
@@ -4085,7 +4098,6 @@ public class HarnessBranchTopoOptimize {
 
                 Map<String, Object> map = new HashMap<>();
                 map.put("成本", costResultData);
-                map.put("serviceableEdges", serviceableEdge);
                 map.put("serviceableStatue", serviceableStatue);
                 return map;
             });
@@ -4093,11 +4105,14 @@ public class HarnessBranchTopoOptimize {
         // 线程池提交任务
         List<Future<Map<String, Object>>> futures = new ArrayList<>();
         for (Callable<Map<String, Object>> task : tasks) {
-            Future<Map<String, Object>> submit = threadPool.submit(task);
-            futures.add(submit);
+            futures.add(threadPool.submit(task));
         }
-        // 获取线程池结果
-        for (Future<Map<String, Object>> future : futures) {
+        // 提交完毕立即释放 tasks 引用（每个 task 内部持有的闭包变量可提前被 GC）
+        tasks = null;
+
+        // 获取线程池结果（边取边释放 Future，避免全部结果同时驻留内存）
+        for (int i = 0; i < futures.size(); i++) {
+            Future<Map<String, Object>> future = futures.get(i);
             try {
                 Map<String, Object> result = future.get(6000, java.util.concurrent.TimeUnit.SECONDS);
                 if (result != null) {
@@ -4106,7 +4121,9 @@ public class HarnessBranchTopoOptimize {
             } catch (Exception e) {
                 e.printStackTrace();
             }
+            futures.set(i, null); // 释放 Future 引用，允许 GC
         }
+        futures.clear();
         // 按AI预测成本排序，取topN
         FindBest findBest = new FindBest();
         if (findBestPre != null) {
@@ -4118,6 +4135,8 @@ public class HarnessBranchTopoOptimize {
             }
         }
         List<Map<String, Object>> topBeat = findBest.findBest(resultList, "成本", TopNumber);
+        // 释放全量预测结果列表（10000+ 条），仅保留 topBeat
+        resultList = null;
         // WareHouseTop 去重入仓
         for (Map<String, Object> map : topBeat) {
             List<String> list = (List<String>) map.get("serviceableStatue");
