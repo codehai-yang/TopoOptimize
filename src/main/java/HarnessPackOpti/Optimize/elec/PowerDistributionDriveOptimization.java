@@ -16,13 +16,14 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
+import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Algorithm.FindBest;
 import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
-import HarnessPackOpti.ProjectInfoOutPut.PowerProjectCircuitInfoOutput;
+import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import HarnessPackOpti.utils.ThreadPool;
 
 /**
@@ -96,7 +97,7 @@ public class PowerDistributionDriveOptimization {
 
         long categoryTime = System.currentTimeMillis();
         ObjectMapper objectMapper = new ObjectMapper();
-        PowerProjectCircuitInfoOutput powerProjectCircuitInfoOutput = new PowerProjectCircuitInfoOutput();
+        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         JsonToMap jsonToMap = new JsonToMap();
         Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
@@ -112,28 +113,8 @@ public class PowerDistributionDriveOptimization {
         optimizeStopStatusStore.setKey(optimizeRecordId);
 
         // 整车信息计算(初始方案)
-        String originalResult = powerProjectCircuitInfoOutput.powerOptimize(jsonContent);
+        String originalResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
 
-        // ========== 性能优化：构建静态上下文 + 缓存 baseline loopdetails（供 GA 增量评估复用） ==========
-        PowerProjectCircuitInfoOutput.ProjectContext projectContext = powerProjectCircuitInfoOutput
-                .prepareContext(jsonMap);
-        // baseline 一次完整计算，提取 loopdetails 缓存
-        Map<String, Object> baselineResultMap = powerProjectCircuitInfoOutput.powerOptimizeFromMap(jsonMap);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> baselineLoopdetails = (Map<String, Object>) baselineResultMap.get("__loopdetails__");
-        // ========== 性能优化：用 baseline 填充增量 totals 缓存（GA 内层 evaluateDeltaFast 直接用）
-        // ==========
-        powerProjectCircuitInfoOutput.primeBaselineCache(projectContext, baselineLoopdetails);
-        // baseline 用电器位置（每个用电器名称 → 当前位置） + 回路起止点（loopId → startApp|endApp）用于差异对比
-        Map<String, String> baselineAppPosition = new HashMap<>();
-        for (Map<String, String> ap : appPositions) {
-            baselineAppPosition.put(ap.get("appName"), ap.get("unregularPointName"));
-        }
-        Map<String, String> baselineLoopStartEnd = new HashMap<>();
-        for (Map<String, String> li : loopInfos) {
-            baselineLoopStartEnd.put(li.get("id"),
-                    String.valueOf(li.get("startApp")) + "|" + String.valueOf(li.get("endApp")));
-        }
         // 判断是哪种类型优化（新格式：优化类型取自 optimizeRecord.type）
         // 4=驱动回路，3=配电回路，5=配电回路+主供电回路+驱动回路（包括硬线/高速线缆/接地回路）
         String optimizeType = optimizeRecord.get("type") != null ? optimizeRecord.get("type").toString() : "5";
@@ -430,7 +411,7 @@ public class PowerDistributionDriveOptimization {
                     jsonMapCopy.put("appPositions", appPositionsCopy);
                     // ========== 修复1：计算成本时使用修改后的方案 ==========
                     String modifiedJson = objectMapper.writeValueAsString(jsonMapCopy);
-                    String s = powerProjectCircuitInfoOutput.powerOptimize(modifiedJson);
+                    String s = projectCircuitInfoOutput.projectCircuitInfoOutput(modifiedJson);
                     if (s == null) {
                         continue;
                     }
@@ -483,7 +464,7 @@ public class PowerDistributionDriveOptimization {
             for (Map<String, Object> slim : topBest) {
                 try {
                     enriched.add(enrichToFullScheme(slim, jsonMap, objectMapper,
-                            powerProjectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo));
+                            projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo));
                 } catch (Exception e) {
                     System.err.println("方案还原失败，使用精简版: " + e.getMessage());
                     enriched.add(slim);
@@ -516,16 +497,13 @@ public class PowerDistributionDriveOptimization {
                     mutualGroup,
                     pointNameId,
                     objectMapper,
-                    powerProjectCircuitInfoOutput,
+                    projectCircuitInfoOutput,
                     jsonToMap,
                     jsonMap,
                     loopElecById,
                     loopElecByIdStart,
-                    resourceNum,
-                    projectContext,
-                    baselineLoopdetails,
-                    baselineAppPosition,
-                    baselineLoopStartEnd);
+                    resourceNum
+);
 
             System.out.println("初代样本生成耗时: " + (System.currentTimeMillis() - gaInitTime) + "ms");
             System.out.println("有效初代样本数: " + initialPopulation.size());
@@ -572,15 +550,14 @@ public class PowerDistributionDriveOptimization {
                     mutualGroup,
                     pointNameId,
                     objectMapper,
-                    powerProjectCircuitInfoOutput,
+                    projectCircuitInfoOutput,
                     jsonToMap,
                     topoInfoMap,
                     projectInfo,
                     loopElecById,
                     random,
-                    resourceNum, jsonMap,
-                    projectContext, baselineLoopdetails,
-                    baselineAppPosition, baselineLoopStartEnd);
+                    resourceNum, jsonMap
+);
 
             System.out.println("交叉生成 " + crossedSchemes.size() + " 个方案");
 
@@ -597,15 +574,14 @@ public class PowerDistributionDriveOptimization {
                     mutualGroup,
                     pointNameId,
                     objectMapper,
-                    powerProjectCircuitInfoOutput,
+                    projectCircuitInfoOutput,
                     jsonToMap,
                     jsonMap,
                     loopElecById,
                     loopElecByIdStart,
                     random,
-                    resourceNum,
-                    projectContext, baselineLoopdetails,
-                    baselineAppPosition, baselineLoopStartEnd);
+                    resourceNum
+);
             System.out.println("变异生成 " + mutatedSchemes.size() + " 个方案");
 
             if (mutatedSchemes.isEmpty()) {
@@ -631,16 +607,13 @@ public class PowerDistributionDriveOptimization {
                         mutualGroup,
                         pointNameId,
                         objectMapper,
-                        powerProjectCircuitInfoOutput,
+                        projectCircuitInfoOutput,
                         jsonToMap,
                         jsonMap,
                         loopElecById,
                         loopElecByIdStart,
-                        resourceNum,
-                        projectContext,
-                        baselineLoopdetails,
-                        baselineAppPosition,
-                        baselineLoopStartEnd);
+                        resourceNum
+);
                 numb++;
                 if (numb > AutoCompleteNumber) {
                     break;
@@ -695,7 +668,7 @@ public class PowerDistributionDriveOptimization {
         for (Map<String, Object> slim : currentTopBest) {
             try {
                 enrichedTopBest.add(enrichToFullScheme(slim, jsonMap, objectMapper,
-                        powerProjectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo));
+                        projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo));
             } catch (Exception e) {
                 System.err.println("方案还原失败，使用精简版: " + e.getMessage());
                 enrichedTopBest.add(slim);
@@ -835,17 +808,14 @@ public class PowerDistributionDriveOptimization {
             Map<String, List<String>> mutualGroup,
             Map<String, String> pointNameId,
             ObjectMapper objectMapper,
-            PowerProjectCircuitInfoOutput powerProjectCircuitInfoOutput,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
             JsonToMap jsonToMap,
             Map<String, Object> topoInfoMap,
             Map<String, String> projectInfo,
             Map<String, Set<String>> loopElecById,
             Random random,
-            Map<String, AppResourceLimit> resourceNum, Map<String, Object> jsonMap,
-            PowerProjectCircuitInfoOutput.ProjectContext projectContext,
-            Map<String, Object> baselineLoopdetails,
-            Map<String, String> baselineAppPosition,
-            Map<String, String> baselineLoopStartEnd) throws Exception {
+            Map<String, AppResourceLimit> resourceNum, Map<String, Object> jsonMap)
+            throws Exception {
 
         long xStartMs = System.currentTimeMillis();
         List<Map<String, Object>> crossedSchemes = Collections.synchronizedList(new ArrayList<>());
@@ -874,20 +844,16 @@ public class PowerDistributionDriveOptimization {
                     Map<String, Object> child1 = uniformCrossover(
                             pair[0], pair[1], targetLoops, allLoopInfos, allAppPositions,
                             elecChangeablePosition, togetherGroup, mutualGroup,
-                            pointNameId, objectMapper, powerProjectCircuitInfoOutput,
-                            jsonToMap, jsonMap, loopElecById, rnd, resourceNum,
-                            projectContext, baselineLoopdetails,
-                            baselineAppPosition, baselineLoopStartEnd);
+                            pointNameId, objectMapper, projectCircuitInfoOutput,
+                            jsonToMap, jsonMap, loopElecById, rnd, resourceNum);
                     if (child1 != null)
                         crossedSchemes.add(child1);
 
                     Map<String, Object> child2 = uniformCrossover(
                             pair[1], pair[0], targetLoops, allLoopInfos, allAppPositions,
                             elecChangeablePosition, togetherGroup, mutualGroup,
-                            pointNameId, objectMapper, powerProjectCircuitInfoOutput,
-                            jsonToMap, jsonMap, loopElecById, rnd, resourceNum,
-                            projectContext, baselineLoopdetails,
-                            baselineAppPosition, baselineLoopStartEnd);
+                            pointNameId, objectMapper, projectCircuitInfoOutput,
+                            jsonToMap, jsonMap, loopElecById, rnd, resourceNum);
                     if (child2 != null)
                         crossedSchemes.add(child2);
                 } catch (Exception e) {
@@ -917,16 +883,12 @@ public class PowerDistributionDriveOptimization {
             Map<String, List<String>> mutualGroup,
             Map<String, String> pointNameId,
             ObjectMapper objectMapper,
-            PowerProjectCircuitInfoOutput powerProjectCircuitInfoOutput,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
             JsonToMap jsonToMap,
             Map<String, Object> jsonMap,
             Map<String, Set<String>> loopElecById,
             Random random,
-            Map<String, AppResourceLimit> resourceNum,
-            PowerProjectCircuitInfoOutput.ProjectContext projectContext,
-            Map<String, Object> baselineLoopdetails,
-            Map<String, String> baselineAppPosition,
-            Map<String, String> baselineLoopStartEnd) throws Exception {
+            Map<String, AppResourceLimit> resourceNum) throws Exception {
 
         List<Map<String, String>> parent1Loops = (List<Map<String, String>>) parent1.get("loopInfos");
         List<Map<String, String>> parent2Loops = (List<Map<String, String>>) parent2.get("loopInfos");
@@ -1022,53 +984,19 @@ public class PowerDistributionDriveOptimization {
         if (!WareHouse.add(fingerprint))
             return null;
 
-        // 高速增量评估：缓存 findTwoPointInfo/coiling + 增量 totals
-        // 失败兜底走 evaluateDeltaFromContext，保证 GA 在边界场景下不丢方案
-        Set<String> changedLoopIds = computeChangedLoopIds(
-                childLoops, childApps, baselineLoopStartEnd, baselineAppPosition);
-        Map<String, Double> deltaTotals = null;
-        try {
-            deltaTotals = powerProjectCircuitInfoOutput.evaluateDeltaFast(
-                    projectContext, childApps, childLoops, changedLoopIds, baselineLoopdetails);
-        } catch (Exception e) {
-            // 静默回退到慢速路径
-        }
+        // 整车全量成本计算
+        Map<String, Double> deltaTotals = computeFullCost(
+                childLoops, childApps, jsonMap, objectMapper,
+                projectCircuitInfoOutput, jsonToMap);
         if (deltaTotals == null) {
-            try {
-                Map<String, Object> slow = powerProjectCircuitInfoOutput.evaluateDeltaFromContext(
-                        projectContext, childApps, childLoops, changedLoopIds, baselineLoopdetails);
-                if (slow != null) {
-                    Object tc = slow.get("总成本");
-                    Object tw = slow.get("回路总重量");
-                    Object tl = slow.get("回路总长度");
-                    if (tc instanceof Number && tw instanceof Number && tl instanceof Number) {
-                        deltaTotals = new HashMap<>();
-                        deltaTotals.put("总成本", ((Number) tc).doubleValue());
-                        deltaTotals.put("回路总重量", ((Number) tw).doubleValue());
-                        deltaTotals.put("回路总长度", ((Number) tl).doubleValue());
-                    }
-                }
-            } catch (Exception e2) {
-                WareHouse.remove(fingerprint);
-                return null;
-            }
-        }
-        if (deltaTotals == null) {
-            WareHouse.remove(fingerprint);
-            return null;
-        }
-        Double totalCost = deltaTotals.get("总成本");
-        Double totalWeight = deltaTotals.get("回路总重量");
-        Double totalLength = deltaTotals.get("回路总长度");
-        if (totalCost == null || totalWeight == null || totalLength == null) {
             WareHouse.remove(fingerprint);
             return null;
         }
         // 精简方案 Map：仅保留 findBest/交叉/变异 真正需要的三个字段
         Map<String, Double> projectCost = new HashMap<>();
-        projectCost.put("总成本", totalCost);
-        projectCost.put("总重量", totalWeight);
-        projectCost.put("总长度", totalLength);
+        projectCost.put("总成本", deltaTotals.get("总成本"));
+        projectCost.put("总重量", deltaTotals.get("回路总重量"));
+        projectCost.put("总长度", deltaTotals.get("回路总长度"));
         Map<String, Object> map = new HashMap<>();
         map.put("成本", projectCost);
         map.put("loopInfos", childLoops);
@@ -1204,17 +1132,13 @@ public class PowerDistributionDriveOptimization {
             Map<String, List<String>> mutualGroup,
             Map<String, String> pointNameId,
             ObjectMapper objectMapper,
-            PowerProjectCircuitInfoOutput powerProjectCircuitInfoOutput,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
             JsonToMap jsonToMap,
             Map<String, Object> jsonMap,
             Map<String, Set<String>> loopElecById,
             Map<String, Set<String>> loopElecByIdStart,
             Random random,
-            Map<String, AppResourceLimit> resourceNum,
-            PowerProjectCircuitInfoOutput.ProjectContext projectContext,
-            Map<String, Object> baselineLoopdetails,
-            Map<String, String> baselineAppPosition,
-            Map<String, String> baselineLoopStartEnd) throws Exception {
+            Map<String, AppResourceLimit> resourceNum) throws Exception {
 
         long mStartMs = System.currentTimeMillis();
         List<Map<String, Object>> mutatedSchemes = Collections.synchronizedList(new ArrayList<>());
@@ -1264,55 +1188,18 @@ public class PowerDistributionDriveOptimization {
                         if (!WareHouse.add(fingerprint))
                             continue;
 
-                        // 高速增量评估：缓存 findTwoPointInfo/coiling + 增量 totals
-                        // 失败兜底走 evaluateDeltaFromContext，保证 GA 在边界场景下不丢方案
-                        Set<String> changedLoopIds = computeChangedLoopIds(
-                                variantLoops, appPositionsCopy,
-                                baselineLoopStartEnd, baselineAppPosition);
-                        Map<String, Double> deltaTotals = null;
-                        try {
-                            deltaTotals = powerProjectCircuitInfoOutput.evaluateDeltaFast(
-                                    projectContext, appPositionsCopy, variantLoops,
-                                    changedLoopIds, baselineLoopdetails);
-                        } catch (Exception e) {
-                            // 静默回退
-                        }
+                        // 整车全量成本计算
+                        Map<String, Double> deltaTotals = computeFullCost(
+                                variantLoops, appPositionsCopy, jsonMap, objectMapper,
+                                projectCircuitInfoOutput, jsonToMap);
                         if (deltaTotals == null) {
-                            try {
-                                Map<String, Object> slow = powerProjectCircuitInfoOutput.evaluateDeltaFromContext(
-                                        projectContext, appPositionsCopy, variantLoops,
-                                        changedLoopIds, baselineLoopdetails);
-                                if (slow != null) {
-                                    Object tc = slow.get("总成本");
-                                    Object tw = slow.get("回路总重量");
-                                    Object tl = slow.get("回路总长度");
-                                    if (tc instanceof Number && tw instanceof Number && tl instanceof Number) {
-                                        deltaTotals = new HashMap<>();
-                                        deltaTotals.put("总成本", ((Number) tc).doubleValue());
-                                        deltaTotals.put("回路总重量", ((Number) tw).doubleValue());
-                                        deltaTotals.put("回路总长度", ((Number) tl).doubleValue());
-                                    }
-                                }
-                            } catch (Exception e2) {
-                                WareHouse.remove(fingerprint);
-                                continue;
-                            }
-                        }
-                        if (deltaTotals == null) {
-                            WareHouse.remove(fingerprint);
-                            continue;
-                        }
-                        Double totalCost = deltaTotals.get("总成本");
-                        Double totalWeight = deltaTotals.get("回路总重量");
-                        Double totalLength = deltaTotals.get("回路总长度");
-                        if (totalCost == null || totalWeight == null || totalLength == null) {
                             WareHouse.remove(fingerprint);
                             continue;
                         }
                         Map<String, Double> projectCost = new HashMap<>();
-                        projectCost.put("总成本", totalCost);
-                        projectCost.put("总重量", totalWeight);
-                        projectCost.put("总长度", totalLength);
+                        projectCost.put("总成本", deltaTotals.get("总成本"));
+                        projectCost.put("总重量", deltaTotals.get("回路总重量"));
+                        projectCost.put("总长度", deltaTotals.get("回路总长度"));
                         Map<String, Object> map = new HashMap<>();
                         map.put("成本", projectCost);
                         map.put("loopInfos", variantLoops);
@@ -1721,43 +1608,37 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 计算候选相对 baseline 发生变化的回路 ID 集合
-     * 判定规则：loop 的 startApp/endApp 变化，或起止用电器位置变化
+     * 整车全量成本计算：根据回路连接关系和用电器位置，调用 projectCircuitInfoOutput 计算总成本/重量/长度。
+     * 返回 null 表示计算失败。
      */
-    private Set<String> computeChangedLoopIds(
-            List<Map<String, String>> candidateLoopInfos,
-            List<Map<String, String>> candidateAppPositions,
-            Map<String, String> baselineLoopStartEnd,
-            Map<String, String> baselineAppPosition) {
-        if (baselineLoopStartEnd == null || baselineAppPosition == null) {
-            // baseline 缺失：保守地视为所有回路都变化
-            Set<String> all = new HashSet<>();
-            for (Map<String, String> li : candidateLoopInfos) {
-                all.add(li.get("id"));
-            }
-            return all;
-        }
-        Map<String, String> candidateAppPos = new HashMap<>();
-        for (Map<String, String> ap : candidateAppPositions) {
-            candidateAppPos.put(ap.get("appName"), ap.get("unregularPointName"));
-        }
-        Set<String> changed = new HashSet<>();
-        for (Map<String, String> li : candidateLoopInfos) {
-            String loopId = li.get("id");
-            String startApp = li.get("startApp");
-            String endApp = li.get("endApp");
-            String baseKey = baselineLoopStartEnd.get(loopId);
-            String newKey = String.valueOf(startApp) + "|" + String.valueOf(endApp);
-            boolean changedConnection = !Objects.equals(baseKey, newKey);
-            boolean changedStartPos = startApp != null
-                    && !Objects.equals(baselineAppPosition.get(startApp), candidateAppPos.get(startApp));
-            boolean changedEndPos = endApp != null
-                    && !Objects.equals(baselineAppPosition.get(endApp), candidateAppPos.get(endApp));
-            if (changedConnection || changedStartPos || changedEndPos) {
-                changed.add(loopId);
-            }
-        }
-        return changed;
+    private Map<String, Double> computeFullCost(
+            List<Map<String, String>> loopInfos,
+            List<Map<String, String>> appPositions,
+            Map<String, Object> jsonMap,
+            ObjectMapper objectMapper,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
+            JsonToMap jsonToMap) throws Exception {
+        Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
+        jsonMapCopy.put("loopInfos", loopInfos);
+        jsonMapCopy.put("appPositions", appPositions);
+        String result = projectCircuitInfoOutput.projectCircuitInfoOutput(
+                objectMapper.writeValueAsString(jsonMapCopy));
+        if (result == null || result.isEmpty())
+            return null;
+        Map<String, Object> parsed = jsonToMap.TransJsonToMap(result);
+        Map<String, Object> pcInfo = (Map<String, Object>) parsed.get("projectCircuitInfo");
+        if (pcInfo == null)
+            return null;
+        Object tc = pcInfo.get("总成本");
+        Object tw = pcInfo.get("回路总重量");
+        Object tl = pcInfo.get("回路总长度");
+        if (!(tc instanceof Number && tw instanceof Number && tl instanceof Number))
+            return null;
+        Map<String, Double> totals = new HashMap<>();
+        totals.put("总成本", ((Number) tc).doubleValue());
+        totals.put("回路总重量", ((Number) tw).doubleValue());
+        totals.put("回路总长度", ((Number) tl).doubleValue());
+        return totals;
     }
 
     private String generateSchemeFingerprint(List<Map<String, String>> loopInfos,
@@ -1800,7 +1681,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, Object> slim,
             Map<String, Object> jsonMap,
             ObjectMapper objectMapper,
-            PowerProjectCircuitInfoOutput powerProjectCircuitInfoOutput,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
             JsonToMap jsonToMap,
             Map<String, Object> topoInfoMap,
             Map<String, String> projectInfo) throws Exception {
@@ -1810,7 +1691,7 @@ public class PowerDistributionDriveOptimization {
         Map<String, Object> tempJsonMap = new HashMap<>(jsonMap);
         tempJsonMap.put("loopInfos", loops);
         tempJsonMap.put("appPositions", apps);
-        String result = powerProjectCircuitInfoOutput.powerOptimize(objectMapper.writeValueAsString(tempJsonMap));
+        String result = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(tempJsonMap));
         if (result == null || result.isEmpty())
             return slim;
 
@@ -1839,16 +1720,12 @@ public class PowerDistributionDriveOptimization {
             Map<String, List<String>> mutualGroup,
             Map<String, String> pointNameId,
             ObjectMapper objectMapper,
-            PowerProjectCircuitInfoOutput powerProjectCircuitInfoOutput,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
             JsonToMap jsonToMap,
             Map<String, Object> jsonMap,
             Map<String, Set<String>> loopElecById,
             Map<String, Set<String>> loopElecByIdStart,
-            Map<String, AppResourceLimit> resourceNum,
-            PowerProjectCircuitInfoOutput.ProjectContext projectContext,
-            Map<String, Object> baselineLoopdetails,
-            Map<String, String> baselineAppPosition,
-            Map<String, String> baselineLoopStartEnd) throws Exception {
+            Map<String, AppResourceLimit> resourceNum) throws Exception {
         // 线程安全的结果收集器
         List<Map<String, Object>> population = Collections.synchronizedList(new ArrayList<>());
         // 每个任务最多重试次数
@@ -1898,55 +1775,18 @@ public class PowerDistributionDriveOptimization {
                         if (!WareHouse.add(fingerprint))
                             continue;
 
-                        // 高速增量评估：缓存 findTwoPointInfo/coiling + 增量 totals（避免每候选重算全车）
-                        // 失败兜底走 evaluateDeltaFromContext，保证 GA 在边界场景下不丢方案
-                        Set<String> changedLoopIds = computeChangedLoopIds(
-                                loopInfoCopy, appPositionsCopy,
-                                baselineLoopStartEnd, baselineAppPosition);
-                        Map<String, Double> deltaTotals = null;
-                        try {
-                            deltaTotals = powerProjectCircuitInfoOutput.evaluateDeltaFast(
-                                    projectContext, appPositionsCopy, loopInfoCopy,
-                                    changedLoopIds, baselineLoopdetails);
-                        } catch (Exception e) {
-                            // 静默回退
-                        }
+                        // 整车全量成本计算
+                        Map<String, Double> deltaTotals = computeFullCost(
+                                loopInfoCopy, appPositionsCopy, jsonMap, objectMapper,
+                                projectCircuitInfoOutput, jsonToMap);
                         if (deltaTotals == null) {
-                            try {
-                                Map<String, Object> slow = powerProjectCircuitInfoOutput.evaluateDeltaFromContext(
-                                        projectContext, appPositionsCopy, loopInfoCopy,
-                                        changedLoopIds, baselineLoopdetails);
-                                if (slow != null) {
-                                    Object tc = slow.get("总成本");
-                                    Object tw = slow.get("回路总重量");
-                                    Object tl = slow.get("回路总长度");
-                                    if (tc instanceof Number && tw instanceof Number && tl instanceof Number) {
-                                        deltaTotals = new HashMap<>();
-                                        deltaTotals.put("总成本", ((Number) tc).doubleValue());
-                                        deltaTotals.put("回路总重量", ((Number) tw).doubleValue());
-                                        deltaTotals.put("回路总长度", ((Number) tl).doubleValue());
-                                    }
-                                }
-                            } catch (Exception e2) {
-                                WareHouse.remove(fingerprint);
-                                continue;
-                            }
-                        }
-                        if (deltaTotals == null) {
-                            WareHouse.remove(fingerprint);
-                            continue;
-                        }
-                        Double totalCost = deltaTotals.get("总成本");
-                        Double totalWeight = deltaTotals.get("回路总重量");
-                        Double totalLength = deltaTotals.get("回路总长度");
-                        if (totalCost == null || totalWeight == null || totalLength == null) {
                             WareHouse.remove(fingerprint);
                             continue;
                         }
                         Map<String, Double> projectCost = new HashMap<>();
-                        projectCost.put("总成本", totalCost);
-                        projectCost.put("总重量", totalWeight);
-                        projectCost.put("总长度", totalLength);
+                        projectCost.put("总成本", deltaTotals.get("总成本"));
+                        projectCost.put("总重量", deltaTotals.get("回路总重量"));
+                        projectCost.put("总长度", deltaTotals.get("回路总长度"));
                         Map<String, Object> map = new HashMap<>();
                         map.put("成本", projectCost);
                         map.put("loopInfos", loopInfoCopy);
