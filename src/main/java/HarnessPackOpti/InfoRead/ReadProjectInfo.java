@@ -68,6 +68,7 @@ public class ReadProjectInfo {
             for (Map<String, Object> k : appPositionsMap) {
                 Map<String, Object> appPosition = new HashMap<>();
                 appPosition.put("用电器名称",k.get("appName"));
+                appPosition.put("用电器类型",k.get("appType"));
                 appPosition.put("用电器id",k.get("id"));
                 appPosition.put("用电器位置是否固化",k.get("positionRegular"));
                 appPosition.put("用电器固化位置点id",k.get("regularPointId"));
