@@ -59,6 +59,9 @@ public class PowerDistributionDriveOptimization {
     // 遗传算法数量不够时自动补全得次数
     public static Integer AutoCompleteNumber = 100;
 
+    // 连续空代上限：超过此轮次无新有效方案则提前终止遗传迭代
+    public static Integer MaxConsecutiveEmptyGenerations = 10;
+
     // 遗传算法每轮变异的次数
     public static Integer VariationNumber = 1;
 
@@ -211,20 +214,20 @@ public class PowerDistributionDriveOptimization {
                         list.add(pointName);
 
                         // 如果该位置点是直连接口，将整个接口组的位置都加入
-                        if (whetherToChange && pointNameSet.contains(pointName)) {
-                            // 查找该位置点属于哪个接口组
-                            for (List<String> interfacePoints : interfaceCodegroup.values()) {
-                                if (interfacePoints.contains(pointName)) {
-                                    // 将整个接口组的位置都加入可变列表
-                                    for (String interfacePoint : interfacePoints) {
-                                        if (!list.contains(interfacePoint) && allPoint.contains(interfacePoint)) {
-                                            list.add(interfacePoint);
-                                        }
-                                    }
-                                    break;
-                                }
-                            }
-                        }
+//                        if (whetherToChange && pointNameSet.contains(pointName)) {
+//                            // 查找该位置点属于哪个接口组
+//                            for (List<String> interfacePoints : interfaceCodegroup.values()) {
+//                                if (interfacePoints.contains(pointName)) {
+//                                    // 将整个接口组的位置都加入可变列表
+//                                    for (String interfacePoint : interfacePoints) {
+//                                        if (!list.contains(interfacePoint) && allPoint.contains(interfacePoint)) {
+//                                            list.add(interfacePoint);
+//                                        }
+//                                    }
+//                                    break;
+//                                }
+//                            }
+//                        }
                     }
                 }
                 list.retainAll(allPoint);
@@ -275,10 +278,11 @@ public class PowerDistributionDriveOptimization {
                 togetherGroup.computeIfAbsent(ct, k -> new ArrayList<>()).add(loopInfo.get("id"));
                 togetherList.add(loopInfo.get("id"));
             }
-            // 互斥归组（新字段 exclusiveConnRel）
+            // 互斥归组（新字段 exclusiveConnRel，按字母前缀分组：A-1/A-2 → 同组 A，组内 endApp 必须不同）
             String me = loopInfo.get("exclusiveConnRel");
             if (me != null && !me.isEmpty()) {
-                mutualGroup.computeIfAbsent(me, k -> new ArrayList<>()).add(loopInfo.get("id"));
+                String groupKey = me.contains("-") ? me.substring(0, me.lastIndexOf('-')) : me;
+                mutualGroup.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(loopInfo.get("id"));
                 mutualList.add(loopInfo.get("id"));
             }
         }
@@ -527,8 +531,21 @@ public class PowerDistributionDriveOptimization {
             }
         }
 
+        // 初代未生成任何有效方案，直接返回原始方案，不进入遗传迭代
+        if (topBest.isEmpty()) {
+            System.out.println("初代无有效方案，返回原始方案");
+            Map<String, Object> origMap = new HashMap<>();
+            origMap.put("成本", parseOriginalCost(originalResult, jsonToMap));
+            origMap.put("loopInfos", new ArrayList<>(loopInfos));
+            origMap.put("appPositions", new ArrayList<>(appPositions));
+            List<Map<String, Object>> result = new ArrayList<>();
+            result.add(origMap);
+            return objectMapper.writeValueAsString(result);
+        }
+
         // 遗传算法
         int hybridizationNumber = 0;
+        int emptyGenCount = 0; // 连续无有效变异体的代数
         List<Map<String, Object>> currentTopBest = topBest;
 
         while (true) {
@@ -585,10 +602,18 @@ public class PowerDistributionDriveOptimization {
             System.out.println("变异生成 " + mutatedSchemes.size() + " 个方案");
 
             if (mutatedSchemes.isEmpty()) {
-                System.out.println("第" + (hybridizationNumber + 1) + "代未生成有效方案，继续下一轮");
+                emptyGenCount++;
+                System.out.println("第" + (hybridizationNumber + 1) + "代未生成有效方案（连续空代: "
+                        + emptyGenCount + "/" + MaxConsecutiveEmptyGenerations + "），继续下一轮");
+                if (emptyGenCount >= MaxConsecutiveEmptyGenerations) {
+                    System.out.println("连续 " + MaxConsecutiveEmptyGenerations
+                            + " 代无新有效方案，终止遗传迭代，返回当前最优方案");
+                    break;
+                }
                 hybridizationNumber++;
                 continue;
             }
+            emptyGenCount = 0; // 有新方案，重置连续空代计数
 
             List<Map<String, Object>> resuliList = new ArrayList<>(currentTopBest);
             resuliList.addAll(crossedSchemes);
@@ -966,11 +991,8 @@ public class PowerDistributionDriveOptimization {
             }
         }
 
-        enforceTogetherGroupConstraints(childLoops, childApps, togetherGroup, loopElecById, random);
-
-        boolean success = enforceMutualGroupConstraints(childLoops, childApps, mutualGroup,
-                loopElecById, elecChangeablePosition, pointNameId, random);
-        if (!success)
+        if (!enforceAllConstraints(childLoops, childApps, togetherGroup, mutualGroup,
+                loopElecById, elecChangeablePosition, pointNameId, random))
             return null;
 
         // 关键修正：确保子代中同一用电器位置唯一且优先保留已有位置
@@ -1005,9 +1027,11 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 强制满足联动组约束
+     * 强制满足联动组约束：组内所有回路 endApp 必须一致。
+     * 取组内第一个回路的 endApp 作为标准，校验其他回路是否合法（在其 allowedEndApps 中）。
+     * 如有回路无法接受该终点 → 返回 false，方案应被丢弃。
      */
-    private void enforceTogetherGroupConstraints(
+    private boolean enforceTogetherGroupConstraints(
             List<Map<String, String>> childLoops,
             List<Map<String, String>> childApps,
             Map<String, List<String>> togetherGroup,
@@ -1030,12 +1054,23 @@ public class PowerDistributionDriveOptimization {
             }
             if (standardEndApp == null)
                 continue;
+
+            // 校验所有成员回路是否都能接受这个 standardEndApp
             for (String loopId : memberLoopIds) {
                 Map<String, String> loop = loopById.get(loopId);
-                if (loop != null)
-                    loop.put("endApp", standardEndApp);
+                if (loop == null)
+                    continue;
+                // 如果该回路 endApp 已经是标准值，无需校验
+                if (standardEndApp.equals(loop.get("endApp")))
+                    continue;
+                // 检查标准值是否在合法候选中
+                Set<String> allowedEndApps = loopElecById.get(loopId);
+                if (allowedEndApps == null || !allowedEndApps.contains(standardEndApp))
+                    return false; // 不合法，方案丢弃
+                loop.put("endApp", standardEndApp);
             }
         }
+        return true;
     }
 
     /**
@@ -1119,6 +1154,49 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
+     * 迭代执行约束强制（组团 + 互斥），直到无变更或达到最大迭代次数。
+     * 解决交叉依赖场景（如 A-组团-B, B-互斥-C, C-组团-D）的单次扫描遗漏问题。
+     */
+    private boolean enforceAllConstraints(
+            List<Map<String, String>> loops,
+            List<Map<String, String>> apps,
+            Map<String, List<String>> togetherGroup,
+            Map<String, List<String>> mutualGroup,
+            Map<String, Set<String>> loopElecById,
+            Map<String, List<String>> elecChangeablePosition,
+            Map<String, String> pointNameId,
+            Random random) {
+
+        int maxIters = 5;
+        Map<String, String> endAppSnapshot = new HashMap<>();
+
+        while (maxIters-- > 0) {
+            // 保存变更前的 endApp 快照
+            for (Map<String, String> loop : loops)
+                endAppSnapshot.put(loop.get("id"), loop.get("endApp"));
+
+            if (!enforceTogetherGroupConstraints(loops, apps, togetherGroup, loopElecById, random))
+                return false;
+            if (!enforceMutualGroupConstraints(loops, apps, mutualGroup,
+                    loopElecById, elecChangeablePosition, pointNameId, random))
+                return false;
+
+            // 检查是否有变更：任意回路 endApp 不一致则需继续迭代
+            boolean stable = true;
+            for (Map<String, String> loop : loops) {
+                if (!Objects.equals(endAppSnapshot.get(loop.get("id")), loop.get("endApp"))) {
+                    stable = false;
+                    break;
+                }
+            }
+            if (stable)
+                return true;
+        }
+        // 达到最大迭代次数仍不稳定，视为通过（实际极少发生）
+        return true;
+    }
+
+    /**
      * 变异操作（修正：位置随机加入概率保留，并增加约束修复）
      * 注：所有共享框架数据从 jsonMap 读取，方法签名只接收变化数据。
      */
@@ -1176,9 +1254,7 @@ public class PowerDistributionDriveOptimization {
                         List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(originalApps);
                         syncAppPositionsWithProbability(variantLoops, appPositionsCopy, elecChangeablePosition,
                                 pointNameId, rnd, 0.3);
-                        enforceTogetherGroupConstraints(variantLoops, appPositionsCopy, togetherGroup,
-                                loopElecById, rnd);
-                        if (!enforceMutualGroupConstraints(variantLoops, appPositionsCopy, mutualGroup,
+                        if (!enforceAllConstraints(variantLoops, appPositionsCopy, togetherGroup, mutualGroup,
                                 loopElecById, elecChangeablePosition, pointNameId, rnd))
                             continue;
                         if (!elecResourceCheck(variantLoops, resourceNum))
@@ -1608,6 +1684,34 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
+     * 解析原始方案的整车成本（总成本/总重量/总长度），用于初代为空的兜底返回。
+     */
+    private Map<String, Double> parseOriginalCost(String originalResult, JsonToMap jsonToMap) {
+        Map<String, Double> cost = new HashMap<>();
+        cost.put("总成本", 0.0);
+        cost.put("总重量", 0.0);
+        cost.put("总长度", 0.0);
+        try {
+            Map<String, Object> parsed = jsonToMap.TransJsonToMap(originalResult);
+            Map<String, Object> pcInfo = (Map<String, Object>) parsed.get("projectCircuitInfo");
+            if (pcInfo != null) {
+                Object tc = pcInfo.get("总成本");
+                Object tw = pcInfo.get("回路总重量");
+                Object tl = pcInfo.get("回路总长度");
+                if (tc instanceof Number)
+                    cost.put("总成本", ((Number) tc).doubleValue());
+                if (tw instanceof Number)
+                    cost.put("总重量", ((Number) tw).doubleValue());
+                if (tl instanceof Number)
+                    cost.put("总长度", ((Number) tl).doubleValue());
+            }
+        } catch (Exception e) {
+            // 解析失败返回默认 0.0
+        }
+        return cost;
+    }
+
+    /**
      * 整车全量成本计算：根据回路连接关系和用电器位置，调用 projectCircuitInfoOutput 计算总成本/重量/长度。
      * 返回 null 表示计算失败。
      */
@@ -1765,6 +1869,11 @@ public class PowerDistributionDriveOptimization {
                         perturbUnconstrainedLoops(
                                 loopInfoCopy, appPositionsCopy, targetLoops, elecChangeablePosition,
                                 pointNameId, random, loopElecById, loopElecByIdStart);
+
+                        // 迭代约束校验（组团 + 互斥），解决交叉依赖场景的单次扫描遗漏
+                        if (!enforceAllConstraints(loopInfoCopy, appPositionsCopy, togetherGroup, mutualGroup,
+                                loopElecById, elecChangeablePosition, pointNameId, random))
+                            continue;
 
                         // 资源检查
                         if (!elecResourceCheck(loopInfoCopy, resourceNum))

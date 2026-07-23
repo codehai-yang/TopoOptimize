@@ -18,7 +18,7 @@ public class CreateData {
     public static void main(String[] args) throws Exception {
         JsonToMap jsonToMap = new JsonToMap();
         Random random = new Random();
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\优化测试后台记录.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM项目json优化设置能量流绕线测试数据.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
