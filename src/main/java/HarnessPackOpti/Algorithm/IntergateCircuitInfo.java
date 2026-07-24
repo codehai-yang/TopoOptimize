@@ -1,5 +1,7 @@
 package HarnessPackOpti.Algorithm;
 
+import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
+
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,12 +18,12 @@ public class IntergateCircuitInfo {
             "KL30", "EFS", "ESW", "HSD", "DRV"));
 
     // 用电器类型常量
-    private static final String TYPE_用电器 = "用电器";
-    private static final String TYPE_配电单元 = "配电单元";
-    private static final String TYPE_接地点 = "接地点";
-    private static final String TYPE_控制器 = "控制器";
-    private static final String TYPE_储电单元 = "储电单元";
-    private static final String TYPE_发电单元 = "发电单元";
+    private static final String TYPE_APPLIANCE = "用电器";
+    private static final String TYPE_PDU = "配电单元";
+    private static final String TYPE_GROUND = "接地点";
+    private static final String TYPE_ECU = "控制器";
+    private static final String TYPE_BATTERY = "储电单元";
+    private static final String TYPE_GENERATOR = "发电单元";
 
     /**
      * 能量流路径计算结果
@@ -85,7 +87,7 @@ public class IntergateCircuitInfo {
      * @input pointList 整车回路整合后信息
      * @Return 整合后的回路信息
      */
-    public Map<String, Object> intergateCircuitInfo(List<String> pathId, Map<String, Object> pointList) {
+    public Map<String, Object> intergateCircuitInfo(List<String> pathId, Map<String, Object> pointList,GenerateTopoMatrix adjacencyMatrixGraph,List<Map<String, String>> edges) {
         Map<String, Object> resultMap = new HashMap<>();
 //        总成本
         Map<String, Object> totalCost = new HashMap<>();
@@ -168,12 +170,16 @@ public class IntergateCircuitInfo {
             avgLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
         // 能量流绕线字段（默认null，调用方需主动调用calculateEnergyFlowDetour填充）
-        totalCost.put("能量流绕路总数量", null);
-        totalCost.put("能量流绕路数量占比", null);
-        totalCost.put("能量流绕路长度总值", null);
-        totalCost.put("能量流绕路长度均值", null);
-        totalCost.put("能量流途径分支点名称",null);
-        totalCost.put("能量流不绕路途径分支点名称",null);
+        IntergateCircuitInfo ici = new IntergateCircuitInfo();
+        Map<String, Object> efResult = ici.calculateEnergyFlowDetour(
+                pathId, pointList,
+                adjacencyMatrixGraph.getAllPoint(),
+                adjacencyMatrixGraph.getAdj(),
+                edges);
+        totalCost.put("能量流绕路总数量", efResult.get("能量流绕路总数量"));
+        totalCost.put("能量流绕路数量占比", efResult.get("能量流绕路数量占比"));
+        totalCost.put("能量流绕路长度总值", efResult.get("能量流绕路长度总值"));
+        totalCost.put("能量流绕路长度均值", efResult.get("能量流绕路长度均值"));
         totalCost.put("回路长度均值(打断后)",avgLength2);
         totalCost.put("总理论直径",Double.parseDouble( df.format(Math.sqrt(lenght)*1.3)));
         totalCost.put("分支直径RGB坐标",getlengthColor((Double) totalCost.get("总理论直径")));
@@ -271,10 +277,10 @@ public class IntergateCircuitInfo {
         } else {
             result.put("能量流绕路长度均值", 0.0);
         }
-        result.put("能量流途径分支点名称",
-                allEnergyFlowBranchPoints.isEmpty() ? null : String.join("; ", allEnergyFlowBranchPoints));
-        result.put("能量流不绕路途径分支点名称",
-                allNoDetourBranchPoints.isEmpty() ? null : String.join("; ", allNoDetourBranchPoints));
+        // result.put("能量流途径分支点名称",
+        //         allEnergyFlowBranchPoints.isEmpty() ? null : String.join("; ", allEnergyFlowBranchPoints));
+        // result.put("能量流不绕路途径分支点名称",
+        //         allNoDetourBranchPoints.isEmpty() ? null : String.join("; ", allNoDetourBranchPoints));
         result.put("perCircuitResults", perCircuitResults);
 
         return result;
@@ -576,7 +582,7 @@ public class IntergateCircuitInfo {
         }
 
         // 接地点不允许作为能量流路径节点
-        if (TYPE_接地点.equals(toType)) {
+        if (TYPE_GROUND.equals(toType)) {
             return false;
         }
 
@@ -585,9 +591,9 @@ public class IntergateCircuitInfo {
             // 合点→合点（不允许回路间跳转）
             if (toSolder) return false;
             // 合点→配电单元（高优先级，始终允许）
-            if (TYPE_配电单元.equals(toType)) return true;
+            if (TYPE_PDU.equals(toType)) return true;
             // 合点→控制器（低优先级，仅在非高优先级模式下允许）
-            if (TYPE_控制器.equals(toType)) return !highPriorityOnly;
+            if (TYPE_ECU.equals(toType)) return !highPriorityOnly;
             // 合点不能去其他地方
             return false;
         }
@@ -595,7 +601,7 @@ public class IntergateCircuitInfo {
         // === 从其他类型到达合点 ===
         if (toSolder) {
             // 只有用电器或控制器能到达合点
-            return TYPE_用电器.equals(fromType) || TYPE_控制器.equals(fromType);
+            return TYPE_APPLIANCE.equals(fromType) || TYPE_ECU.equals(fromType);
         }
 
         // === 常规类型转移（fromType和toType都不为null） ===
@@ -603,12 +609,12 @@ public class IntergateCircuitInfo {
             return false;
         }
 
-        boolean fromConsumer = TYPE_用电器.equals(fromType);
-        boolean fromController = TYPE_控制器.equals(fromType);
-        boolean fromDistUnit = TYPE_配电单元.equals(fromType);
+        boolean fromConsumer = TYPE_APPLIANCE.equals(fromType);
+        boolean fromController = TYPE_ECU.equals(fromType);
+        boolean fromDistUnit = TYPE_PDU.equals(fromType);
 
-        boolean toDistUnit = TYPE_配电单元.equals(toType);
-        boolean toController = TYPE_控制器.equals(toType);
+        boolean toDistUnit = TYPE_PDU.equals(toType);
+        boolean toController = TYPE_ECU.equals(toType);
 
         // 配电单元 → 配电单元（级联查找上游发电/储电单元）
         if (fromDistUnit && toDistUnit) {
@@ -640,8 +646,8 @@ public class IntergateCircuitInfo {
         }
         boolean startIsSource = isPowerSource(startType);
         boolean endIsSource = isPowerSource(endType);
-        boolean startIsDist = TYPE_配电单元.equals(startType);
-        boolean endIsDist = TYPE_配电单元.equals(endType);
+        boolean startIsDist = TYPE_PDU.equals(startType);
+        boolean endIsDist = TYPE_PDU.equals(endType);
 
         // 发电单元/储电单元 ↔ 配电单元
         return (startIsSource && endIsDist) || (startIsDist && endIsSource);
@@ -651,7 +657,7 @@ public class IntergateCircuitInfo {
      * 判断是否为发电单元或储电单元
      */
     private boolean isPowerSource(String type) {
-        return TYPE_发电单元.equals(type) || TYPE_储电单元.equals(type);
+        return TYPE_GENERATOR.equals(type) || TYPE_BATTERY.equals(type);
     }
 
     /**
@@ -661,7 +667,7 @@ public class IntergateCircuitInfo {
      */
     private boolean isConsumerType(String type, String name) {
         if (type == null && name == null) return false;
-        return TYPE_用电器.equals(type) || TYPE_控制器.equals(type) || isSolderPoint(name);
+        return TYPE_APPLIANCE.equals(type) || TYPE_ECU.equals(type) || isSolderPoint(name);
     }
 
     /**
@@ -807,21 +813,22 @@ public class IntergateCircuitInfo {
                 String startName = edge.get("分支起点名称");
                 String endName = edge.get("分支终点名称");
                 if ((p1.equals(startName) && p2.equals(endName)) || (p1.equals(endName) && p2.equals(startName))) {
-                    String verifyLen = edge.get("用户确认的分支长度");
-                    String refLen = edge.get("参考长度");
-                    if (verifyLen != null && !verifyLen.isEmpty()) {
-                        length += Double.parseDouble(verifyLen);
-                    } else if (refLen != null && !refLen.isEmpty()) {
-                        length += Double.parseDouble(refLen);
+                    Object verifyLenObj = edge.get("用户确认的分支长度");
+                    Integer verifyLen = verifyLenObj == null ? null : Integer.parseInt(verifyLenObj.toString());
+                    Object refLenObj = edge.get("参考长度");
+                    Integer refLen = refLenObj == null ? null : Integer.parseInt(refLenObj.toString());
+                    if (verifyLen != null ) {
+                        length += Double.parseDouble(verifyLen.toString());
+                    } else if (refLen != null) {
+                        length += Double.parseDouble(refLen.toString());
                     } else {
-                        length += 200.0; // 默认200mm
+                        length += ProjectCircuitInfoOutput.BranchEndFallback; // 默认200mm
                     }
                     break;
                 }
             }
         }
-        // 转换为米
-        return length / 1000.0;
+        return length;
     }
 
     /**

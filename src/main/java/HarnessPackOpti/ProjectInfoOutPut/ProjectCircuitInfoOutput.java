@@ -57,7 +57,7 @@ public class ProjectCircuitInfoOutput {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM测试数据.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动优化测试数据.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         // 去掉外层可能存在的双引号（JSON被双重转义的情况）
         jsonContent = jsonContent.trim();
@@ -100,6 +100,13 @@ public class ProjectCircuitInfoOutput {
                 interruptedEdgelist.add(edge.get("分支终点名称").toString());
                 branchBreakList.add(interruptedEdgelist);
             }
+        }
+        Map<String,String> appTypeList = new HashMap<>();
+        //获取用电器类型
+        for (Map<String, String> apppos : appposition) {
+            String appName = apppos.get("用电器名称");
+            String appType = apppos.get("用电器类型");
+            appTypeList.put(appName, appType);
         }
 
         // 获取有向图之间的索引，起点到终点之间的关系
@@ -612,13 +619,19 @@ public class ProjectCircuitInfoOutput {
         Map<String, Object> elecInterfaceRelatedCircuitInfo = new HashMap<>();
         Map<String, Object> bundeleRelatedCircuitInfo = new HashMap<>();
 
+        //回路详情放入用电器类型
+        loopdetails.forEach((key, value) -> {
+            Map<String, Object> objectMap = (Map<String, Object>) value;
+            objectMap.put("起点用电器类型", appTypeList.get(objectMap.get("起点用电器名称")));
+            objectMap.put("终点用电器类型", appTypeList.get(objectMap.get("终点用电器名称")));
+        });
         List<Map<String, Object>> circuitInfo = new LinkedList<>();
         IntergateCircuitInfo circuitInfoIntergation = new IntergateCircuitInfo();
         // 回路绕线长度计算
         circuitCoilingLength(loopdetails, edges, adjacencyMatrixGraphConnector, projectInfo);
         // 所有回路信息的总和
-        Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails);
-
+        Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails,adjacencyMatrixGraph,edges);
+        IntergateCircuitInfo ici = new IntergateCircuitInfo();
         for (Map<String, Object> loopInfo : loopInfos) {
             Map<String, Object> objectMap = (Map<String, Object>) loopdetails.get(loopInfo.get("回路id").toString());
             List<String> list = new ArrayList<>();
@@ -630,6 +643,10 @@ public class ProjectCircuitInfoOutput {
                 price = wirePriceMap.get(wire.toString());
             }
             objectMap.put("导线单价", price);
+            //能量流计算
+            ici.fillSingleCircuitEnergyFlow(objectMap, loopdetails,
+                    adjacencyMatrixGraphConnector.getAllPoint(),
+                    adjacencyMatrixGraphConnector.getAdj(), edges);
             circuitInfo.add(objectMap);
         }
         // 对分支进行计算
@@ -637,7 +654,7 @@ public class ProjectCircuitInfoOutput {
 
         for (String name : systemMapset) {
             List<String> list = systemMap.get(name);
-            Map<String, Object> objectMap = circuitInfoIntergation.intergateCircuitInfo(list, loopdetails);
+            Map<String, Object> objectMap = circuitInfoIntergation.intergateCircuitInfo(list, loopdetails,adjacencyMatrixGraph,edges);
             Map<String, Object> cloneMap = (Map<String, Object>) objectMap.get("circuitInfoIntergation");
             cloneMap.remove("总理论直径");
             cloneMap.remove("分支直径RGB坐标");
@@ -652,7 +669,7 @@ public class ProjectCircuitInfoOutput {
         for (String name : elecMap.keySet()) {
             List<String> listSet = elecMap.get(name);
             Map<String, Object> objectMap1 = circuitInfoIntergation
-                    .intergateCircuitInfo(listSet.stream().collect(Collectors.toList()), loopdetails);
+                    .intergateCircuitInfo(listSet.stream().collect(Collectors.toList()), loopdetails,adjacencyMatrixGraph,edges);
             elecRelatedCircuitInfo.put(name, objectMap1);
         }
 
@@ -666,7 +683,7 @@ public class ProjectCircuitInfoOutput {
                 for (String key : interfaceDetailList.keySet()) {
                     Set<String> list1 = (Set<String>) interfaceDetailList.get(key);
                     Map<String, Object> interfaceCost = circuitInfoIntergation
-                            .intergateCircuitInfo(list1.stream().collect(Collectors.toList()), loopdetails);
+                            .intergateCircuitInfo(list1.stream().collect(Collectors.toList()), loopdetails,adjacencyMatrixGraph,edges);
                     objectMap2.put(key, interfaceCost);
                 }
                 elecInterfaceRelatedCircuitInfo.put(name, objectMap2);
@@ -1311,7 +1328,7 @@ public class ProjectCircuitInfoOutput {
      * @Return 当前分支下面的回路信息
      *         包括：总成本、回路湿区成本总加成、回路打断总成本、回路两端端子总成本、回路导线总成本、回路总重量、总理论直径、回路总长度
      */
-    public Map<String, Object> circuitProjectInfo(Map<String, Object> pointList) {
+    public Map<String, Object> circuitProjectInfo(Map<String, Object> pointList,GenerateTopoMatrix adjacencyMatrixGraph,List<Map<String, String>> edges) {
         // 总成本
         Map<String, Object> totalCost = new HashMap<>();
         totalCost.put("总成本", 0.0);
@@ -1337,8 +1354,10 @@ public class ProjectCircuitInfoOutput {
         int circuitBreakNum = 0;
         DecimalFormat df = new DecimalFormat("0.00");
         Set multiLoopInfosSet = pointList.keySet();
+        List<String> circuitIdList = new ArrayList<>();
         for (Object o : multiLoopInfosSet) {
             Map<String, Object> objectMap = (Map<String, Object>) pointList.get(o);
+            circuitIdList.add(String.valueOf(objectMap.get("回路id")));
             totalCost.put("总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("总成本").toString())
                     + Double.parseDouble(objectMap.get("回路总成本").toString()))));
             totalCost.put("回路湿区成本总加成",
@@ -1406,10 +1425,17 @@ public class ProjectCircuitInfoOutput {
         if (count > 0) {
             vagLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
-        totalCost.put("能量流绕路总数量", null);
-        totalCost.put("能量流绕路数量占比", null);
-        totalCost.put("能量流绕路长度总值", null);
-        totalCost.put("能量流绕路长度均值", null);
+        IntergateCircuitInfo ici = new IntergateCircuitInfo();
+        Map<String, Object> efResult = ici.calculateEnergyFlowDetour(
+                circuitIdList, pointList,
+                adjacencyMatrixGraph.getAllPoint(),
+                adjacencyMatrixGraph.getAdj(),
+                edges);
+        //放入totalCost
+        totalCost.put("能量流绕路总数量", efResult.get("能量流绕路总数量"));
+        totalCost.put("能量流绕路数量占比", efResult.get("能量流绕路数量占比"));
+        totalCost.put("能量流绕路长度总值", efResult.get("能量流绕路长度总值"));
+        totalCost.put("能量流绕路长度均值", efResult.get("能量流绕路长度均值"));
         totalCost.put("回路长度均值(打断后)", vagLength2);
         totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * ModelDiameterFactor)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
