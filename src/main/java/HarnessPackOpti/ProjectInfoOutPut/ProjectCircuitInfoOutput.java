@@ -57,7 +57,7 @@ public class ProjectCircuitInfoOutput {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动优化测试数据.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         // 去掉外层可能存在的双引号（JSON被双重转义的情况）
         jsonContent = jsonContent.trim();
@@ -80,6 +80,7 @@ public class ProjectCircuitInfoOutput {
         Map<String, Object> mapFile = jsonToMap.TransJsonToMap(fileStringFormat);
         ReadProjectInfo readProjectInfo = new ReadProjectInfo();
         Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(mapFile);
+        Map<String,Map<String,String>> dataMap = (Map<String,Map<String,String>>) projectInfo.get("参数配置表");
         List<Map<String, Object>> points = (List<Map<String, Object>>) projectInfo.get("所有端点信息");
         List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) projectInfo.get("回路用电器信息");
         List<Map<String, String>> appposition = (List<Map<String, String>>) projectInfo.get("用电器信息");
@@ -87,7 +88,9 @@ public class ProjectCircuitInfoOutput {
         Map<String, Object> caseInfo = (Map<String, Object>) projectInfo.get("方案信息");
         Boolean whetherToChange = caseInfo.get("直连接口是否发生变化") == null
                 || caseInfo.get("直连接口是否发生变化").toString().equals("false") ? false : true;
-
+//        if(dataMap!=null){
+//            elecFixedLocationLibrary = dataMap;
+//        }
         List<String> strPointName = new ArrayList<>();
         List<String> endPointName = new ArrayList<>();
         List<List<String>> branchBreakList = new ArrayList<>();
