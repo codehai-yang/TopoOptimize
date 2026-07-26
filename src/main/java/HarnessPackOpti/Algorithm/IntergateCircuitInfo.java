@@ -363,6 +363,15 @@ public class IntergateCircuitInfo {
             orientations.add(new int[]{1, 0, 0});
         }
 
+        // 读取本回路自身经过的分支点(位置序列)，用于把能量流路径展开为真实走线
+        List<String> ownBranchPoints = new ArrayList<>();
+        Object bpObj = loopInfo.get("回路途径分支点");
+        if (bpObj instanceof List) {
+            for (Object o : (List<?>) bpObj) {
+                if (o != null) ownBranchPoints.add(String.valueOf(o));
+            }
+        }
+
         // 每个朝向都强制经过本回路两端，收集有效结果
         List<EnergyFlowResult> candidates = new ArrayList<>();
         for (int[] o : orientations) {
@@ -372,7 +381,7 @@ public class IntergateCircuitInfo {
                     circuitId,
                     term[0], term[1], term[2],
                     up[0], up[1], up[2],
-                    signalName,
+                    signalName, ownBranchPoints,
                     appGraph, appTypeMap, appPosMap, allPoint, adj, edges);
             if (r != null && r.hasEnergyFlow) {
                 r.priority = o[2];
@@ -433,6 +442,7 @@ public class IntergateCircuitInfo {
             String terminalApp, String terminalType, String terminalPos,
             String upstreamApp, String upstreamType, String upstreamPos,
             String anchorSignalName,
+            List<String> ownBranchPoints,
             Map<String, List<AppEdge>> appGraph,
             Map<String, String> appTypeMap,
             Map<String, String> appPosMap,
@@ -511,8 +521,38 @@ public class IntergateCircuitInfo {
         String sourceApp = bestAppPath.get(bestAppPath.size() - 1);
         String sourcePos = appPosMap.get(sourceApp);
 
-        // 反转为：源 → ... → 上游端 → 终端(合点)
-        List<String> efPositionPath = buildPositionPath(bestAppPath, appPosMap);
+        // 构造能量流“位置级”路径：逐段展开为真实经过的分支点。
+        //  · 锚点段(终端→上游，即本回路自身)：使用本回路的 回路途径分支点(按终端→上游定向)，
+        //    保证电流确实从消费端沿着本回路自身的线走到另一端，而不是只经过两个端点。
+        //  · 其余段(上游→…→源，经过其它回路)：用位置图最短路展开为真实位置序列。
+        List<String> efPositionPath = new ArrayList<>();
+        for (int i = 0; i < bestAppPath.size() - 1; i++) {
+            String aApp = bestAppPath.get(i);
+            String bApp = bestAppPath.get(i + 1);
+            String aPos = appPosMap.get(aApp);
+            String bPos = appPosMap.get(bApp);
+            List<String> seg;
+            boolean isAnchor = aPos != null && bPos != null
+                    && aPos.equals(terminalPos) && bPos.equals(upstreamPos);
+            if (isAnchor && ownBranchPoints != null && !ownBranchPoints.isEmpty()) {
+                List<String> oriented = orientOwnBranchPoints(ownBranchPoints, terminalPos, upstreamPos);
+                boolean ok = oriented.size() >= 2
+                        && (oriented.get(0).equals(terminalPos)
+                            || oriented.get(oriented.size() - 1).equals(terminalPos));
+                seg = ok ? oriented : shortestPositionNames(aPos, bPos, allPoint, adj);
+            } else {
+                seg = shortestPositionNames(aPos, bPos, allPoint, adj);
+            }
+            if (seg == null || seg.isEmpty()) continue;
+            if (efPositionPath.isEmpty()) {
+                efPositionPath.addAll(seg);
+            } else {
+                String last = efPositionPath.get(efPositionPath.size() - 1);
+                int start = seg.get(0).equals(last) ? 1 : 0;
+                for (int k = start; k < seg.size(); k++) efPositionPath.add(seg.get(k));
+            }
+        }
+        // 统一为 源 → ... → 消费端 的展示顺序（与历史输出一致）
         java.util.Collections.reverse(efPositionPath);
 
         // 不绕路最短路径：源位置 → 终端位置
@@ -970,6 +1010,45 @@ public class IntergateCircuitInfo {
             }
         }
         return totalLength;
+    }
+
+    /**
+     * 把本回路自身的「回路途径分支点」(位置序列) 定向为 终端(消费端)→上游端 的顺序。
+     * bestAppPath 中该锚点段为 terminal→upstream，故返回序列首部应为 terminalPos。
+     */
+    private List<String> orientOwnBranchPoints(List<String> own, String terminalPos, String upstreamPos) {
+        if (own == null || own.isEmpty()) return new ArrayList<>();
+        List<String> lst = new ArrayList<>(own);
+        if (lst.size() >= 1 && !lst.get(0).equals(terminalPos)) {
+            if (lst.get(lst.size() - 1).equals(terminalPos)) {
+                java.util.Collections.reverse(lst); // 末部是终端 → 反转
+            }
+        }
+        // 若首尾都不等于终端(无法确定方向)，保持原样，由调用方回退到最短路展开
+        return lst;
+    }
+
+    /**
+     * 求两个位置在位置图上的最短路位置序列，用于把能量流路径的“其它段”展开为真实走线。
+     */
+    private List<String> shortestPositionNames(String aPos, String bPos,
+            List<String> allPoint, List<List<Integer>> adj) {
+        if (aPos == null || bPos == null) return new ArrayList<>();
+        int ai = allPoint.indexOf(aPos);
+        int bi = allPoint.indexOf(bPos);
+        if (ai < 0 || bi < 0) {
+            List<String> fb = new ArrayList<>();
+            if (aPos != null) fb.add(aPos);
+            return fb;
+        }
+        FindShortestPath sp = new FindShortestPath();
+        List<Integer> idx = sp.findShortestPathBetweenTwoPoint(adj, ai, bi);
+        if (idx == null || idx.isEmpty()) {
+            List<String> fb = new ArrayList<>();
+            fb.add(aPos);
+            return fb;
+        }
+        return convertIndexPathToNames(idx, allPoint);
     }
 
     /**
