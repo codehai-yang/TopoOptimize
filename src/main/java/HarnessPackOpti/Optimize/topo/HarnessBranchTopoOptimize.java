@@ -53,13 +53,13 @@ public class HarnessBranchTopoOptimize {
     // 迭代最少样本数量（提高每代候选池规模，保证进化方向充分探索）
     public static Integer HybridizationLessRandomSamleNumber = 10000;
     // top几的数量规定
-    public static final Integer TopNumber = 1000;
+    public static  Integer TopNumber = 1000;
     // 遗传最后一轮要精确计算的top
     public static Integer InteratorLastTop = 100;
     // 最终返回前端的参数
-    public static final Integer resultNumber = 20;
+    public static  Integer resultNumber = 20;
     // 绕线优化:分支累计绕线成本贡献阈值,超过则 B 改 C
-    public static final Double WindingCostThreshold = 10.0;
+    public static  Double WindingCostThreshold = 10.0;
     // 每次迭代最优的成本
     public static Map<String, Double> BestCost = new HashMap<>();
     // 最优样本重复次数
@@ -79,11 +79,13 @@ public class HarnessBranchTopoOptimize {
     public static Double WeightFactor = 0.7;
     public static Double MaxProbability = 0.9;
     public static Double MinProbability = 0.05;
+    public static Integer Threads = 10;
+    public static Integer QueueCapacity = 20;
 
     // 父本邻域单桶枚举/抽样上限：避免 C(pC, k2) 极大时炸内存
     // 桶内总组合数 ≤ 该值时枚举；> 该值时随机抽样该值次
     // 例:N=19, pB=5, pC=14, k=10, k1=2 → C(5,2)*C(14,8)=10*3003=30030 → 抽样 1000 次
-    public static final int ParentBucketEnumerateThreshold = 1000;
+    public static int ParentBucketEnumerateThreshold = 1000;
 
     // 成本权重
     public static Double costWeight = 0.98;
@@ -93,7 +95,7 @@ public class HarnessBranchTopoOptimize {
     public static Double lengthWeight = 0.01;
 
     // 线程池
-    public static ThreadPool threadPool = new ThreadPool(10, 20);
+    public static ThreadPool threadPool = new ThreadPool(Threads, QueueCapacity);
 
     // 全局种子计数器，用于生成不碰撞的Random种子
     private static final AtomicLong seedCounter = new AtomicLong(System.nanoTime());

@@ -2,6 +2,7 @@ package HarnessPackOpti.ErrorOutput;
 
 import HarnessPackOpti.DiagnoseLibrary.CircuitDiagnoseLibrary;
 import HarnessPackOpti.InfoRead.ReadCircuitInfo;
+import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.JsonToMap;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -11,11 +12,16 @@ import java.util.Map;
 
 public class CircuitErrorOutput {
     public String circuitErrorOutput(String fileStringFormat) throws Exception {
+      //获取配置
+      JsonToMap jsonToMap = new JsonToMap();
+      ReadProjectInfo readProjectInfo = new ReadProjectInfo();
+      Map<String, Object> mapFile = jsonToMap.TransJsonToMap(fileStringFormat);
+      Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(mapFile);
+      List<Map<String, Object>> mapList = (List<Map<String, Object>>) projectInfo.get("回路用电器信息");
         //读取到的Json格式字符串转换为List
-        JsonToMap jsonToMap = new JsonToMap();
-        List<Map<String,Object>> maps = jsonToMap.TransJsonToList(fileStringFormat);
-        ReadCircuitInfo readCircuitInfo=new ReadCircuitInfo();
-      List<Map<String,Object>> mapList= readCircuitInfo.getCircuitInfo(maps);
+//        List<Map<String,Object>> maps = jsonToMap.TransJsonToList(fileStringFormat);
+//        ReadCircuitInfo readCircuitInfo=new ReadCircuitInfo();
+//      List<Map<String,Object>> mapList= readCircuitInfo.getCircuitInfo(maps);
 
 
       LinkedHashMap<String ,List<String>> listMap=new LinkedHashMap<>();

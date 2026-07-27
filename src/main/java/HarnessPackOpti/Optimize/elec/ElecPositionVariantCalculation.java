@@ -29,7 +29,7 @@ public class ElecPositionVariantCalculation {
     // 可能用点数量
     public static Integer PointNumber = 0;
     // 初始样本最少为多少
-    public static final Integer LessRandomSamleNumber = 10000;
+    public static  Integer LessRandomSamleNumber = 10000;
     // 仓库
     public static List<List<String>> WareHouse = new ArrayList<>();
     // 自动补全的次数
