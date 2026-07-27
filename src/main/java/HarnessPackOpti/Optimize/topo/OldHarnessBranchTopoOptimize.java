@@ -56,6 +56,8 @@ public class OldHarnessBranchTopoOptimize {
     public static List<Map<String, Object>> TopDetail = new ArrayList<>();
     // 初始化自动补全得次数
     public static Integer InitializeAutoCompleteNumber = 2000;
+    public static Integer Threads = 10;
+    public static Integer QueueCapacity = 20;
     // 自动补全得次数
     public static Integer AutoCompleteNumber = 30;
     // 定义仓库(所有裂变生成的方案，用于AI)
@@ -63,7 +65,7 @@ public class OldHarnessBranchTopoOptimize {
     // 暂存的仓库
     public static List<List<String>> WareHouseTemp = new CopyOnWriteArrayList<>();
     // 线程池
-    public static ThreadPool threadPool = new ThreadPool(11, 50);
+    public static ThreadPool threadPool = new ThreadPool(Threads, QueueCapacity);
 
     // 定义一个仓库
     public static List<List<String>> WareHouseTop = new ArrayList<>();
