@@ -34,36 +34,26 @@ import HarnessPackOpti.utils.Normalize;
 import HarnessPackOpti.utils.ThreadPool;
 
 public class OldHarnessBranchTopoOptimize {
-    // 随机变换样本数量
+    // ── 以下配置类参数在 topoOptimize() 入口处从新算法同步，声明值仅为占位 ──
     public static Integer LessRandomSamleNumber = 100;
-    // 迭代最少样本数量
     public static Integer HybridizationLessRandomSamleNumber = 200;
-    // top几的数量规定
-    public static final Integer TopNumber = 100;
-    // 最后返回前端的方案数量
-    public static final Integer LastNumber = 20;
+    public static Integer TopNumber = 100;
+    public static Integer LastNumber = 20;
+    public static Integer IterationRestrictNumber = 10;
+    public static Integer VariationNumber = 1;
+    public static Integer InitializeAutoCompleteNumber = 2000;
+    public static Integer Threads = 10;
+    public static Integer QueueCapacity = 20;
+    public static Integer AutoCompleteNumber = 30;
+    // ── 以下为运行时可变状态（每次独立运行，不复用新算法的容器）──
     // 每次迭代最优的成本
     public static Map<String, Double> BestCost = new HashMap<>();
     // 最优样本重复次数
     public static Integer BestRepetitionNumber = 0;
-    // 迭代重复的次数限值
-    public static Integer IterationRestrictNumber = 10;
     // 定义一个仓库
     public static List<List<String>> WareHouse = new CopyOnWriteArrayList<>();
-    // 变异的次数
-    public static Integer VariationNumber = 1;
     // 每次迭代得到的top20
     public static List<Map<String, Object>> TopDetail = new ArrayList<>();
-    // 初始化自动补全得次数
-    public static Integer InitializeAutoCompleteNumber = 2000;
-    public static Integer Threads = 10;
-    public static Integer QueueCapacity = 20;
-    // 自动补全得次数
-    public static Integer AutoCompleteNumber = 30;
-    // 定义仓库(所有裂变生成的方案，用于AI)
-    public static List<List<String>> WareHouseAI = new CopyOnWriteArrayList<>();
-    // 暂存的仓库
-    public static List<List<String>> WareHouseTemp = new CopyOnWriteArrayList<>();
     // 线程池
     public static ThreadPool threadPool = new ThreadPool(Threads, QueueCapacity);
 
@@ -82,7 +72,29 @@ public class OldHarnessBranchTopoOptimize {
         this.optimizeStopStatusStore = OptimizeStopStatusStore.getInstance(); // 使用Store的单例实例
     }
 
+    /**
+     * 每次调用 topoOptimize() 前，从新算法（HarnessBranchTopoOptimize）同步配置参数，
+     * 保证老算法使用的参数值和新算法一致。
+     * 注意事项：
+     *   - 只同步配置类参数（数量、阈值、次数），不同步运行时容器（BestCost/TopDetail 等）
+     *   - VariationNumber/InitializeAutoCompleteNumber 仅老算法有，不做同步
+     *   - threadPool 在同步后重建，因为 Threads/QueueCapacity 可能已变更
+     */
+    private static void syncConfigFromNew() {
+        LessRandomSamleNumber = HarnessBranchTopoOptimize.LessRandomSamleNumber;
+        HybridizationLessRandomSamleNumber = HarnessBranchTopoOptimize.HybridizationLessRandomSamleNumber;
+        TopNumber = HarnessBranchTopoOptimize.TopNumber;
+        LastNumber = HarnessBranchTopoOptimize.resultNumber;
+        IterationRestrictNumber = HarnessBranchTopoOptimize.IterationRestrictNumber;
+        AutoCompleteNumber = HarnessBranchTopoOptimize.AutoCompleteNumber;
+        Threads = HarnessBranchTopoOptimize.Threads;
+        QueueCapacity = HarnessBranchTopoOptimize.QueueCapacity;
+        threadPool = new ThreadPool(Threads, QueueCapacity);
+        BestRepetitionNumber = HarnessBranchTopoOptimize.BestRepetitionNumber;
+    }
+
     public String topoOptimize(String jsonContent) throws Exception {
+        syncConfigFromNew(); // 入口处同步新算法的参数值
         long start = System.currentTimeMillis();
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
