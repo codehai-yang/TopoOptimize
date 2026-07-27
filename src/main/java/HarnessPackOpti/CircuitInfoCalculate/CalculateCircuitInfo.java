@@ -1,6 +1,7 @@
 package HarnessPackOpti.CircuitInfoCalculate;
 
 import HarnessPackOpti.Algorithm.FindBranchByNode;
+import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 
 import java.util.HashMap;
 import java.util.List;
@@ -32,7 +33,7 @@ public class CalculateCircuitInfo {
         CalculatePathLength calculatePathLength = new CalculatePathLength();
         //回路长度
         Map<String, Object> pathLength = calculatePathLength.calculatePathLength(edgeIdList, map);
-        double length = (Double) pathLength.get("长度")+200;
+        double length = (Double) pathLength.get("长度")+ ProjectCircuitInfoOutput.BranchEndFallback;
 //        回路重量
         CalculatePathWireWeight calculatePathWireWeight = new CalculatePathWireWeight();
         double weight = calculatePathWireWeight.calculatePathWireWeight(wireType, length / 1000,elecFixedLocationLibrary);
