@@ -1009,7 +1009,8 @@ public class IntergateCircuitInfo {
                 totalLength += computeEdgePathLength(subPosPath, edges);
             }
         }
-        return totalLength;
+        // 与 CalculateCircuitInfo 一致：总长后统一补上分支末端默认长度
+        return totalLength + ProjectCircuitInfoOutput.BranchEndFallback;
     }
 
     /**
@@ -1153,10 +1154,11 @@ public class IntergateCircuitInfo {
                 loopInfo.put("能量流途径分支点名称", null);
                 loopInfo.put("能量流不绕路途径分支点名称", null);
             } else {
-                loopInfo.put("能量流绕路总数量", efResult.detourLength > 0 ? 1 : 0);
-                loopInfo.put("能量流绕路数量占比", efResult.detourLength > 0 ? "100.00%" : "0.00%");
-                loopInfo.put("能量流绕路长度总值", Double.parseDouble(df.format(Math.max(efResult.detourLength, 0))));
-                loopInfo.put("能量流绕路长度均值", Double.parseDouble(df.format(Math.max(efResult.detourLength, 0))));
+                double detourMeters = Math.max(efResult.detourLength, 0) / 1000.0;
+                loopInfo.put("能量流绕路总数量", detourMeters > 0 ? 1 : 0);
+                loopInfo.put("能量流绕路数量占比", detourMeters > 0 ? "100.00%" : "0.00%");
+                loopInfo.put("能量流绕路长度总值", Double.parseDouble(df.format(detourMeters)));
+                loopInfo.put("能量流绕路长度均值", Double.parseDouble(df.format(detourMeters)));
                 loopInfo.put("能量流途径分支点名称",
                         efResult.energyFlowBranchPoints.isEmpty() ? null : efResult.energyFlowBranchPoints);
                 loopInfo.put("能量流不绕路途径分支点名称",
