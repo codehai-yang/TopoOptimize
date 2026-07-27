@@ -117,7 +117,7 @@ public class HarnessBranchTopoOptimize {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM项目json优化设置.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         HarnessBranchTopoOptimize newHarnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
         long startTime = System.currentTimeMillis();
@@ -151,7 +151,11 @@ public class HarnessBranchTopoOptimize {
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         JsonToMap jsonToMap = new JsonToMap();
+        ReadProjectInfo readProjectInfo = new ReadProjectInfo();
         Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
+        if(!ReadProjectInfo.whetherGet) {
+            Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(jsonMap);
+        }
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
         List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
         Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");

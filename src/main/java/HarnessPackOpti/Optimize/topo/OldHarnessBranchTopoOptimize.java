@@ -108,8 +108,8 @@ public class OldHarnessBranchTopoOptimize {
         List<Map<String, String>> loopInfos = (List<Map<String, String>>) jsonMap.get("loopInfos");
         List<Map<String, String>> points = (List<Map<String, String>>) jsonMap.get("points");
         CaseId = caseInfo.get("id").toString();
-         optimizeRecordId = optimizeRecord.get("id").toString();
-//        optimizeRecordId = java.util.UUID.randomUUID().toString();
+//         optimizeRecordId = optimizeRecord.get("id").toString();
+        optimizeRecordId = java.util.UUID.randomUUID().toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
         Boolean whetherAI = false;
 
