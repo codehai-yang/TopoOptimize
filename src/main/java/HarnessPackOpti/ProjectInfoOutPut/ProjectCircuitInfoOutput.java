@@ -47,10 +47,14 @@ public class ProjectCircuitInfoOutput {
     public static Double ModelDiameterFactor = 1.3;
     //分支补充长度
     public static Double BranchEndFallback = 200.0;
+    //成本权重
+    public static Double costWeight = 0.98;
+    public static Double weightWeight = 0.01;
+    public static Double lengthWeight = 0.01;
 
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM项目json优化设置.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         // 去掉外层可能存在的双引号（JSON被双重转义的情况）
         jsonContent = jsonContent.trim();
@@ -2318,12 +2322,12 @@ public class ProjectCircuitInfoOutput {
                 Double allCost2 = Double.parseDouble(objectMap.get("回路总成本").toString());
                 Double weight2 = Double.parseDouble(objectMap.get("回路重量").toString());
                 Double length2 = Double.parseDouble(objectMap.get("回路长度").toString());
-                if ((allCost2 - minCost) / ((maxCost - minCost) + 0.0001) * 0.98 +
-                        (weight2 - minWeight) / ((maxWeight - minWeight) + 0.0001) * 0.01 +
+                if ((allCost2 - minCost) / ((maxCost - minCost) + 0.0001) * costWeight +
+                        (weight2 - minWeight) / ((maxWeight - minWeight) + 0.0001) * weightWeight +
                         (length2 - minLength) / ((maxLength - minLength) + 0.0001)
-                                * 0.01 < (allCost1 - minCost) / ((maxCost - minCost) + 0.0001) * 0.98 +
-                                        (weight1 - minWeight) / ((maxWeight - minWeight) + 0.0001) * 0.01 +
-                                        (length1 - minLength) / ((maxLength - minLength) + 0.0001) * 0.01) {
+                                * lengthWeight < (allCost1 - minCost) / ((maxCost - minCost) + 0.0001) * costWeight +
+                                        (weight1 - minWeight) / ((maxWeight - minWeight) + 0.0001) * weightWeight +
+                                        (length1 - minLength) / ((maxLength - minLength) + 0.0001) * lengthWeight) {
                     map = objectMap;
                 }
             }
@@ -2480,13 +2484,13 @@ public class ProjectCircuitInfoOutput {
                     length2 = length2 + Double.parseDouble(pathMap.get("回路长度").toString());
                 }
                 // map的积分
-                Double score1 = (cost1 - minCost) / ((maxCost - minCost) + 0.0001) * 0.98
-                        + (weight1 - minWeight) / ((maxWeight - minWeight) + 0.0001) * 0.01
-                        + (length1 - minLength) / ((maxLength - minLength) + 0.0001) * 0.01;
+                Double score1 = (cost1 - minCost) / ((maxCost - minCost) + 0.0001) * costWeight
+                        + (weight1 - minWeight) / ((maxWeight - minWeight) + 0.0001) * weightWeight
+                        + (length1 - minLength) / ((maxLength - minLength) + 0.0001) * lengthWeight;
                 // 对比的积分
-                Double score2 = (cost2 - minCost) / ((maxCost - minCost) + 0.0001) * 0.98
-                        + (weight2 - minWeight) / ((maxWeight - minWeight) + 0.0001) * 0.01
-                        + (length2 - minLength) / ((maxLength - minLength) + 0.0001) * 0.01;
+                Double score2 = (cost2 - minCost) / ((maxCost - minCost) + 0.0001) * costWeight
+                        + (weight2 - minWeight) / ((maxWeight - minWeight) + 0.0001) * weightWeight
+                        + (length2 - minLength) / ((maxLength - minLength) + 0.0001) * lengthWeight;
                 if (score2 < score1) {
                     map = contrastMap;
                 }
