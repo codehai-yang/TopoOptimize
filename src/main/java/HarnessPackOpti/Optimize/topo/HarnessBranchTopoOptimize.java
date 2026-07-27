@@ -134,6 +134,12 @@ public class HarnessBranchTopoOptimize {
      * 控制台输出各阶段耗时;不写任何 Excel 统计。
      */
     public String topoOptimize(String jsonContent) throws Exception {
+        JsonToMap jsonToMap = new JsonToMap();
+        Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
+        ReadProjectInfo readProjectInfo = new ReadProjectInfo();
+        if(!ReadProjectInfo.whetherGet) {
+            Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(jsonMap);
+        }
         // 不启用AI则用老的方法
         if (!whetherAI) {
             OldHarnessBranchTopoOptimize harnessBranchTopoOptimize = new OldHarnessBranchTopoOptimize();
@@ -150,12 +156,7 @@ public class HarnessBranchTopoOptimize {
 
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
-        JsonToMap jsonToMap = new JsonToMap();
-        ReadProjectInfo readProjectInfo = new ReadProjectInfo();
-        Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
-        if(!ReadProjectInfo.whetherGet) {
-            Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(jsonMap);
-        }
+
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
         List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
         Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");

@@ -104,8 +104,8 @@ public class PowerDistributionDriveOptimization {
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         JsonToMap jsonToMap = new JsonToMap();
         Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
+        ReadProjectInfo readProjectInfo = new ReadProjectInfo();
         if(!ReadProjectInfo.whetherGet) {
-            ReadProjectInfo readProjectInfo = new ReadProjectInfo();
             Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(jsonMap);
         }
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
