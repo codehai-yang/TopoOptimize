@@ -7,6 +7,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
+import HarnessPackOpti.ErrorOutput.CircuitErrorOutput;
 import HarnessPackOpti.ErrorOutput.HarnessBranchTopoOptiErrorOutPut;
 import HarnessPackOpti.Optimize.elec.ElecPositionVariantCalculation;
 import HarnessPackOpti.Optimize.topo.OldHarnessBranchTopoOptimize;
@@ -36,10 +37,10 @@ public class main {
 //           harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
 
                 //用电器位置布局优化
-                File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\用电器位置布局优化遗传算法样本.txt");
-                String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
-                ElecPositionVariantCalculation elecPositionVariantCalculation=new ElecPositionVariantCalculation();
-                elecPositionVariantCalculation.elecPositionVariantCalculation(jsonContent);
+//                File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\用电器位置布局优化遗传算法样本.txt");
+//                String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
+//                ElecPositionVariantCalculation elecPositionVariantCalculation=new ElecPositionVariantCalculation();
+//                elecPositionVariantCalculation.elecPositionVariantCalculation(jsonContent);
 
                 // 配电驱动优化
 //                 File file = new
@@ -111,12 +112,12 @@ public class main {
                 //
                 //
                 // 整车信息计算
-                // File file1 = new
-                // File("E:\\office\\idea\\ideaProject\\project20251009\\src\\main\\resources\\circuitInfo.txt");
-                // String jsonContent1 = new
-                // String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
-                // CircuitErrorOutput circuitErrorOutput=new CircuitErrorOutput();
-                // circuitErrorOutput.circuitErrorOutput(jsonContent1);
+                 File file1 = new
+                 File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动分配优化json日志.txt");
+                 String jsonContent1 = new
+                 String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
+                 CircuitErrorOutput circuitErrorOutput=new CircuitErrorOutput();
+                 circuitErrorOutput.circuitErrorOutput(jsonContent1);
 
                 // File file2 = new File("data/DataCoopWithEB/123.txt");
                 // File file2 = new File("data/DataCoopWithEB/用电器位置.txt");

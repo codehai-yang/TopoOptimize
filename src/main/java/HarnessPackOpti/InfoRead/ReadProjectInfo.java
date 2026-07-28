@@ -163,6 +163,8 @@ public class ReadProjectInfo {
                 loopInfosMap.put("回路信号名",k.get("infoName"));
                 loopInfosMap.put("起点电器件可连接的终点电器件",k.get("startConnEndApps"));
                 loopInfosMap.put("终点电器件可连接的起点电器件",k.get("selectedEndApp"));
+                loopInfosMap.put("组队连接关系",k.get("teamConnRel"));
+                loopInfosMap.put("互斥连接关系",k.get("exclusiveConnRel"));
                 loopInfos.add(loopInfosMap);
             }
         }

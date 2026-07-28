@@ -185,8 +185,8 @@ public class CircuitDiagnoseLibrary {
         Map<String, List<String>> teamExclusiveMap = new java.util.HashMap<>();
 
         for (Map<String, Object> circuit : circuitList) {
-            String teamConnRel = getStringValue(circuit, "teamConnRel");
-            String exclusiveConnRel = getStringValue(circuit, "exclusiveConnRel");
+            String teamConnRel = getStringValue(circuit, "组队连接关系");
+            String exclusiveConnRel = getStringValue(circuit, "互斥连接关系");
 
             // 只有同时有组队和互斥约束的回路才需要检查
             if (!teamConnRel.isEmpty() && !exclusiveConnRel.isEmpty()) {
@@ -213,13 +213,13 @@ public class CircuitDiagnoseLibrary {
 
         // 3. 找出所有有矛盾的回路
         for (Map<String, Object> circuit : circuitList) {
-            String teamConnRel = getStringValue(circuit, "teamConnRel");
-            String exclusiveConnRel = getStringValue(circuit, "exclusiveConnRel");
+            String teamConnRel = getStringValue(circuit, "组队连接关系");
+            String exclusiveConnRel = getStringValue(circuit, "互斥连接关系");
 
             // 如果该回路所在的组队有矛盾，且该回路有互斥约束
             if (!teamConnRel.isEmpty() && !exclusiveConnRel.isEmpty()
                     && teamConflictCount.containsKey(teamConnRel)) {
-                conflictIds.add(getStringValue(circuit, "id"));
+                conflictIds.add(getStringValue(circuit, "回路id"));
             }
         }
 
