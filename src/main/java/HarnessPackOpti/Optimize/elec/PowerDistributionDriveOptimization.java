@@ -16,6 +16,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
+import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import HarnessPackOpti.JsonToMap;
@@ -64,7 +65,7 @@ public class PowerDistributionDriveOptimization {
     public static Double CrossoverRate = 0.7;
 
     // 线程池
-    public static ThreadPool threadPool = new ThreadPool(10, 20);
+    private static ThreadPool threadPool = ThreadPool.shared(HarnessBranchTopoOptimize.Threads, HarnessBranchTopoOptimize.QueueCapacity);
 
     // 定义一个仓库，遗传每次生成的方案存储，防止重复
     // ConcurrentHashMap 的 putIfAbsent 本身原子，无需外部 synchronized

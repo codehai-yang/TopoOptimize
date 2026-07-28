@@ -11,6 +11,7 @@ import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
+import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import HarnessPackOpti.utils.ThreadPool;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,7 +44,7 @@ public class ElecPositionVariantCalculation {
     public static Integer InitialSampleNumber = 10000;
     // 优化阈值
     public static Integer OptimizeThresholdValue = 10000;
-    private static ThreadPool threadPool = new ThreadPool(11, 11);
+    private static ThreadPool threadPool = ThreadPool.shared(HarnessBranchTopoOptimize.Threads, HarnessBranchTopoOptimize.QueueCapacity);
 
     private final OptimizeStopStatusStore optimizeStopStatusStore;
 

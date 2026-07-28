@@ -6,6 +6,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class ThreadPool {
+    private static volatile ThreadPool SHARED;
     private final Thread[] workers;
     private final BlockingQueue<Runnable> taskQueue;
     private final AtomicInteger activeTasks;
@@ -14,6 +15,16 @@ public class ThreadPool {
     private volatile boolean isShutdown;
     private volatile boolean isTerminated;  // 立即终止标志
 
+    public static ThreadPool shared(int threads, int queueCapacity) {
+        if (SHARED == null) {
+            synchronized (ThreadPool.class) {
+                if (SHARED == null) {
+                    SHARED = new ThreadPool(threads, queueCapacity);
+                }
+            }
+        }
+        return SHARED;
+    }
     /**
      * 构造函数：创建指定数量的工作线程和队列容量
      * @param threads 线程数量

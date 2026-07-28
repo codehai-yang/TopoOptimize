@@ -95,7 +95,7 @@ public class HarnessBranchTopoOptimize {
     public static Double lengthWeight = 0.01;
 
     // 线程池
-    public static ThreadPool threadPool = new ThreadPool(Threads, QueueCapacity);
+    public static ThreadPool threadPool = ThreadPool.shared(Threads, QueueCapacity);
 
     // 全局种子计数器，用于生成不碰撞的Random种子
     private static final AtomicLong seedCounter = new AtomicLong(System.nanoTime());
