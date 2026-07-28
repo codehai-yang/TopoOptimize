@@ -64,6 +64,7 @@
                         <include>**/HarnessOpti.properties</include>
                         <include>**/ElecFixedLocationLibrary.xlsx</include>
                         <include>**/WireInfo.xlsx</include>
+                        <include>**/scripts/*</include>
                     </includes>
                 </configuration>
             </plugin>
