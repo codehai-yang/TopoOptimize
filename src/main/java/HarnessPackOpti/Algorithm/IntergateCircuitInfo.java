@@ -273,9 +273,10 @@ public class IntergateCircuitInfo {
         } else {
             result.put("能量流绕路数量占比", "0.00%");
         }
-        result.put("能量流绕路长度总值", Double.parseDouble(df.format(detourTotal)));
+        double detourTotalMeters = detourTotal / 1000.0;
+        result.put("能量流绕路长度总值", Double.parseDouble(df.format(detourTotalMeters)));
         if (detourCount > 0) {
-            result.put("能量流绕路长度均值", Double.parseDouble(df.format(detourTotal / detourCount)));
+            result.put("能量流绕路长度均值", Double.parseDouble(df.format(detourTotalMeters / detourCount)));
         } else {
             result.put("能量流绕路长度均值", 0.0);
         }

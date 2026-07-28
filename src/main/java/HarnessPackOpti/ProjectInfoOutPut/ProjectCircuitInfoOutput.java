@@ -1407,6 +1407,7 @@ public class ProjectCircuitInfoOutput {
         totalCost.put("回路数量(打断前)", multiLoopInfosSet.size());
         totalCost.put("回路数量(打断后)", count);
         totalCost.put("回路重量均值", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / multiLoopInfosSet.size())));
+        totalCost.put("回路成本均值", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("总成本").toString()) / multiLoopInfosSet.size())));
         // 打断前回路均值
         double avgLength = 0.00;
         if (multiLoopInfosSet.size() > 0) {
