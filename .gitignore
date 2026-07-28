@@ -11,7 +11,8 @@ target/
 *.iws
 *.iml
 *.ipr
-src/main/resources/
+src/main/resources/*
+!src/main/resources/scripts/
 
 ### Eclipse ###
 .apt_generated
