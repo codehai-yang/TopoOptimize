@@ -104,7 +104,7 @@ public class HarnessBranchTopoOptimize {
     public static List<List<String>> WareHouseTop = new ArrayList<>();
 
     // 是否启用AI
-    public static boolean whetherAI = false;
+    public static boolean whetherAI = true;
 
     // 当前方案的id
     private static String CaseId = null;
