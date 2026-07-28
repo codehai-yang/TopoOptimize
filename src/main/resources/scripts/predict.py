@@ -1,49 +1,46 @@
 """
-独立预测脚本 —— 通过 stdin/stdout 与 Java 通信，不依赖 FastAPI。
+GINE 模型推理 TCP 服务器 —— socketserver + ThreadPoolExecutor，零第三方依赖。
 
-Java 端调用方式：
-    Process p = Runtime.getRuntime().exec("python predict.py");
-    OutputStream out = p.getOutputStream();
-    out.write(binaryData);   // Java 已有的二进制格式
-    out.flush();
-    out.close();
-    InputStream in = p.getInputStream();
-    // 读取 in 中的 JSON: {"predicted_cost": xxx, "elapsed_ms": xxx}
+协议（与管道帧兼容）：
+  客户端 → 服务端:  [4字节 payload_len][payload]  Big-Endian
+  服务端 → 客户端:  JSON行\n
+   payload_len=0 → 客户端断开连接
 
-二进制格式（Big-Endian）:
-    [4字节] num_nodes  (int32)
-    [4字节] num_edges  (int32)
-    [num_edges*2*4字节] edge_index (int32)
-    [num_edges*4*4字节]  edge_attr  (float32)
-    [num_nodes*200*4字节] x          (float32)
+启动：
+  python predict.py [--port 15000] [--workers 11]
+
+关闭：SIGINT(Ctrl+C) 或 SIGTERM，收到信号后优雅退出。
 """
-
 import sys
-import json
 import os
+import json
 import time
-from typing import Optional
+import signal
+import struct
+import argparse
+import socket
+import socketserver
+from typing import Optional, Tuple
+
 import numpy as np
 import torch
 from torch_geometric.nn import GINEConv, global_add_pool
 import torch.nn as nn
 
 # ============================================================
-# 全局配置（与 Java 约定固定维度）
+# 全局配置
 # ============================================================
-EDGE_FEAT_DIM = 4    # 边特征维度：通断(3维) + 分支长度(1维)
-NODE_FEAT_DIM = 200  # 节点特征维度
-HIDDEN_DIM = 64      # GINE 隐藏层维度
-NUM_LAYERS = 3       # GINE 层数
+EDGE_FEAT_DIM = 4    # 通断(3) + 长度(1)
+NODE_FEAT_DIM = 200
+HIDDEN_DIM = 64
+NUM_LAYERS = 3
 
-# 获取脚本所在目录（模型文件、标准化参数路径相对脚本位置）
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(SCRIPT_DIR, 'best_model.pt')
 NORM_PARAMS_PATH = os.path.join(SCRIPT_DIR, 'normalization_params.json')
 
-
 # ============================================================
-# 模型定义（与 GINEClassifier.CostModelV2 完全一致）
+# 模型
 # ============================================================
 class CostModelV2(nn.Module):
     def __init__(self):
@@ -53,15 +50,13 @@ class CostModelV2(nn.Module):
         self.norms = nn.ModuleList()
         for _ in range(NUM_LAYERS):
             mlp = nn.Sequential(
-                nn.Linear(HIDDEN_DIM, HIDDEN_DIM * 2),
-                nn.ReLU(),
+                nn.Linear(HIDDEN_DIM, HIDDEN_DIM * 2), nn.ReLU(),
                 nn.Linear(HIDDEN_DIM * 2, HIDDEN_DIM),
             )
             self.convs.append(GINEConv(mlp, edge_dim=EDGE_FEAT_DIM))
             self.norms.append(nn.LayerNorm(HIDDEN_DIM))
         self.regressor = nn.Sequential(
-            nn.Linear(HIDDEN_DIM, HIDDEN_DIM // 2),
-            nn.ReLU(),
+            nn.Linear(HIDDEN_DIM, HIDDEN_DIM // 2), nn.ReLU(),
             nn.Linear(HIDDEN_DIM // 2, 1),
         )
 
@@ -76,17 +71,14 @@ class CostModelV2(nn.Module):
         graph_emb = global_add_pool(h, batch)
         return self.regressor(graph_emb).squeeze()
 
+# ============================================================
+# 标准化（与 Normalize.py 一致）
+# ============================================================
+_normalization_params = None
 
-# ============================================================
-# 标准化逻辑（与 Normalize.py 一致）
-# ============================================================
 def _load_norm_params():
     with open(NORM_PARAMS_PATH, 'r', encoding='utf-8') as f:
         return json.load(f)
-
-
-_normalization_params = None
-
 
 def _get_norm_params():
     global _normalization_params
@@ -94,105 +86,62 @@ def _get_norm_params():
         _normalization_params = _load_norm_params()
     return _normalization_params
 
+def normalize_branch_feature(bf, mean, std):
+    r = bf.copy()
+    if std > 0: r[:, 3] = (r[:, 3] - mean) / std
+    else: r[:, 3] = 0.0
+    return r
 
-def normalize_branch_feature(branch_feature, mean, std):
-    """标准化边特征第4列（分支长度）。"""
-    result = branch_feature.copy()
-    length_col = result[:, 3]
-    if std > 0:
-        result[:, 3] = (length_col - mean) / std
-    else:
-        result[:, 3] = 0.0
-    return result
+def normalize_price_matrix(cc, mean, std, nnodes):
+    r = cc.copy()
+    pm = r[:, :nnodes]
+    mask = pm != 0
+    if mask.sum() > 0 and std > 0: pm[mask] = (pm[mask] - mean) / std
+    r[:, :nnodes] = pm
+    return r
 
-
-def normalize_price_matrix(circuit_cost, mean, std, num_nodes):
-    """标准化节点特征前 num_nodes 列（回路单价），只对非零值操作。"""
-    result = circuit_cost.copy()
-    price_matrix = result[:, :num_nodes]
-    nonzero_mask = price_matrix != 0
-    if nonzero_mask.sum() > 0 and std > 0:
-        price_matrix[nonzero_mask] = (price_matrix[nonzero_mask] - mean) / std
-    result[:, :num_nodes] = price_matrix
-    return result
-
-
-def normalize_wet_cost(circuit_cost, mean, std, num_nodes):
-    """标准化节点特征第 num_nodes 列（湿区成本），只对非零值操作。"""
-    result = circuit_cost.copy()
-    wet_col = result[:, num_nodes]
-    nonzero_mask = wet_col != 0
-    if nonzero_mask.sum() > 0 and std > 0:
-        wet_col[nonzero_mask] = (wet_col[nonzero_mask] - mean) / std
-    result[:, num_nodes] = wet_col
-    return result
-
+def normalize_wet_cost(cc, mean, std, nnodes):
+    r = cc.copy()
+    wc = r[:, nnodes]
+    mask = wc != 0
+    if mask.sum() > 0 and std > 0: wc[mask] = (wc[mask] - mean) / std
+    r[:, nnodes] = wc
+    return r
 
 def normalize_input(branch_feature, circuit_cost, num_nodes):
-    """使用预计算统计量对输入特征做标准化。"""
     p = _get_norm_params()
-    branch_feature = normalize_branch_feature(branch_feature, p['branch_length_mean'], p['branch_length_std'])
-    circuit_cost = normalize_price_matrix(circuit_cost, p['price_mean'], p['price_std'], num_nodes)
-    circuit_cost = normalize_wet_cost(circuit_cost, p['wet_cost_mean'], p['wet_cost_std'], num_nodes)
-    return branch_feature, circuit_cost
+    bf = normalize_branch_feature(branch_feature, p['branch_length_mean'], p['branch_length_std'])
+    cc = normalize_price_matrix(circuit_cost, p['price_mean'], p['price_std'], num_nodes)
+    cc = normalize_wet_cost(cc, p['wet_cost_mean'], p['wet_cost_std'], num_nodes)
+    return bf, cc
 
-
-def denormalize_output(total_cost_norm):
-    """将标准化输出还原到原始尺度。"""
+def denormalize_output(val):
     p = _get_norm_params()
-    return total_cost_norm * p['total_cost_std'] + p['total_cost_mean']
-
-
-# ============================================================
-# 二进制反序列化（与 Java ByteBuffer 格式对应）
-# ============================================================
-def deserialize_binary(data: bytes):
-    """
-    从 Java ByteBuffer 序列化的二进制数据中解析字段。
-    返回: (x, edge_index, edge_attr) 三个 numpy 数组
-    """
-    offset = 0
-    num_nodes = int(np.frombuffer(data[offset:offset + 4], dtype='>i4')[0])
-    offset += 4
-    num_edges = int(np.frombuffer(data[offset:offset + 4], dtype='>i4')[0])
-    offset += 4
-
-    edge_index_bytes = 2 * num_edges * 4
-    edge_attr_bytes = num_edges * EDGE_FEAT_DIM * 4
-    x_bytes = num_nodes * NODE_FEAT_DIM * 4
-
-    edge_index = (
-        np.frombuffer(data[offset:offset + edge_index_bytes], dtype='>i4')
-        .reshape(2, num_edges)
-        .byteswap().newbyteorder('=')
-        .copy()
-    )
-    offset += edge_index_bytes
-
-    edge_attr = (
-        np.frombuffer(data[offset:offset + edge_attr_bytes], dtype='>f4')
-        .reshape(num_edges, EDGE_FEAT_DIM)
-        .byteswap().newbyteorder('=')
-        .copy()
-    )
-    offset += edge_attr_bytes
-
-    x = (
-        np.frombuffer(data[offset:offset + x_bytes], dtype='>f4')
-        .reshape(num_nodes, NODE_FEAT_DIM)
-        .byteswap().newbyteorder('=')
-        .copy()
-    )
-
-    return x, edge_index, edge_attr
-
+    return val * p['total_cost_std'] + p['total_cost_mean']
 
 # ============================================================
-# 模型加载（模块级，只加载一次）
+# 二进制反序列化
+# ============================================================
+def deserialize_binary(data: bytes) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    off = 0
+    nn = int(np.frombuffer(data[off:off+4], dtype='>i4')[0]);   off += 4
+    ne = int(np.frombuffer(data[off:off+4], dtype='>i4')[0]);   off += 4
+    eib = 2 * ne * 4
+    eab = ne * EDGE_FEAT_DIM * 4
+    xb  = nn * NODE_FEAT_DIM * 4
+    ei = (np.frombuffer(data[off:off+eib], dtype='>i4')
+          .reshape(2, ne).byteswap().newbyteorder('=').copy());  off += eib
+    ea = (np.frombuffer(data[off:off+eab], dtype='>f4')
+          .reshape(ne, EDGE_FEAT_DIM).byteswap().newbyteorder('=').copy()); off += eab
+    x  = (np.frombuffer(data[off:off+xb], dtype='>f4')
+          .reshape(nn, NODE_FEAT_DIM).byteswap().newbyteorder('=').copy())
+    return x, ei, ea
+
+# ============================================================
+# 模型加载 / 推理
 # ============================================================
 _device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 _model: Optional[CostModelV2] = None
-
 
 def get_model():
     global _model
@@ -205,63 +154,108 @@ def get_model():
         _model.eval()
     return _model
 
-
-# ============================================================
-# 推理
-# ============================================================
 def predict(x: np.ndarray, edge_index: np.ndarray, edge_attr: np.ndarray) -> float:
-    """执行一次推理，返回归一化后的预测值。"""
     model = get_model()
-    x_t = torch.tensor(x, dtype=torch.float).to(_device)
-    edge_index_t = torch.tensor(edge_index, dtype=torch.long).to(_device)
-    edge_attr_t = torch.tensor(edge_attr, dtype=torch.float).to(_device)
+    xt = torch.tensor(x, dtype=torch.float).to(_device)
+    eit = torch.tensor(edge_index, dtype=torch.long).to(_device)
+    eat = torch.tensor(edge_attr, dtype=torch.float).to(_device)
     with torch.no_grad():
-        pred = model(x_t, edge_index_t, edge_attr_t)
-    return pred.item()
+        return model(xt, eit, eat).item()
 
+def do_predict(raw: bytes, seq: int = 0) -> str:
+    """完整推理流水线，返回一行 JSON。"""
+    start = time.time()
+    x, ei, ea = deserialize_binary(raw)
+    nnodes = x.shape[0]
+    ea, x = normalize_input(ea, x, num_nodes=nnodes)
+    pred_norm = predict(x, ei, ea)
+    cost = denormalize_output(pred_norm)
+    elapsed = (time.time() - start) * 1000
+    return json.dumps({"predicted_cost": round(float(cost), 4), "elapsed_ms": round(elapsed, 1)})
 
 # ============================================================
-# 单次预测入口（接收 stdin 二进制，输出 stdout JSON）
+# TCP 请求处理器（socketserver.ThreadingMixIn 每个连接一个线程）
+# PyTorch 推理时释放 GIL，多线程可真正并行。
+# ============================================================
+
+def _recv_exact(sock, n):
+    """从 socket 精确读取 n 字节。"""
+    buf = b''
+    while len(buf) < n:
+        chunk = sock.recv(n - len(buf))
+        if not chunk:
+            raise ConnectionError("客户端断开")
+        buf += chunk
+    return buf
+
+class PredictHandler(socketserver.BaseRequestHandler):
+    """每个 TCP 连接 = 一个 handler 实例，在独立线程中运行。"""
+
+    def handle(self):
+        sock: socket.socket = self.request
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        sock.settimeout(30)  # 30s 读超时
+
+        while True:
+            try:
+                header = _recv_exact(sock, 4)
+                payload_len = struct.unpack('>i', header)[0]
+
+                if payload_len == 0:
+                    break  # 退出信号
+
+                raw = _recv_exact(sock, payload_len)
+
+                # 推理（阻塞当前 handler 线程，但其他连接不受影响）
+                result_line = do_predict(raw)
+                sock.sendall((result_line + '\n').encode('utf-8'))
+
+            except (ConnectionError, socket.timeout, OSError):
+                break
+            except Exception as e:
+                err = json.dumps({"error": str(e)})
+                try:
+                    sock.sendall((err + '\n').encode('utf-8'))
+                except OSError:
+                    pass
+
+class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    """多线程 TCP 服务器 —— 每个连接一个线程，并发推理。"""
+    allow_reuse_address = True
+    daemon_threads = True
+
+# ============================================================
+# 入口
 # ============================================================
 def main():
+    parser = argparse.ArgumentParser(description='GINE 模型推理 TCP 服务器')
+    parser.add_argument('--port', type=int, default=15000, help='监听端口（默认 15000）')
+    parser.add_argument('--host', default='127.0.0.1', help='绑定地址（默认 127.0.0.1）')
+    args = parser.parse_args()
+
+    # 预加载模型和归一化参数
+    print(f"[predict] 加载模型... device={_device}")
+    get_model()
+    _get_norm_params()
+    print(f"[predict] 模型就绪")
+
+    server = ThreadedTCPServer((args.host, args.port), PredictHandler)
+    print(f"[predict] 监听 {args.host}:{args.port}")
+
+    def shutdown(sig, frame):
+        print("\n[predict] 收到退出信号，正在关闭...")
+        server.shutdown()
+        server.server_close()
+        print("[predict] 已关闭")
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, shutdown)
+    signal.signal(signal.SIGTERM, shutdown)
+
     try:
-        start = time.time()
-
-        # 1. 读取 stdin 全部二进制数据
-        raw = sys.stdin.buffer.read()
-
-        # 2. 解析二进制
-        x, edge_index, edge_attr = deserialize_binary(raw)
-
-        # 3. 标准化
-        num_nodes = x.shape[0]
-        edge_attr, x = normalize_input(edge_attr, x, num_nodes=num_nodes)
-
-        # 4. 推理
-        pred_norm = predict(x, edge_index, edge_attr)
-
-        # 5. 反标准化
-        predicted_cost = denormalize_output(pred_norm)
-
-        elapsed = (time.time() - start) * 1000
-
-        # 6. 输出 JSON 到 stdout
-        result = {
-            "predicted_cost": round(float(predicted_cost), 4),
-            "elapsed_ms": round(elapsed, 1),
-        }
-        sys.stdout.write(json.dumps(result))
-        sys.stdout.flush()
-
-    except Exception as e:
-        # 错误信息输出到 stderr，JSON 错误码输出到 stdout（Java 端可以 try-catch）
-        sys.stderr.write(f"PredictError: {e}\n")
-        sys.stderr.flush()
-        error_json = json.dumps({"error": str(e)})
-        sys.stdout.write(error_json)
-        sys.stdout.flush()
-        sys.exit(1)
-
+        server.serve_forever()
+    except KeyboardInterrupt:
+        shutdown(None, None)
 
 if __name__ == '__main__':
     main()
