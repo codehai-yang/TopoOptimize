@@ -14,7 +14,6 @@ import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import HarnessPackOpti.utils.ThreadPool;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.math.BigInteger;
 import java.text.DecimalFormat;
 import java.util.*;
@@ -74,10 +73,8 @@ public class ElecPositionVariantCalculation {
         TopoId = topoInfo.get("id").toString();
         optimizeRecordId = optimizeRecord.get("id").toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
-        // 读取excel中的导线成本
-        ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
-        Map<String, Map<String, String>> elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
-        Map<String, Double> elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
+        Map<String, Map<String, String>> elecFixedLocationLibrary = ProjectCircuitInfoOutput.elecFixedLocationLibrary;
+        Map<String, Double> elecBusinessPrice = ProjectCircuitInfoOutput.elecBusinessPrice;
         // 主要是为了获得当前打断状况下 可用的位置点
         List<String> strPointNameList = new ArrayList<>();
         List<String> endPointNameList = new ArrayList<>();
