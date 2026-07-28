@@ -13,14 +13,10 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
-
 import org.apache.commons.collections4.map.LinkedMap;
-
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Algorithm.ClassifyCircuit;
 import HarnessPackOpti.Algorithm.FindAllPath;
@@ -32,7 +28,6 @@ import HarnessPackOpti.Algorithm.GenerateTopoMatrixConnector;
 import HarnessPackOpti.Algorithm.IntergateCircuitInfo;
 import HarnessPackOpti.Algorithm.SplitCircuitByInterDirectConn;
 import HarnessPackOpti.CircuitInfoCalculate.CalculateCircuitInfo;
-import HarnessPackOpti.CircuitInfoCalculate.CalculateInlineWet;
 import HarnessPackOpti.CircuitInfoCalculate.CalculatePathLength;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
