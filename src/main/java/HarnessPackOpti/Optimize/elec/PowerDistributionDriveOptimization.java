@@ -15,16 +15,13 @@ import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Algorithm.FindBest;
 import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
-import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import HarnessPackOpti.utils.ThreadPool;
 
 /**
@@ -62,9 +59,6 @@ public class PowerDistributionDriveOptimization {
 
     // 连续空代上限：超过此轮次无新有效方案则提前终止遗传迭代
     public static Integer MaxConsecutiveEmptyGenerations = 10;
-
-    // 遗传算法每轮变异的次数
-    public static Integer VariationNumber = 1;
 
     // 交叉概率（0.7 表示 70% 的方案参与交叉）
     public static Double CrossoverRate = 0.7;
@@ -655,7 +649,6 @@ public class PowerDistributionDriveOptimization {
             System.out.println("第" + (hybridizationNumber + 1) + "代完成, 最优成本: " +
                     currentTopBest.get(0).get("成本") + ", 本代耗时: " + iterElapsed + "ms");
 
-            // 修正：首次迭代（hybridizationNumber == 0）记录最优成本
             if (hybridizationNumber == 0) {
                 double costTotal = Double
                         .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总成本").toString());
@@ -693,7 +686,6 @@ public class PowerDistributionDriveOptimization {
         }
 
         System.out.println("遗传算法完成，共迭代 " + hybridizationNumber + " 代");
-        // 最终输出前：为 top 方案补齐完整整车计算结果（仅 ~20 个，不存缓存不会 OOM）
         List<Map<String, Object>> enrichedTopBest = new ArrayList<>();
         for (Map<String, Object> slim : currentTopBest) {
             try {
@@ -1806,10 +1798,8 @@ public class PowerDistributionDriveOptimization {
 
         Map<String, Object> map2 = jsonToMap.TransJsonToMap(result);
         map2.put("成本", slim.get("成本"));
-        map2.put("loopInfos", loops);
-        map2.put("appPositions", apps);
         map2.put("topoId", topoInfoMap.get("id").toString());
-        map2.put("caseId", projectInfo.get("caseId").toString());
+        map2.put("caseId", projectInfo.get("caseId"));
         map2.put("finishStatue", "normal");
         map2.put("initializationScheme", false);
         return map2;

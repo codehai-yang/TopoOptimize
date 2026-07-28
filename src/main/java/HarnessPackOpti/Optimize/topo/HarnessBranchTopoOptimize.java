@@ -117,7 +117,7 @@ public class HarnessBranchTopoOptimize {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM项目json优化设置.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM测试数据.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         HarnessBranchTopoOptimize newHarnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
         long startTime = System.currentTimeMillis();
