@@ -5,6 +5,7 @@ import HarnessPackOpti.Optimize.elec.PowerDistributionDriveOptimization;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Field;
@@ -218,8 +219,21 @@ public class ReadProjectInfo {
     }
 
     public void writeDropdownOptionsToProperties() {
-        // 默认路径：src/main/resources/HarnessOpti.properties
-        String defaultPath = "src/main/resources/HarnessOpti.properties";
+        // 开发环境：src/main/resources；生产环境：以 -Dconfig.dir 指定，默认当前目录
+        String devPath = "src/main/resources/HarnessOpti.properties";
+        String defaultPath;
+        if (new java.io.File(devPath).getParentFile() != null
+                && new java.io.File(devPath).getParentFile().exists()) {
+            defaultPath = devPath;
+        } else {
+            String configDir = System.getProperty("config.dir", "resources");
+            defaultPath = configDir + java.io.File.separator + "HarnessOpti.properties";
+            // 确保目录存在
+            File dir = new File(defaultPath).getParentFile();
+            if (dir != null && !dir.exists()) {
+                dir.mkdirs();
+            }
+        }
         writeDropdownOptionsToProperties(dropdownOptionsMap, defaultPath);
     }
 
