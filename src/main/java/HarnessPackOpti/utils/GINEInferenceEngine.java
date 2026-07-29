@@ -11,218 +11,153 @@ import java.nio.file.*;
 import java.util.concurrent.*;
 
 /**
- * GINE 模型推理引擎 —— TCP Socket 连接池 + Python 多线程服务器。
+ * GINE 模型推理引擎 —— TCP Socket 连接池 + Python 服务器。
  *
- * Java 端维护一个到达 Python TCP 服务的 Socket 连接池，
- * 每个 predict() 调用从中借用一个连接，用完归还。
- * 连接池大小 = Java 线程数，实现真正并发。
- *
- * Python 端使用 socketserver.ThreadingMixIn + ThreadPoolExecutor，
- * 一个进程内模型只加载一次，多连接多线程并行推理。
+ * 首次 predict() 调用时自动启动 Python TCP 服务，建立连接池，后续复用。
+ * 连接池大小与 Java 线程数一致，每个线程独占一条连接，避免锁竞争。
  *
  * 配置（JVM 系统属性）：
- *   -Dpython.exe=F:\...\python.exe             Python 解释器（默认: python）
- *   -Dpredict.script.dir=/opt/predict          脚本目录
- *   -Dpredict.port=15000                       Python TCP 端口（默认: 15000）
- *   -Dpredict.pool.size=10                     连接池大小（默认: 10）
+ *   -Dpython.exe=F:\...\python.exe       Python 解释器路径（默认: python）
+ *   -Dpredict.script.dir=/opt/predict    脚本目录（默认自动检测）
+ *   -Dpredict.port=15000                 端口（默认 15000）
+ *   -Dpredict.pool.size=10               连接池大小（默认取 HarnessBranchTopoOptimize.Threads）
  */
 public class GINEInferenceEngine {
 
     public static ObjectMapper objectMapper = new ObjectMapper();
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    // ── 配置 ──
     private static final String PYTHON_EXE = System.getProperty("python.exe", "python");
     private static final String SCRIPT_DIR = resolveScriptDir();
     private static final String PREDICT_SCRIPT = SCRIPT_DIR + File.separator + "predict.py";
     private static final int PORT = Integer.getInteger("predict.port", 15000);
-    // 连接池大小：优先 -D 参数，否则跟 Java 线程数（默认 10）
     private static final int POOL_SIZE = Integer.getInteger("predict.pool.size",
             HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize.Threads);
 
-    // ── 状态 ──
-    private static volatile Process pythonProcess;
     private static volatile BlockingQueue<SocketConnection> pool;
     private static volatile boolean initialized = false;
     private static final Object INIT_LOCK = new Object();
 
-    // ── 脚本目录 ──
+    // ── 脚本目录解析 ──
     private static String resolveScriptDir() {
         String prop = System.getProperty("predict.script.dir");
         if (prop != null && !prop.trim().isEmpty()) return prop.trim();
-        File devDir = new File("src/main/resources/scripts");
-        if (devDir.isDirectory()) return devDir.getAbsolutePath();
-        return extractFromJar();
-    }
-
-    private static synchronized String extractFromJar() {
+        File dev = new File("src/main/resources/scripts");
+        if (dev.isDirectory()) return dev.getAbsolutePath();
         try {
-            Path tmpDir = Files.createTempDirectory("gine_predict_");
-            String[] res = {"predict.py", "best_model.pt", "normalization_params.json"};
-            for (String name : res) {
+            Path tmp = Files.createTempDirectory("gine_predict_");
+            for (String name : new String[]{"predict.py", "best_model.pt", "normalization_params.json"}) {
                 try (InputStream in = GINEInferenceEngine.class.getClassLoader()
                         .getResourceAsStream("scripts/" + name)) {
                     if (in == null) throw new FileNotFoundException("classpath 缺少 scripts/" + name);
-                    Files.copy(in, tmpDir.resolve(name), StandardCopyOption.REPLACE_EXISTING);
+                    Files.copy(in, tmp.resolve(name), StandardCopyOption.REPLACE_EXISTING);
                 }
             }
-            tmpDir.toFile().deleteOnExit();
-            System.out.println("[GINE] 已从 JAR 提取脚本到: " + tmpDir);
-            return tmpDir.toAbsolutePath().toString();
+            tmp.toFile().deleteOnExit();
+            return tmp.toAbsolutePath().toString();
         } catch (IOException e) {
-            throw new RuntimeException("无法提取预测脚本", e);
+            throw new RuntimeException("无法提取预测脚本，请用 -Dpredict.script.dir 指定目录", e);
         }
     }
 
-    // ── 初始化（仅执行一次）──
+    // ── 启动 Python 服务器（仅一次）──
     private static void initOnce() throws IOException {
-        // 先清理端口上的任何残留进程（包括上次运行没清理干净的）
-        if (isPortInUse(PORT)) {
-            System.out.println("[GINE] 清理端口 " + PORT + " 上的残留进程...");
-            killProcessOnPort(PORT);
-            try { Thread.sleep(1000); } catch (InterruptedException ignored) { }
-        }
-        if (pythonProcess != null) {
-            pythonProcess.destroyForcibly();
-            pythonProcess = null;
-        }
-
-        // 1) 启动 Python TCP 服务器
-        System.out.println("[GINE] 启动 Python TCP 服务器...");
-        ProcessBuilder pb = new ProcessBuilder(PYTHON_EXE, PREDICT_SCRIPT,
-                "--port", String.valueOf(PORT));
+        System.out.println("[GINE] 启动 Python 服务器...");
+        ProcessBuilder pb = new ProcessBuilder(PYTHON_EXE, PREDICT_SCRIPT, "--port", String.valueOf(PORT));
         pb.directory(new File(SCRIPT_DIR));
-        pb.redirectErrorStream(false);
-        pythonProcess = pb.start();
+        pb.redirectErrorStream(true);
+        Process proc = pb.start();
 
-        // 读取 Python stderr
-        Thread logReader = new Thread(() -> {
-            try (BufferedReader br = new BufferedReader(
-                    new InputStreamReader(pythonProcess.getErrorStream(), "UTF-8"))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    System.out.println("[Python] " + line);
-                }
-            } catch (IOException ignored) { }
-        });
-        logReader.setDaemon(true);
-        logReader.start();
+        // JVM 退出时杀掉子进程，避免残留卡死
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (proc.isAlive()) proc.destroyForcibly();
+        }));
 
-        // 2) 等待服务就绪（最长 120s）
+        // 等待端口就绪（最长 120s，模型加载可能较慢）
         long deadline = System.currentTimeMillis() + 120_000;
         while (System.currentTimeMillis() < deadline) {
-            if (!pythonProcess.isAlive()) {
-                throw new IOException("Python 进程已退出，请检查上方 [Python] 日志");
-            }
             try (Socket s = new Socket("127.0.0.1", PORT)) {
                 Thread.sleep(200);
                 break;
             } catch (IOException | InterruptedException e) {
-                try { Thread.sleep(1000); } catch (InterruptedException ignored) { }
+                try { Thread.sleep(500); } catch (InterruptedException ignored) { }
             }
         }
 
-        if (!isPortInUse(PORT)) {
-            throw new IOException("Python 进程 120s 内未能启动，请检查上方 [Python] 日志");
-        }
-
-        // 3) 建立连接池
+        // 建立连接池
         pool = new ArrayBlockingQueue<>(POOL_SIZE);
         for (int i = 0; i < POOL_SIZE; i++) {
             pool.offer(new SocketConnection("127.0.0.1", PORT));
         }
-
-        // JVM 退出时清理
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            if (pool != null) {
-                for (SocketConnection conn : pool) {
-                    conn.sendExit();
-                    conn.close();
-                }
-            }
-            if (pythonProcess != null) {
-                pythonProcess.destroyForcibly();
-            }
-        }));
-
-        System.out.println("[GINE] TCP 连接池就绪, 池大小=" + POOL_SIZE + ", 端口=" + PORT);
+        System.out.println("[GINE] 连接池就绪, 池大小=" + POOL_SIZE);
     }
 
     // ── 推理入口 ──
     public float predict(float[][] matrix, long[][] edgeIndex, float[][] edgeAttr) throws Exception {
-        // 双重检查锁：保证 initOnce() 只尝试一次
         if (!initialized) {
             synchronized (INIT_LOCK) {
                 if (!initialized) {
                     try {
                         initOnce();
-                        initialized = true;
                     } catch (IOException e) {
-                        // 启动失败，不放其他线程再试（避免无限重启）
                         System.err.println("[GINE] Python 启动失败: " + e.getMessage());
-                        throw e;
                     }
+                    initialized = true;
                 }
+            }
+            if (pool == null) {
+                throw new IOException("Python 推理服务未就绪");
             }
         }
 
+        // 序列化
         int nodeDim = matrix.length, edgeDim = edgeIndex[0].length;
         int edgeFeatDim = edgeAttr[0].length, nodeFeatDim = matrix[0].length;
-
-        // 序列化 payload
         int payloadBytes = 8 + (edgeDim * 2 * 4) + (edgeDim * edgeFeatDim * 4) + (nodeDim * nodeFeatDim * 4);
         ByteBuffer payload = ByteBuffer.allocate(payloadBytes).order(ByteOrder.BIG_ENDIAN);
-        payload.putInt(nodeDim);
-        payload.putInt(edgeDim);
+        payload.putInt(nodeDim); payload.putInt(edgeDim);
         for (long[] row : edgeIndex) for (long v : row) payload.putInt((int) v);
         for (float[] row : edgeAttr) for (float v : row) payload.putFloat(v);
-        for (float[] row : matrix) for (float v : row) payload.putFloat(v);
+        for (float[] row : matrix)   for (float v : row) payload.putFloat(v);
 
         ByteBuffer frame = ByteBuffer.allocate(4 + payloadBytes).order(ByteOrder.BIG_ENDIAN);
         frame.putInt(payloadBytes);
         frame.put(payload.array());
 
-        // 从连接池借一条连接
+        // 借一条连接
         SocketConnection conn = pool.take();
         try {
             return conn.predict(frame.array());
         } catch (IOException e) {
-            // 连接挂了就关掉，等池子里其他连接（或重建）
             conn.close();
             throw e;
         } finally {
             if (conn.isConnected()) {
                 pool.offer(conn);
             } else {
-                // 重建一条补回池子
-                try {
-                    pool.offer(new SocketConnection("127.0.0.1", PORT));
-                } catch (IOException e) {
-                    System.err.println("[GINE] 重建连接失败: " + e.getMessage());
-                }
+                try { pool.offer(new SocketConnection("127.0.0.1", PORT)); }
+                catch (IOException e) { System.err.println("[GINE] 重建连接失败: " + e.getMessage()); }
             }
         }
     }
 
-    // ── Socket 连接封装 ──
+    // ── Socket 连接 ──
     private static class SocketConnection {
-        private Socket socket;
-        private DataInputStream in;
-        private DataOutputStream out;
+        private final Socket socket;
+        private final DataInputStream in;
+        private final DataOutputStream out;
 
         SocketConnection(String host, int port) throws IOException {
-            this.socket = new Socket(host, port);
-            this.socket.setTcpNoDelay(true);
-            this.socket.setSoTimeout(30000);
-            this.in = new DataInputStream(new BufferedInputStream(socket.getInputStream(), 4096));
-            this.out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream(), 4096));
+            socket = new Socket(host, port);
+            socket.setTcpNoDelay(true);
+            socket.setSoTimeout(30000);
+            in = new DataInputStream(new BufferedInputStream(socket.getInputStream(), 4096));
+            out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream(), 4096));
         }
 
         synchronized float predict(byte[] frame) throws IOException {
             out.write(frame);
             out.flush();
-
-            // 读取一行响应
             StringBuilder sb = new StringBuilder();
             int ch;
             while ((ch = in.read()) != -1) {
@@ -230,76 +165,20 @@ public class GINEInferenceEngine {
                 sb.append((char) ch);
             }
             String line = sb.toString().trim();
-            if (line.isEmpty()) {
-                throw new IOException("Python 返回空响应，服务可能已退出");
-            }
-            try {
-                JsonNode json = MAPPER.readTree(line);
-                if (json.has("error")) {
-                    throw new RuntimeException("预测错误: " + json.get("error").asText());
-                }
-                return (float) json.get("predicted_cost").asDouble();
-            } catch (Exception e) {
-                throw new IOException("解析响应失败: " + line, e);
-            }
+            if (line.isEmpty()) throw new IOException("Python 返回空响应");
+            JsonNode json = MAPPER.readTree(line);
+            if (json.has("error")) throw new RuntimeException("预测错误: " + json.get("error").asText());
+            return (float) json.get("predicted_cost").asDouble();
         }
 
         boolean isConnected() {
             return socket != null && socket.isConnected() && !socket.isClosed();
         }
 
-        void sendExit() {
-            try {
-                byte[] exit = {0, 0, 0, 0}; // payload_len=0
-                out.write(exit);
-                out.flush();
-            } catch (IOException ignored) { }
-        }
-
         void close() {
             try { in.close(); } catch (IOException ignored) { }
             try { out.close(); } catch (IOException ignored) { }
             try { socket.close(); } catch (IOException ignored) { }
-        }
-    }
-
-    // ── 端口可用性检测 ──
-    // ── 端口 / 进程工具 ──
-    private static void killProcessOnPort(int port) {
-        String os = System.getProperty("os.name").toLowerCase();
-        try {
-            if (os.contains("win")) {
-                Process find = Runtime.getRuntime().exec(
-                        new String[]{"cmd", "/c",
-                                "netstat -ano | findstr :" + port + " | findstr LISTENING"});
-                java.util.Scanner sc = new java.util.Scanner(find.getInputStream(), "GBK");
-                while (sc.hasNextLine()) {
-                    String line = sc.nextLine().trim();
-                    String[] parts = line.split("\\s+");
-                    if (parts.length >= 5) {
-                        String pid = parts[parts.length - 1];
-                        Runtime.getRuntime().exec(
-                                new String[]{"taskkill", "/F", "/PID", pid}).waitFor();
-                        System.out.println("[GINE] 已终止残留进程 PID=" + pid);
-                    }
-                }
-                sc.close();
-            } else {
-                Process p = Runtime.getRuntime().exec(
-                        new String[]{"/bin/sh", "-c",
-                                "lsof -ti:" + port + " | xargs -r kill -9"});
-                p.waitFor();
-            }
-        } catch (Exception e) {
-            System.err.println("[GINE] 清理端口 " + port + " 失败: " + e.getMessage());
-        }
-    }
-
-    private static boolean isPortInUse(int port) {
-        try (Socket s = new Socket("127.0.0.1", port)) {
-            return true;
-        } catch (IOException e) {
-            return false;
         }
     }
 }

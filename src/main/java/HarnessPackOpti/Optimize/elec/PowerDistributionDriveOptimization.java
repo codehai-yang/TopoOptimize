@@ -81,7 +81,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动分配优化json日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\驱动分配优化日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -256,21 +256,19 @@ public class PowerDistributionDriveOptimization {
             } else if ("驱动回路".equals(loopInfo.get("loopAttr"))) {
                 driveLoopList.add(loopInfo);
             }
-            // 回路可连接的终点用电器（新字段：startConnEndApps = 起点电器件可连的终点电器件）
+            // 回路可连接的终点用电器（startConnEndApps 传的是用电器名称，逗号分隔）
             String s = loopInfo.get("startConnEndApps");
             if (s != null && !s.isEmpty()) {
-                for (String part : s.split(",")) {
-                    String pointName = findAppNameById(part, appPositions);
-                    loopElecById.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(pointName);
+                for (String name : s.split(",")) {
+                    String trim = name.trim();
+                    if (!trim.isEmpty())
+                        loopElecById.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(trim);
                 }
             }
-            // 回路可连接的起点用电器（新字段：selectedEndApp = 终点电器件可连的起点电器件）
+            // 回路可连接的起点用电器（selectedEndApp 传的是单个用电器名称）
             String start = loopInfo.get("selectedEndApp");
-            if (start != null && !start.isEmpty()) {
-                for (String part : start.split(",")) {
-                    String pointName = findAppNameById(part, appPositions);
-                    loopElecByIdStart.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(pointName);
-                }
+            if (start != null && !start.trim().isEmpty()) {
+                loopElecByIdStart.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(start.trim());
             }
             // 组团一起变归组（新字段 teamConnRel）
             String ct = loopInfo.get("teamConnRel");
