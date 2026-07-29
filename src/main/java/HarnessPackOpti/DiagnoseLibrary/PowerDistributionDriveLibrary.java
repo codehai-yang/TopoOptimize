@@ -1,4 +1,4 @@
-﻿package HarnessPackOpti.DiagnoseLibrary;
+package HarnessPackOpti.DiagnoseLibrary;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -35,8 +35,8 @@ public class IntergateCircuitInfo {
         public double energyFlowLength;       // 能量流路径总长度
         public double noDetourLength;         // 不绕路最短路径长度
         public double detourLength;           // 绕路长度
-        public List<String> energyFlowBranchPoints;   // 能量流途径分支点名称
-        public List<String> noDetourBranchPoints;     // 不绕路途径分支点名称
+        public List<String> energyFlowBranchPoints;   // 能量流途径分支id
+        public List<String> noDetourBranchPoints;     // 不绕路途径分支id
         public boolean skipped;               // 是否跳过计算
         public String skipReason;             // 跳过原因
         public boolean hasEnergyFlow;         // 是否有有效能量流路径
@@ -59,7 +59,7 @@ public class IntergateCircuitInfo {
     /**
      * 用电器图边信息：表示一条回路连接了两个用电器
      */
-    private static class AppEdge {
+    public static class AppEdge {
         String fromApp;
         String toApp;
         String fromType;
@@ -119,7 +119,7 @@ public class IntergateCircuitInfo {
             }
             totalCost.put("总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("总成本").toString()) + Double.parseDouble(objectMap.get("回路总成本").toString()))));
             totalCost.put("回路湿区成本总加成",Double.parseDouble( df.format(Double.parseDouble( totalCost.get("回路湿区成本总加成").toString()) + Double.parseDouble(objectMap.get("回路湿区成本加成").toString()))));
-            totalCost.put("回路打断成本总值(元)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString()) + Double.parseDouble(objectMap.get("回路打断成本").toString()))));
+            totalCost.put("回路打断成本总值(元)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString()) + Double.parseDouble(objectMap.get("回路打断成本总值(元)").toString()))));
             totalCost.put("回路两端端子总成本",Double.parseDouble(df.format(Double.parseDouble( totalCost.get("回路两端端子总成本").toString()) + Double.parseDouble(objectMap.get("回路两端端子成本").toString()))));
             totalCost.put("回路导线总成本",Double.parseDouble( df.format(Double.parseDouble( totalCost.get("回路导线总成本").toString()) + Double.parseDouble(objectMap.get("回路导线成本").toString()))));
             totalCost.put("回路总重量",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) + Double.parseDouble(objectMap.get("回路重量").toString()))));
@@ -127,14 +127,14 @@ public class IntergateCircuitInfo {
             totalCost.put("端子总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("端子总成本").toString()) + Double.parseDouble(objectMap.get("端子成本").toString()))));
             totalCost.put("连接器塑壳总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("连接器塑壳总成本").toString()) + Double.parseDouble(objectMap.get("连接器塑壳成本").toString()))));
             totalCost.put("防水塞总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("防水塞总成本").toString()) + Double.parseDouble(objectMap.get("防水塞成本").toString()))));
-            totalCost.put("回路绕线长度总值(米)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString()) + Double.parseDouble(objectMap.get("回路绕线长度").toString()))));
+            totalCost.put("回路绕线长度总值(米)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString()) + Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString()))));
             lenght += Double.parseDouble( objectMap.get("回路理论直径").toString()) * Double.parseDouble( objectMap.get("回路理论直径").toString());
-            if( Double.parseDouble(objectMap.get("回路绕线长度").toString()) > 0 ){
+            if( Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString()) > 0 ){
                 coiling++;
             }
-            circuitBreakNum += Double.parseDouble(objectMap.get("回路打断次数").toString());
+            circuitBreakNum += Double.parseDouble(objectMap.get("回路打断总次数(根)").toString());
             //回路打断后计算
-            int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
+            int i = Integer.parseInt(objectMap.get("回路打断总次数(根)").toString());
             i += 1;
             count += i;
         }
@@ -176,10 +176,10 @@ public class IntergateCircuitInfo {
                 adjacencyMatrixGraph.getAllPoint(),
                 adjacencyMatrixGraph.getAdj(),
                 edges);
-        totalCost.put("能量流绕路总数量(根)", efResult.get("能量流绕路总数量"));
-        totalCost.put("能量流绕路数量占比(百分比)", efResult.get("能量流绕路数量占比"));
-        totalCost.put("能量流绕路长度总值(米)", efResult.get("能量流绕路长度总值"));
-        totalCost.put("能量流绕路长度均值(米/根)", efResult.get("能量流绕路长度均值"));
+        totalCost.put("能量流绕路总数量(根)", efResult.get("能量流绕路总数量(根)"));
+        totalCost.put("能量流绕路数量占比(百分比)", efResult.get("能量流绕路数量占比(百分比)"));
+        totalCost.put("能量流绕路长度总值(米)", efResult.get("能量流绕路长度总值(米)"));
+        totalCost.put("能量流绕路长度均值(米/根)", efResult.get("能量流绕路长度均值(米/根)"));
         totalCost.put("回路长度均值(打断后)",avgLength2);
         totalCost.put("总理论直径",Double.parseDouble( df.format(Math.sqrt(lenght)*1.3)));
         totalCost.put("分支直径RGB坐标",getlengthColor((Double) totalCost.get("总理论直径")));
@@ -212,12 +212,12 @@ public class IntergateCircuitInfo {
         List<EnergyFlowResult> perCircuitResults = new ArrayList<>();
 
         if (circuitIds == null || circuitIds.isEmpty()) {
-            result.put("能量流绕路总数量", 0);
-            result.put("能量流绕路数量占比", "0.00%");
-            result.put("能量流绕路长度总值", 0.0);
-            result.put("能量流绕路长度均值", 0.0);
-            result.put("能量流途径分支点名称", null);
-            result.put("能量流不绕路途径分支点名称", null);
+            result.put("能量流绕路总数量(根)", 0);
+            result.put("能量流绕路数量占比(百分比)", "0.00%");
+            result.put("能量流绕路长度总值(米)", 0.0);
+            result.put("能量流绕路长度均值(米/根)", 0.0);
+            result.put("能量流途径分支id", null);
+            result.put("能量流不绕路途径分支id", null);
             result.put("perCircuitResults", perCircuitResults);
             return result;
         }
@@ -264,23 +264,23 @@ public class IntergateCircuitInfo {
         }
 
         // 3. 汇总6个字段
-        result.put("能量流绕路总数量", detourCount);
+        result.put("能量流绕路总数量(根)", detourCount);
         if (analyzedCount > 0) {
             double percent = (double) detourCount / analyzedCount * 100;
-            result.put("能量流绕路数量占比", df.format(percent) + "%");
+            result.put("能量流绕路数量占比(百分比)", df.format(percent) + "%");
         } else {
-            result.put("能量流绕路数量占比", "0.00%");
+            result.put("能量流绕路数量占比(百分比)", "0.00%");
         }
         double detourTotalMeters = detourTotal / 1000.0;
-        result.put("能量流绕路长度总值", Double.parseDouble(df.format(detourTotalMeters)));
+        result.put("能量流绕路长度总值(米)", Double.parseDouble(df.format(detourTotalMeters)));
         if (detourCount > 0) {
-            result.put("能量流绕路长度均值", Double.parseDouble(df.format(detourTotalMeters / detourCount)));
+            result.put("能量流绕路长度均值(米/根)", Double.parseDouble(df.format(detourTotalMeters / detourCount)));
         } else {
-            result.put("能量流绕路长度均值", 0.0);
+            result.put("能量流绕路长度均值(米/根)", 0.0);
         }
-        // result.put("能量流途径分支点名称",
+        // result.put("能量流途径分支id",
         //         allEnergyFlowBranchPoints.isEmpty() ? null : String.join("; ", allEnergyFlowBranchPoints));
-        // result.put("能量流不绕路途径分支点名称",
+        // result.put("能量流不绕路途径分支id",
         //         allNoDetourBranchPoints.isEmpty() ? null : String.join("; ", allNoDetourBranchPoints));
         result.put("perCircuitResults", perCircuitResults);
 
@@ -294,9 +294,9 @@ public class IntergateCircuitInfo {
      * 因此以两端中的“叶子端”（合点 > 用电器 > 控制器）作为终端，强制
      * 终端 → 另一端 这一段一定出现在路径里，再从另一端向上回溯到发电/储电单元。
      * 这样无论最短路径如何，合点/焊点位置（如 “左后轮包顶点”）必定出现在
-     * 能量流途径分支点名称中。
+     * 能量流途径分支id中。
      */
-    private EnergyFlowResult computeSingleCircuitEnergyFlow(
+    public EnergyFlowResult computeSingleCircuitEnergyFlow(
             String circuitId,
             Map<String, Object> loopInfo,
             Map<String, List<AppEdge>> appGraph,
@@ -581,8 +581,8 @@ public class IntergateCircuitInfo {
         efResult.energyFlowLength = efLen;
         efResult.noDetourLength = noDetourLen;
         efResult.detourLength = detourLen;
-        efResult.energyFlowBranchPoints = efPositionPath;
-        efResult.noDetourBranchPoints = noDetourPosPath;
+        efResult.energyFlowBranchPoints = convertPositionPathToEdgeIds(efPositionPath, edges);
+        efResult.noDetourBranchPoints = convertPositionPathToEdgeIds(noDetourPosPath, edges);
         return efResult;
     }
 
@@ -900,7 +900,7 @@ public class IntergateCircuitInfo {
     /**
      * 从所有loopdetails构建用电器邻接图（两遍扫描）
      */
-    private void buildApplianceGraph(
+    public void buildApplianceGraph(
             Map<String, Object> loopdetails,
             Map<String, List<AppEdge>> appGraph,
             Map<String, String> appTypeMap,
@@ -1146,24 +1146,48 @@ public class IntergateCircuitInfo {
             EnergyFlowResult efResult = perCircuitResults.get(0);
             DecimalFormat df = new DecimalFormat("0.00");
             if (efResult.skipped || !efResult.hasEnergyFlow) {
-                loopInfo.put("能量流绕路总数量", null);
-                loopInfo.put("能量流绕路数量占比", null);
-                loopInfo.put("能量流绕路长度总值", null);
-                loopInfo.put("能量流绕路长度均值", null);
-                loopInfo.put("能量流途径分支点名称", null);
-                loopInfo.put("能量流不绕路途径分支点名称", null);
+                loopInfo.put("能量流绕路总数量(根)", null);
+                loopInfo.put("能量流绕路数量占比(百分比)", null);
+                loopInfo.put("能量流绕路长度总值(米)", null);
+                loopInfo.put("能量流绕路长度均值(米/根)", null);
+                loopInfo.put("能量流途径分支id", null);
+                loopInfo.put("能量流不绕路途径分支id", null);
             } else {
                 double detourMeters = Math.max(efResult.detourLength, 0) / 1000.0;
-                loopInfo.put("能量流绕路总数量", detourMeters > 0 ? 1 : 0);
-                loopInfo.put("能量流绕路数量占比", detourMeters > 0 ? "100.00%" : "0.00%");
-                loopInfo.put("能量流绕路长度总值", Double.parseDouble(df.format(detourMeters)));
-                loopInfo.put("能量流绕路长度均值", Double.parseDouble(df.format(detourMeters)));
-                loopInfo.put("能量流途径分支点名称",
+                loopInfo.put("能量流绕路总数量(根)", detourMeters > 0 ? 1 : 0);
+                loopInfo.put("能量流绕路数量占比(百分比)", detourMeters > 0 ? "100.00%" : "0.00%");
+                loopInfo.put("能量流绕路长度总值(米)", Double.parseDouble(df.format(detourMeters)));
+                loopInfo.put("能量流绕路长度均值(米/根)", Double.parseDouble(df.format(detourMeters)));
+                loopInfo.put("能量流途径分支id",
                         efResult.energyFlowBranchPoints.isEmpty() ? null : efResult.energyFlowBranchPoints);
-                loopInfo.put("能量流不绕路途径分支点名称",
+                loopInfo.put("能量流不绕路途径分支id",
                         efResult.noDetourBranchPoints.isEmpty() ? null : efResult.noDetourBranchPoints);
             }
         }
+    }
+
+    /**
+     * 将位置名称路径转为分支 id 路径（前端需要分支id而非名称）
+     */
+    private List<String> convertPositionPathToEdgeIds(List<String> posPath, List<Map<String, String>> edges) {
+        if (posPath == null || posPath.size() < 2) return new ArrayList<>();
+        Map<String, String> edgeMap = new HashMap<>();
+        for (Map<String, String> edge : edges) {
+            String s = edge.get("分支起点名称");
+            String e = edge.get("分支终点名称");
+            String id = edge.get("分支id编号");
+            if (s != null && e != null && id != null) {
+                edgeMap.put(s + "|" + e, id);
+                edgeMap.put(e + "|" + s, id);
+            }
+        }
+        List<String> ids = new ArrayList<>();
+        for (int i = 0; i < posPath.size() - 1; i++) {
+            String key = posPath.get(i) + "|" + posPath.get(i + 1);
+            String edgeId = edgeMap.get(key);
+            if (edgeId != null) ids.add(edgeId);
+        }
+        return ids;
     }
 
     //    根据传入的值找到对应的颜色

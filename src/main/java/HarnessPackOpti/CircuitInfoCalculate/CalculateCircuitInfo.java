@@ -70,7 +70,7 @@ public class CalculateCircuitInfo {
         double diameter = Double.parseDouble(materialsMsg.get("导线外径（毫米）"));
         resultMap.put("回路长度", length / 1000);
         resultMap.put("回路重量", weight);
-        resultMap.put("回路打断成本", breakCost);
+        resultMap.put("回路打断成本总值(元)", breakCost);
         resultMap.put("inline湿区连接器成本补偿", connectCost);
         resultMap.put("inline湿区防水塞成本补偿", defenseCost);
         resultMap.put("外径", diameter);

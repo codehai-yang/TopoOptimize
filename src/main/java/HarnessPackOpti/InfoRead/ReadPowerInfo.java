@@ -1,4 +1,4 @@
-﻿package HarnessPackOpti.InfoRead;
+package HarnessPackOpti.InfoRead;
 
 import HarnessPackOpti.Optimize.elec.ElecPositionVariantCalculation;
 import HarnessPackOpti.Optimize.elec.PowerDistributionDriveOptimization;

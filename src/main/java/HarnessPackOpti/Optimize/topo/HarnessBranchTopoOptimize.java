@@ -137,9 +137,7 @@ public class HarnessBranchTopoOptimize {
         JsonToMap jsonToMap = new JsonToMap();
         Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
         ReadProjectInfo readProjectInfo = new ReadProjectInfo();
-        if(!ReadProjectInfo.whetherGet) {
-            Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(jsonMap);
-        }
+        Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(jsonMap);
         // 不启用AI则用老的方法
         if (!whetherAI) {
             OldHarnessBranchTopoOptimize harnessBranchTopoOptimize = new OldHarnessBranchTopoOptimize();

@@ -15,6 +15,8 @@ import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+
+import HarnessPackOpti.InfoRead.ReadPowerInfo;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
@@ -99,10 +101,8 @@ public class PowerDistributionDriveOptimization {
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         JsonToMap jsonToMap = new JsonToMap();
         Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
-        ReadProjectInfo readProjectInfo = new ReadProjectInfo();
-        if(!ReadProjectInfo.whetherGet) {
-            Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(jsonMap);
-        }
+        ReadPowerInfo readProjectInfo = new ReadPowerInfo();
+        Map<String, Object> readProject = readProjectInfo.getProjectInfo(jsonMap);
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
         List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
         Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");

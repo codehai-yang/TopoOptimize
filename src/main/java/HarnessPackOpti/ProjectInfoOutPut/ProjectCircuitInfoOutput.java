@@ -627,7 +627,7 @@ public class ProjectCircuitInfoOutput {
             Map<String, Object> objectMap = (Map<String, Object>) loopdetails.get(loopInfo.get("回路id").toString());
             List<String> list = new ArrayList<>();
             //计算单条回路的所有字段
-            calculateCircuit(objectMap);
+            calculateCircuit(objectMap, adjacencyMatrixGraph, edges, loopdetails);
             Double price = null;
             Object wire = objectMap.get("导线选型");
             if (wire != null) {
@@ -743,27 +743,26 @@ public class ProjectCircuitInfoOutput {
      * @param objectMap
      * @return
      */
-    public void calculateCircuit(Map<String,Object> objectMap){
+    public void calculateCircuit(Map<String,Object> objectMap,GenerateTopoMatrix adjacencyMatrixGraph,List<Map<String, String>> edges, Object loopdetails){
         DecimalFormat df = new DecimalFormat("0.00");
         if(objectMap != null){
-            objectMap.put("能量流绕路总数量", null);
-            objectMap.put("能量流绕路数量占比", null);
-            objectMap.put("能量流绕路长度总值", null);
-            objectMap.put("能量流绕路长度均值", null);
-            String breakNumb = objectMap.get("回路打断次数").toString();
+            String breakNumb = objectMap.get("回路打断总次数(根)").toString();
             //打断后回路数量
             Integer circuitNum =  Integer.parseInt(breakNumb) + 1;
-            objectMap.put("回路数量(打断后)",circuitNum);
-            objectMap.put("回路数量(打断前)",1);
-            objectMap.put("回路长度均值(打断前)",objectMap.get("回路长度"));
+            objectMap.put("回路数量-A类(根)",circuitNum);
+            objectMap.put("回路数量-B类(根)",1);
+            objectMap.put("回路长度均值(米/根)",objectMap.get("回路长度"));
             objectMap.put("回路长度均值(打断后)",Double.parseDouble(df.format(Double.parseDouble(objectMap.get("回路长度").toString()) / circuitNum)));
-            double coilingLength = Double.parseDouble(objectMap.get("回路绕线长度").toString());
+            double coilingLength = Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString());
             Integer coiling = coilingLength > 0 ? 1:0;
-            objectMap.put("回路绕线数量",coiling);
+            objectMap.put("回器绕线总数量(根)",coiling);
+            objectMap.put("回路重量均值(克/根)",objectMap.get("回路重量"));
+            objectMap.put("回路成本均值",objectMap.get("回路总成本"));
+            objectMap.put("回路绕线长度均值(米/根)",objectMap.get("回路绕线长度总值(米)"));
             double coilingPercent = (double)coiling / 1 * 100;
-            objectMap.put("回路绕线数量占比",df.format(coilingPercent) + "%");
-            objectMap.put("回路打断数量占比", df.format(Double.parseDouble(objectMap.get("回路打断次数").toString()) / 1 * 100) + "%");
-            objectMap.put("回路打断成本代价均值",df.format(Double.parseDouble(objectMap.get("回路打断成本").toString()) / 1));
+            objectMap.put("回路绕线数量占比(百分比)",df.format(coilingPercent) + "%");
+            objectMap.put("回路打断数量占比(百分比)", df.format(Double.parseDouble(objectMap.get("回路打断总次数(根)").toString()) / 1 * 100) + "%");
+            objectMap.put("回路打新成本均值(元/根)",df.format(Double.parseDouble(objectMap.get("回路打断成本总值(元)").toString()) / 1));
         }
     }
 
@@ -881,7 +880,7 @@ public class ProjectCircuitInfoOutput {
             if (startName == null || endName == null) {
                 // 如果回路长度为默认的0.2，则判定起点和终点都在同一位置点
                 if ("0.2".equals(tempInfo.get("回路长度").toString())) {
-                    tempInfo.put("回路绕线长度", "0.2");
+                    tempInfo.put("回路绕线长度总值(米)", "0.2");
                     continue;
                 }
                 Object solderName = tempInfo.get("焊点位置名称");
@@ -918,7 +917,7 @@ public class ProjectCircuitInfoOutput {
                 }
             }
             Double minLength = Collections.min(lengthList);
-            tempInfo.put("回路绕线长度", Double.parseDouble(df.format(distance - minLength)));
+            tempInfo.put("回路绕线长度总值(米)", Double.parseDouble(df.format(distance - minLength)));
         }
     }
 
@@ -1184,7 +1183,7 @@ public class ProjectCircuitInfoOutput {
                                 + Double.parseDouble(objectMap.get("回路湿区成本加成").toString()))));
                 totalCost.put("回路打断成本总值(元)",
                         Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString())
-                                + Double.parseDouble(objectMap.get("回路打断成本").toString()))));
+                                + Double.parseDouble(objectMap.get("回路打断成本总值(元)").toString()))));
                 totalCost.put("回路导线总成本",
                         Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路导线总成本").toString())
                                 + Double.parseDouble(objectMap.get("回路导线成本").toString()))));
@@ -1208,10 +1207,10 @@ public class ProjectCircuitInfoOutput {
                                 + Double.parseDouble(objectMap.get("防水塞成本").toString()))));
                 totalCost.put("回路绕线长度总值(米)",
                         Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString())
-                                + Double.parseDouble(objectMap.get("回路绕线长度").toString()))));
+                                + Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString()))));
                 lenght += Double.parseDouble(objectMap.get("回路理论直径").toString())
                         * Double.parseDouble(objectMap.get("回路理论直径").toString());
-                circuitBreakNum += Double.parseDouble(objectMap.get("回路打断次数").toString());
+                circuitBreakNum += Double.parseDouble(objectMap.get("回路打断总次数(根)").toString());
                 mapList.add(objectMap.get("回路id").toString());
                 // 导线选型与系统统计
                 String wireType = objectMap.get("导线选型").toString();
@@ -1258,8 +1257,8 @@ public class ProjectCircuitInfoOutput {
         // 回路打断后统计
         for (String id : mapList) {
             Map<String, Object> objectMap = (Map<String, Object>) pointList.get(id);
-            int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
-            double coilingNum = Double.parseDouble(objectMap.get("回路绕线长度").toString());
+            int i = Integer.parseInt(objectMap.get("回路打断总次数(根)").toString());
+            double coilingNum = Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString());
             if (coilingNum > 0) {
                 coiling++;
             }
@@ -1275,10 +1274,10 @@ public class ProjectCircuitInfoOutput {
             double breakNumb = Double.parseDouble(totalCost.get("回路打断总次数(根)").toString()) / mapList.size() * 100;
             totalCost.put("回路打断成本均值(元/根)", Double
                     .parseDouble(df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString()) / mapList.size())));
-            totalCost.put("回路烧线数量占比(百分比)", df.format(coilingPercent) + "%");
+            totalCost.put("回路绕线数量占比(百分比)", df.format(coilingPercent) + "%");
             totalCost.put("回路打断数量占比(百分比)", df.format(breakNumb) + "%");
         } else {
-            totalCost.put("回路烧线数量占比(百分比)", "0.00%");
+            totalCost.put("回路绕线数量占比(百分比)", "0.00%");
         }
         totalCost.put("回器绕线总数量(根)", coiling);
         totalCost.put("回路数量-A类(根)", count);
@@ -1334,7 +1333,7 @@ public class ProjectCircuitInfoOutput {
         totalCost.put("防水塞总成本", 0.0);
         totalCost.put("回路绕线长度总值(米)", 0.0);
         totalCost.put("回器绕线总数量(根)", 0);
-        totalCost.put("回路烧线数量占比(百分比)", "0.00%");
+        totalCost.put("回路绕线数量占比(百分比)", "0.00%");
         totalCost.put("回路绕线长度均值(米/根)", 0.0);
         totalCost.put("回路打断总次数(根)", 0);
         totalCost.put("回路打断数量占比(百分比)", "0.00%");
@@ -1356,7 +1355,7 @@ public class ProjectCircuitInfoOutput {
                             + Double.parseDouble(objectMap.get("回路湿区成本加成").toString()))));
             totalCost.put("回路打断成本总值(元)",
                     Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString())
-                            + Double.parseDouble(objectMap.get("回路打断成本").toString()))));
+                            + Double.parseDouble(objectMap.get("回路打断成本总值(元)").toString()))));
             totalCost.put("回路导线总成本",
                     Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路导线总成本").toString())
                             + Double.parseDouble(objectMap.get("回路导线成本").toString()))));
@@ -1376,14 +1375,14 @@ public class ProjectCircuitInfoOutput {
                     + Double.parseDouble(objectMap.get("防水塞成本").toString()))));
             totalCost.put("回路绕线长度总值(米)",
                     Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString())
-                            + Double.parseDouble(objectMap.get("回路绕线长度").toString()))));
+                            + Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString()))));
             lenght += Double.parseDouble(objectMap.get("回路理论直径").toString())
                     * Double.parseDouble(objectMap.get("回路理论直径").toString());
-            circuitBreakNum += Double.parseDouble(objectMap.get("回路打断次数").toString());
-            if (Double.parseDouble(objectMap.get("回路绕线长度").toString()) > 0) {
+            circuitBreakNum += Double.parseDouble(objectMap.get("回路打断总次数(根)").toString());
+            if (Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString()) > 0) {
                 coiling++;
             }
-            int i = Integer.parseInt(objectMap.get("回路打断次数").toString());
+            int i = Integer.parseInt(objectMap.get("回路打断总次数(根)").toString());
             i += 1;
             count += i;
         }
@@ -1395,9 +1394,9 @@ public class ProjectCircuitInfoOutput {
         }
         if (pointList.size() > 0) {
             double coilingPercent = (double) coiling / pointList.size() * 100;
-            totalCost.put("回路烧线数量占比(百分比)", df.format(coilingPercent) + "%");
+            totalCost.put("回路绕线数量占比(百分比)", df.format(coilingPercent) + "%");
         } else {
-            totalCost.put("回路烧线数量占比(百分比)", "0.00%");
+            totalCost.put("回路绕线数量占比(百分比)", "0.00%");
         }
         totalCost.put("回路数量-B类(根)", multiLoopInfosSet.size());
         totalCost.put("回路数量-A类(根)", count);
@@ -1425,10 +1424,10 @@ public class ProjectCircuitInfoOutput {
                 adjacencyMatrixGraph.getAdj(),
                 edges);
         //放入totalCost
-        totalCost.put("能量流绕路总数量", efResult.get("能量流绕路总数量"));
-        totalCost.put("能量流绕路数量占比", efResult.get("能量流绕路数量占比"));
-        totalCost.put("能量流绕路长度总值", efResult.get("能量流绕路长度总值"));
-        totalCost.put("能量流绕路长度均值", efResult.get("能量流绕路长度均值"));
+        totalCost.put("能量流绕路总数量(根)", efResult.get("能量流绕路总数量(根)"));
+        totalCost.put("能量流绕路数量占比(百分比)", efResult.get("能量流绕路数量占比(百分比)"));
+        totalCost.put("能量流绕路长度总值(米)", efResult.get("能量流绕路长度总值(米)"));
+        totalCost.put("能量流绕路长度均值(米/根)", efResult.get("能量流绕路长度均值(米/根)"));
         totalCost.put("回路长度均值(打断后)", vagLength2);
         totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * ModelDiameterFactor)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
@@ -1696,7 +1695,7 @@ public class ProjectCircuitInfoOutput {
                                 + Double.parseDouble(sinaglePath.get("湿区两端防水塞成本补偿").toString())
                                 + Double.parseDouble(twoPointMsg.get("inline湿区防水塞成本补偿").toString())
                                 + Double.parseDouble(twoPointMsg.get("inline湿区连接器成本补偿").toString())
-                                + Double.parseDouble(twoPointMsg.get("回路打断成本").toString())
+                                + Double.parseDouble(twoPointMsg.get("回路打断成本总值(元)").toString())
                                 + Double.parseDouble(twoPointMsg.get("端子成本").toString())
                                 + Double.parseDouble(twoPointMsg.get("回路导线成本").toString()))));
 
@@ -1709,8 +1708,8 @@ public class ProjectCircuitInfoOutput {
                         .parseDouble(df.format(Double.parseDouble(twoPointMsg.get("inline湿区连接器成本补偿").toString()))));
                 sinaglePath.put("inline湿区防水塞成本补偿", Double
                         .parseDouble(df.format(Double.parseDouble(twoPointMsg.get("inline湿区防水塞成本补偿").toString()))));
-                sinaglePath.put("回路打断成本",
-                        Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("回路打断成本").toString()))));
+                sinaglePath.put("回路打断成本总值(元)",
+                        Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("回路打断成本总值(元)").toString()))));
                 sinaglePath.put("回路两端端子成本",
                         Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("端子成本").toString()))));
                 sinaglePath.put("回路导线成本",
@@ -1721,7 +1720,7 @@ public class ProjectCircuitInfoOutput {
                         Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("回路长度").toString()))));
                 sinaglePath.put("回路打断分支id", twoPointMsg.get("回路分支打断清单"));
                 sinaglePath.put("回路打断分支名称", twoPointMsg.get("回路分支打断清单名称"));
-                sinaglePath.put("回路打断次数", ((List<String>) twoPointMsg.get("回路分支打断清单")).size());
+                sinaglePath.put("回路打断总次数(根)", ((List<String>) twoPointMsg.get("回路分支打断清单")).size());
                 sinaglePath.put("回路所有分支id", twoPointMsg.get("所有分支"));
                 sinaglePath.put("回路所有分支名称", twoPointMsg.get("所有分支名称"));
                 sinaglePath.put("回路所有分支数量", ((List<String>) twoPointMsg.get("所有分支")).size());
@@ -2038,7 +2037,7 @@ public class ProjectCircuitInfoOutput {
                                                 + Double.parseDouble(sinaglePath.get("湿区两端防水塞成本补偿").toString())
                                                 + Double.parseDouble(twoPointMsg.get("inline湿区防水塞成本补偿").toString())
                                                 + Double.parseDouble(twoPointMsg.get("inline湿区连接器成本补偿").toString())
-                                                + Double.parseDouble(twoPointMsg.get("回路打断成本").toString())
+                                                + Double.parseDouble(twoPointMsg.get("回路打断成本总值(元)").toString())
                                                 + Double.parseDouble(twoPointMsg.get("端子成本").toString())
                                                 + Double.parseDouble(twoPointMsg.get("回路导线成本").toString()))));
                         sinaglePath.put("回路湿区成本加成",
@@ -2051,8 +2050,8 @@ public class ProjectCircuitInfoOutput {
                                 df.format(Double.parseDouble(twoPointMsg.get("inline湿区连接器成本补偿").toString()))));
                         sinaglePath.put("inline湿区防水塞成本补偿", Double.parseDouble(
                                 df.format(Double.parseDouble(twoPointMsg.get("inline湿区防水塞成本补偿").toString()))));
-                        sinaglePath.put("回路打断成本", Double
-                                .parseDouble(df.format(Double.parseDouble(twoPointMsg.get("回路打断成本").toString()))));
+                        sinaglePath.put("回路打断成本总值(元)", Double
+                                .parseDouble(df.format(Double.parseDouble(twoPointMsg.get("回路打断成本总值(元)").toString()))));
                         sinaglePath.put("回路两端端子成本",
                                 Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("端子成本").toString()))));
                         sinaglePath.put("回路导线成本", Double
@@ -2063,7 +2062,7 @@ public class ProjectCircuitInfoOutput {
                                 Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("回路长度").toString()))));
                         sinaglePath.put("回路打断分支id", twoPointMsg.get("回路分支打断清单"));
                         sinaglePath.put("回路打断分支名称", twoPointMsg.get("回路分支打断清单名称"));
-                        sinaglePath.put("回路打断次数", ((List<String>) twoPointMsg.get("回路分支打断清单")).size());
+                        sinaglePath.put("回路打断总次数(根)", ((List<String>) twoPointMsg.get("回路分支打断清单")).size());
                         sinaglePath.put("回路所有分支id", twoPointMsg.get("所有分支"));
                         sinaglePath.put("回路所有分支名称", twoPointMsg.get("所有分支名称"));
                         sinaglePath.put("回路所有分支数量", ((List<String>) twoPointMsg.get("所有分支")).size());
@@ -2194,7 +2193,7 @@ public class ProjectCircuitInfoOutput {
                                 + Double.parseDouble(sinaglePath.get("湿区两端防水塞成本补偿").toString())
                                 + Double.parseDouble(twoPointMsg.get("inline湿区防水塞成本补偿").toString())
                                 + Double.parseDouble(twoPointMsg.get("inline湿区连接器成本补偿").toString())
-                                + Double.parseDouble(twoPointMsg.get("回路打断成本").toString())
+                                + Double.parseDouble(twoPointMsg.get("回路打断成本总值(元)").toString())
                                 + Double.parseDouble(twoPointMsg.get("端子成本").toString())
                                 + Double.parseDouble(twoPointMsg.get("回路导线成本").toString()))));
                 sinaglePath.put("回路湿区成本加成",
@@ -2206,8 +2205,8 @@ public class ProjectCircuitInfoOutput {
                         .parseDouble(df.format(Double.parseDouble(twoPointMsg.get("inline湿区连接器成本补偿").toString()))));
                 sinaglePath.put("inline湿区防水塞成本补偿", Double
                         .parseDouble(df.format(Double.parseDouble(twoPointMsg.get("inline湿区防水塞成本补偿").toString()))));
-                sinaglePath.put("回路打断成本",
-                        Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("回路打断成本").toString()))));
+                sinaglePath.put("回路打断成本总值(元)",
+                        Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("回路打断成本总值(元)").toString()))));
                 sinaglePath.put("回路两端端子成本",
                         Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("端子成本").toString()))));
                 sinaglePath.put("回路导线成本",
@@ -2218,7 +2217,7 @@ public class ProjectCircuitInfoOutput {
                         Double.parseDouble(df.format(Double.parseDouble(twoPointMsg.get("回路长度").toString()))));
                 sinaglePath.put("回路打断分支id", twoPointMsg.get("回路分支打断清单"));
                 sinaglePath.put("回路打断分支名称", twoPointMsg.get("回路分支打断清单名称"));
-                sinaglePath.put("回路打断次数", ((List<String>) twoPointMsg.get("回路分支打断清单")).size());
+                sinaglePath.put("回路打断总次数(根)", ((List<String>) twoPointMsg.get("回路分支打断清单")).size());
                 sinaglePath.put("回路所有分支id", twoPointMsg.get("所有分支"));
                 sinaglePath.put("回路所有分支名称", twoPointMsg.get("所有分支名称"));
                 sinaglePath.put("回路所有分支数量", ((List<String>) twoPointMsg.get("所有分支")).size());

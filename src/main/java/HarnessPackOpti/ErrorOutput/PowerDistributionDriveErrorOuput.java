@@ -1,4 +1,4 @@
-﻿package HarnessPackOpti.ErrorOutput;
+package HarnessPackOpti.ErrorOutput;
 
 import HarnessPackOpti.DiagnoseLibrary.CircuitDiagnoseLibrary;
 import HarnessPackOpti.DiagnoseLibrary.PowerDistributionDriveLibrary;
