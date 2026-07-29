@@ -13,16 +13,23 @@ public class FindBest {
      * @input name:所有路径信息
      * @Return 最优的几条方案
      */
-    public List<Map<String, Object>> findBest(List<Map<String, Object>> radomList, String name,Integer topNumber) {
+    public List<Map<String, Object>> findBest(List<Map<String, Object>> radomList, String name, Integer topNumber) {
+        // 过滤掉缺少成本字段的方案，避免空指针
+        List<Map<String, Object>> validList = radomList.stream()
+                .filter(m -> m.get(name) instanceof Map)
+                .collect(Collectors.toList());
+        if (validList.isEmpty()) {
+            return radomList;
+        }
 //       找出当中的最大值最小值
-        double minCost = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总成本").toString());
-        double maxCost = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总成本").toString());
-        double minWeight = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总重量").toString());
-        double maxWeight = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总重量").toString());
-        double minLength = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总长度").toString());
-        double maxLength = Double.parseDouble(((Map<String, Object>) radomList.get(0).get(name)).get("总长度").toString());
+        double minCost = Double.parseDouble(((Map<String, Object>) validList.get(0).get(name)).get("总成本").toString());
+        double maxCost = Double.parseDouble(((Map<String, Object>) validList.get(0).get(name)).get("总成本").toString());
+        double minWeight = Double.parseDouble(((Map<String, Object>) validList.get(0).get(name)).get("总重量").toString());
+        double maxWeight = Double.parseDouble(((Map<String, Object>) validList.get(0).get(name)).get("总重量").toString());
+        double minLength = Double.parseDouble(((Map<String, Object>) validList.get(0).get(name)).get("总长度").toString());
+        double maxLength = Double.parseDouble(((Map<String, Object>) validList.get(0).get(name)).get("总长度").toString());
 //        首先最大最小值
-        for (Map<String, Object> map : radomList) {
+        for (Map<String, Object> map : validList) {
             if (minCost > Double.parseDouble(((Map<String, Object>) map.get(name)).get("总成本").toString())) {
                 minCost = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总成本").toString());
             }
@@ -44,26 +51,27 @@ public class FindBest {
             }
         }
 //        对每一个list 添加一个评分
-        for (Map<String, Object> map : radomList) {
+        for (Map<String, Object> map : validList) {
             double allCost = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总成本").toString());
             double weight = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总重量").toString());
             double length = Double.parseDouble(((Map<String, Object>) map.get(name)).get("总长度").toString());
             double score = (allCost - minCost) / ((maxCost - minCost) + 0.0001) * HarnessBranchTopoOptimize.costWeight + (weight - minWeight) / ((maxWeight - minWeight) + 0.0001) * HarnessBranchTopoOptimize.weightWeight + (length - minLength) / ((maxLength - minLength) + 0.0001) * HarnessBranchTopoOptimize.lengthWeight;
             map.put("score", score);
         }
-        List<Map<String, Object>> score = findTopTenMinDoubleMaps(radomList, "score", topNumber);
+        List<Map<String, Object>> score = findTopTenMinDoubleMaps(validList, "score", topNumber);
         for (Map<String, Object> objectMap : score) {
             objectMap.remove("score");
         }
         return score;
     }
+
     /**
      * @Description: 找出分数前几的数据
      * @input: maps   需要筛选的数据
      * @input: key   以什么字段进行筛选
      * @Return: 返回前几的数据
      */
-    public List<Map<String, Object>> findTopTenMinDoubleMaps(List<Map<String, Object>> maps, String key,Integer topNumber) {
+    public List<Map<String, Object>> findTopTenMinDoubleMaps(List<Map<String, Object>> maps, String key, Integer topNumber) {
         return maps.stream()
                 .sorted((m1, m2) -> {
                     Double value1 = getDoubleValue(m1, key);
@@ -73,6 +81,7 @@ public class FindBest {
                 .limit(topNumber)
                 .collect(Collectors.toList());
     }
+
     /**
      * @Description: 从给定的 Map<String, Object> 中获取指定键对应的值 并将其转换为 Double 类型
      * @input: map   需要获取的数据

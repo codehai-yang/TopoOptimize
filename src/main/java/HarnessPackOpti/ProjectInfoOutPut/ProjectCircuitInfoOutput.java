@@ -207,6 +207,9 @@ public class ProjectCircuitInfoOutput {
             // 单个固定回路，所有回路信息，矩阵对象，导线价格信息，用电器可变位置点，导线无聊单价商务成本
             Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, adjacencyMatrixGraph,
                     elecFixedLocationLibrary, true, null, electricalSet, elecBusinessPrice);
+            if(twoPointInfo == null){
+                System.out.println("");
+            }
             loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
         }
         // 对焊点的进行计算

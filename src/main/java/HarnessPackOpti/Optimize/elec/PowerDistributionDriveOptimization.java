@@ -81,7 +81,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\驱动分配优化日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\电源分配优化日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -115,8 +115,29 @@ public class PowerDistributionDriveOptimization {
         optimizeRecordId = optimizeRecord.get("id").toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
 
+        // 检查是否有 changeType=2 但位置未设置的用电器（前端未选择具体位置，跳过 base 成本计算）
+        boolean hasUnsetFullRangeApp = false;
+        if (appPositions != null) {
+            for (Map<String, String> app : appPositions) {
+                if ("2".equals(app.get("changeType"))
+                        && isBlank(app.get("regularPointId"))
+                        && isBlank(app.get("regularPointName"))
+                        && isBlank(app.get("unregularPointId"))
+                        && isBlank(app.get("unregularPointName"))) {
+                    hasUnsetFullRangeApp = true;
+                    break;
+                }
+            }
+        }
+
         // 整车信息计算(初始方案)
-        String originalResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
+        String originalResult;
+        if (hasUnsetFullRangeApp) {
+            originalResult = null;
+            System.out.println("存在 changeType=2 但位置未设置的用电器，跳过 base 方案整车计算");
+        } else {
+            originalResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
+        }
 
         // 判断是哪种类型优化（新格式：优化类型取自 optimizeRecord.type）
         // 4=驱动回路，3=配电回路，5=配电回路+主供电回路+驱动回路（包括硬线/高速线缆/接地回路）
@@ -446,19 +467,24 @@ public class PowerDistributionDriveOptimization {
             if (resultList.size() > 1) {
                 topBest = findBest.findBest(resultList, "成本", TopNumber);
             } else {
-                Map<String, Object> rawMap = jsonToMap.TransJsonToMap(originalResult);
-                Map<String, Object> pcInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
-                Map<String, Object> origMap = new HashMap<>();
-                origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
-                origMap.put("appPositions", deepCopyAppPositions(appPositions));
-                if (pcInfo != null) {
-                    Map<String, Double> projectCost = new HashMap<>();
-                    projectCost.put("总成本", ((Number) pcInfo.get("总成本")).doubleValue());
-                    projectCost.put("总重量", ((Number) pcInfo.get("回路总重量")).doubleValue());
-                    projectCost.put("总长度", ((Number) pcInfo.get("回路总长度")).doubleValue());
-                    origMap.put("成本", projectCost);
+                // 枚举无有效方案时，仅当 base 计算成功才用原始方案兜底
+                if (originalResult != null) {
+                    Map<String, Object> origMap = new HashMap<>();
+                    origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
+                    origMap.put("appPositions", deepCopyAppPositions(appPositions));
+                    Map<String, Object> rawMap = jsonToMap.TransJsonToMap(originalResult);
+                    Map<String, Object> pcInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
+                    if (pcInfo != null) {
+                        Map<String, Double> projectCost = new HashMap<>();
+                        projectCost.put("总成本", ((Number) pcInfo.get("总成本")).doubleValue());
+                        projectCost.put("总重量", ((Number) pcInfo.get("回路总重量")).doubleValue());
+                        projectCost.put("总长度", ((Number) pcInfo.get("回路总长度")).doubleValue());
+                        origMap.put("成本", projectCost);
+                    }
+                    if (origMap.containsKey("成本")) {
+                        topBest.add(origMap);
+                    }
                 }
-                topBest.add(origMap);
             }
             System.out.println("枚举总耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
             // 最终输出前：为 top 方案补齐完整整车计算结果
@@ -505,27 +531,31 @@ public class PowerDistributionDriveOptimization {
                     loopElecById,
                     loopElecByIdStart,
                     resourceNum
-);
+            );
 
             System.out.println("初代样本生成耗时: " + (System.currentTimeMillis() - gaInitTime) + "ms");
             System.out.println("有效初代样本数: " + initialPopulation.size());
 
             if (!initialPopulation.isEmpty()) {
                 topBest = findBest.findBest(initialPopulation, "成本", TopNumber);
-                // 原始方案精简为与其他方案一致的三个字段：成本 + loopInfos + appPositions
-                Map<String, Object> rawMap = jsonToMap.TransJsonToMap(originalResult);
-                Map<String, Object> pcInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
-                Map<String, Object> origMap = new HashMap<>();
-                origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
-                origMap.put("appPositions", deepCopyAppPositions(appPositions));
-                if (pcInfo != null) {
-                    Map<String, Double> projectCost = new HashMap<>();
-                    projectCost.put("总成本", ((Number) pcInfo.get("总成本")).doubleValue());
-                    projectCost.put("总重量", ((Number) pcInfo.get("回路总重量")).doubleValue());
-                    projectCost.put("总长度", ((Number) pcInfo.get("回路总长度")).doubleValue());
-                    origMap.put("成本", projectCost);
+                // 原始方案（仅当有 base 计算结果时才加入对比）
+                if (originalResult != null) {
+                    Map<String, Object> origMap = new HashMap<>();
+                    origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
+                    origMap.put("appPositions", deepCopyAppPositions(appPositions));
+                    Map<String, Object> rawMap = jsonToMap.TransJsonToMap(originalResult);
+                    Map<String, Object> pcInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
+                    if (pcInfo != null) {
+                        Map<String, Double> projectCost = new HashMap<>();
+                        projectCost.put("总成本", ((Number) pcInfo.get("总成本")).doubleValue());
+                        projectCost.put("总重量", ((Number) pcInfo.get("回路总重量")).doubleValue());
+                        projectCost.put("总长度", ((Number) pcInfo.get("回路总长度")).doubleValue());
+                        origMap.put("成本", projectCost);
+                    }
+                    if (origMap.containsKey("成本")) {
+                        topBest.add(origMap);
+                    }
                 }
-                topBest.add(origMap);
             }
         }
 
@@ -533,7 +563,7 @@ public class PowerDistributionDriveOptimization {
         if (topBest.isEmpty()) {
             System.out.println("初代无有效方案，返回原始方案");
             Map<String, Object> origMap = new HashMap<>();
-            origMap.put("成本", parseOriginalCost(originalResult, jsonToMap));
+            origMap.put("成本", originalResult != null ? parseOriginalCost(originalResult, jsonToMap) : new HashMap<>());
             origMap.put("loopInfos", new ArrayList<>(loopInfos));
             origMap.put("appPositions", new ArrayList<>(appPositions));
             List<Map<String, Object>> result = new ArrayList<>();
@@ -572,15 +602,18 @@ public class PowerDistributionDriveOptimization {
                     loopElecById,
                     random,
                     resourceNum, jsonMap
-);
+            );
 
             System.out.println("交叉生成 " + crossedSchemes.size() + " 个方案");
 
             List<Map<String, Object>> allSchemesForMutation = new ArrayList<>(currentTopBest);
             allSchemesForMutation.addAll(crossedSchemes);
 
+            // 变异上限 = 本代目标 - 已保留的方案，避免无限制生成
+            int mutationCap = Math.max(1, HybridizationLessRandomSamleNumber - currentTopBest.size());
             List<Map<String, Object>> mutatedSchemes = mutateTopSchemes(
                     allSchemesForMutation,
+                    mutationCap,
                     targetLoops,
                     loopInfos,
                     appPositions,
@@ -596,7 +629,7 @@ public class PowerDistributionDriveOptimization {
                     loopElecByIdStart,
                     random,
                     resourceNum
-);
+            );
             System.out.println("变异生成 " + mutatedSchemes.size() + " 个方案");
 
             if (mutatedSchemes.isEmpty()) {
@@ -636,7 +669,7 @@ public class PowerDistributionDriveOptimization {
                         loopElecById,
                         loopElecByIdStart,
                         resourceNum
-);
+                );
                 numb++;
                 if (numb > AutoCompleteNumber) {
                     break;
@@ -787,7 +820,9 @@ public class PowerDistributionDriveOptimization {
         }
     }
 
-    /** 根据 loopWireway 第二分段（线径截面积或铜丝数）判定大/中/小电流，返回 High/Medium/Low；无法解析返回 null */
+    /**
+     * 根据 loopWireway 第二分段（线径截面积或铜丝数）判定大/中/小电流，返回 High/Medium/Low；无法解析返回 null
+     */
     private String resolveCurrentSize(String loopWireway) {
         if (loopWireway == null || loopWireway.trim().isEmpty())
             return null;
@@ -808,7 +843,9 @@ public class PowerDistributionDriveOptimization {
         return "Low";
     }
 
-    /** 实际数 <= 限制 才通过；限制为 null 表示不限 */
+    /**
+     * 实际数 <= 限制 才通过；限制为 null 表示不限
+     */
     private boolean checkLimit(Integer actual, Integer limit) {
         if (limit == null)
             return true;
@@ -852,7 +889,7 @@ public class PowerDistributionDriveOptimization {
             if (random.nextDouble() > CrossoverRate)
                 continue;
             @SuppressWarnings("unchecked")
-            Map<String, Object>[] pair = new Map[] { shuffledSchemes.get(i), shuffledSchemes.get(i + 1) };
+            Map<String, Object>[] pair = new Map[]{shuffledSchemes.get(i), shuffledSchemes.get(i + 1)};
             pairs.add(pair);
         }
 
@@ -1194,10 +1231,12 @@ public class PowerDistributionDriveOptimization {
 
     /**
      * 变异操作（修正：位置随机加入概率保留，并增加约束修复）
+     * @param maxSchemes 生成上限，达到后不再继续变异
      * 注：所有共享框架数据从 jsonMap 读取，方法签名只接收变化数据。
      */
     private List<Map<String, Object>> mutateTopSchemes(
             List<Map<String, Object>> topSchemes,
+            int maxSchemes,
             List<Map<String, String>> targetLoops,
             List<Map<String, String>> allLoopInfos,
             List<Map<String, String>> allAppPositions,
@@ -1224,6 +1263,9 @@ public class PowerDistributionDriveOptimization {
             final int idx = schemeIdx;
             final Map<String, Object> scheme = topSchemes.get(schemeIdx);
             threadPool.execute(() -> {
+                // 已达上限，跳过本任务
+                if (mutatedSchemes.size() >= maxSchemes)
+                    return;
                 // 提取父本数据（每个线程读取不变数据，安全）
                 List<Map<String, String>> originalLoops = (List<Map<String, String>>) scheme.get("loopInfos");
                 List<Map<String, String>> originalApps = (List<Map<String, String>>) scheme.get("appPositions");
@@ -1247,6 +1289,10 @@ public class PowerDistributionDriveOptimization {
                             togetherGroup, mutualGroup));
 
                     for (List<Map<String, String>> variantLoops : allVariants) {
+                        // 已达上限，停止生成
+                        if (mutatedSchemes.size() >= maxSchemes)
+                            return;
+
                         List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(originalApps);
                         syncAppPositionsWithProbability(variantLoops, appPositionsCopy, elecChangeablePosition,
                                 pointNameId, rnd, 0.3);
@@ -1284,10 +1330,12 @@ public class PowerDistributionDriveOptimization {
             });
         }
 
-    threadPool.awaitCompletion();
+        threadPool.awaitCompletion();
 
-    long mElapsed = System.currentTimeMillis()
-            - mStartMs;System.out.println("变异完成: "+mutatedSchemes.size()+" 个有效方案, 耗时 "+mElapsed+"ms");return mutatedSchemes;
+        long mElapsed = System.currentTimeMillis()
+                - mStartMs;
+        System.out.println("变异完成: " + mutatedSchemes.size() + " 个有效方案, 耗时 " + mElapsed + "ms");
+        return mutatedSchemes;
     }
 
     // 以下为辅助方法（保持原有逻辑，但部分签名修改以支持约束检查）
@@ -1687,6 +1735,8 @@ public class PowerDistributionDriveOptimization {
         cost.put("总成本", 0.0);
         cost.put("总重量", 0.0);
         cost.put("总长度", 0.0);
+        if (originalResult == null || originalResult.isEmpty())
+            return cost;
         try {
             Map<String, Object> parsed = jsonToMap.TransJsonToMap(originalResult);
             Map<String, Object> pcInfo = (Map<String, Object>) parsed.get("projectCircuitInfo");
@@ -1705,6 +1755,10 @@ public class PowerDistributionDriveOptimization {
             // 解析失败返回默认 0.0
         }
         return cost;
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isEmpty();
     }
 
     /**
@@ -1742,7 +1796,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     private String generateSchemeFingerprint(List<Map<String, String>> loopInfos,
-            List<Map<String, String>> appPositions) {
+                                             List<Map<String, String>> appPositions) {
         StringBuilder fingerprint = new StringBuilder();
         List<Map<String, String>> sortedLoops = new ArrayList<>(loopInfos);
         sortedLoops.sort((a, b) -> a.get("id").compareTo(b.get("id")));
@@ -2179,9 +2233,9 @@ public class PowerDistributionDriveOptimization {
         final List<String> varKeys;
 
         ConnectionPlan(Map<String, List<String>> varDomains,
-                Map<String, List<String>> mutualIdToVarKeys,
-                Set<String> varsInAnyMutualGroup,
-                List<String> varKeys) {
+                       Map<String, List<String>> mutualIdToVarKeys,
+                       Set<String> varsInAnyMutualGroup,
+                       List<String> varKeys) {
             this.varDomains = varDomains;
             this.mutualIdToVarKeys = mutualIdToVarKeys;
             this.varsInAnyMutualGroup = varsInAnyMutualGroup;
@@ -2318,7 +2372,7 @@ public class PowerDistributionDriveOptimization {
 
     /**
      * 枚举所有可行方案
-     * 
+     *
      * @param targetLoops
      * @param elecChangeablePosition
      * @param togetherGroup
@@ -2411,11 +2465,11 @@ public class PowerDistributionDriveOptimization {
 
     /**
      * @Description: 统一入口——对给定的连接关系赋值，枚举所有用电器位置组合
-     *               连接关系变化和用电器位置变化是乘积关系：
-     *               一条回路 = 起点用电器选项 × 起点位置选项 × 终点用电器选项 × 终点位置选项
-     *               全局方案 = 所有回路选项的乘积（受互斥/同组约束）
+     * 连接关系变化和用电器位置变化是乘积关系：
+     * 一条回路 = 起点用电器选项 × 起点位置选项 × 终点用电器选项 × 终点位置选项
+     * 全局方案 = 所有回路选项的乘积（受互斥/同组约束）
      * @input: assignment 当前连接关系赋值（varKeys 为空时为空 Map）
-     * @Complexity: O(Π(p_i) * L)，p_i 为每个有可变位置的用电器的位置数，L 为回路数
+     * @Complexity: O(Π ( p_i) * L)，p_i 为每个有可变位置的用电器的位置数，L 为回路数
      */
     private void generateSchemesForAssignment(
             Map<String, String> assignment,
@@ -2636,8 +2690,8 @@ public class PowerDistributionDriveOptimization {
         // 连接关系回溯 + 互斥剪枝：在每一个完整连接赋值上，
         // 按 generateSchemesForAssignment 的口径累加"真正被选中且位置可变"的用电器位置组合数，
         // 使 总方案数 == 实际枚举出的方案总数（不再把位置数无条件乘进全局乘积）。
-        long[] total = { 0L };
-        boolean[] overflow = { false };
+        long[] total = {0L};
+        boolean[] overflow = {false};
         Map<String, String> currentAssignment = new LinkedHashMap<>();
         Set<String> usedEndApps = new HashSet<>();
         countSchemesByBacktrack(varDomains, varsInAnyMutualGroup,
@@ -2840,7 +2894,9 @@ public class PowerDistributionDriveOptimization {
         Integer highSpeedWire;// 高速线回路数
     }
 
-    /** 解析用电器的 8 类资源限制；全部为 null 时返回 null（视为无限制） */
+    /**
+     * 解析用电器的 8 类资源限制；全部为 null 时返回 null（视为无限制）
+     */
     private AppResourceLimit parseAppResourceLimit(Map<String, String> appPosition) {
         AppResourceLimit limit = new AppResourceLimit();
         limit.distHigh = parseIntField(appPosition.get("distHighCurrentLoop"));
@@ -2859,7 +2915,9 @@ public class PowerDistributionDriveOptimization {
         return limit;
     }
 
-    /** 将 Object（可能是 Integer 或 String）安全转为 Integer；无法解析返回 null */
+    /**
+     * 将 Object（可能是 Integer 或 String）安全转为 Integer；无法解析返回 null
+     */
     private static Integer parseIntField(Object value) {
         if (value == null)
             return null;
