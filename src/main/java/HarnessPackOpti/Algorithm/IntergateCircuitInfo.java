@@ -148,10 +148,10 @@ public class IntergateCircuitInfo {
             double coilingPercent = (double)coiling / pathId.size() * 100;
             double breakNumb = Double.parseDouble(totalCost.get("回路打断总次数(根)").toString()) / pathId.size() * 100;
             totalCost.put("回路打断成本均值(元/根)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString()) / pathId.size())));
-            totalCost.put("回路烧线数量占比(百分比)",df.format(coilingPercent) + "%");
+            totalCost.put("回路绕线数量占比(百分比)",df.format(coilingPercent) + "%");
             totalCost.put("回路打断数量占比(百分比)",df.format(breakNumb) + "%");
         }else {
-            totalCost.put("回路烧线数量占比(百分比)","0.00%");
+            totalCost.put("回路绕线数量占比(百分比)","0.00%");
             totalCost.put("回路打断数量占比(百分比)","0.00%");
         }
         totalCost.put("回路重量均值(克/根)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / pathId.size())));
