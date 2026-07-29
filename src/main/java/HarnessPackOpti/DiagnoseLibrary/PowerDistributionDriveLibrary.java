@@ -9,7 +9,7 @@ import java.util.Map;
  */
 public class PowerDistributionDriveLibrary {
     /** 变种组合数超过此阈值则提示 */
-    private static final long VARIANT_COUNT_THRESHOLD = 10_000_000L;
+    private static final long VARIANT_COUNT_THRESHOLD = 10000000L;
 
     /**
      * 回路属性缺失
