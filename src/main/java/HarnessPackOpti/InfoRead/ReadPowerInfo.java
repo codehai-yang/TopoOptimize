@@ -1,4 +1,4 @@
-package HarnessPackOpti.InfoRead;
+﻿package HarnessPackOpti.InfoRead;
 
 import HarnessPackOpti.Optimize.elec.ElecPositionVariantCalculation;
 import HarnessPackOpti.Optimize.elec.PowerDistributionDriveOptimization;
@@ -17,7 +17,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
-public class ReadProjectInfo {
+public class ReadPowerInfo {
     private Map<String, Double> elecBusinessCostAdditionMap = new HashMap<>();
     private static final Map<String, Field> FIELD_CACHE = new ConcurrentHashMap<>();
     //选型配置，最后回写到配置文件
@@ -128,6 +128,8 @@ public class ReadProjectInfo {
                 appPosition.put("用电器固化位置点名称",k.get("regularPointName"));
                 appPosition.put("用户更改后用电器位置id",k.get("unregularPointId"));
                 appPosition.put("用户更改后用电器位置名称",k.get("unregularPointName"));
+                appPosition.put("位置变种类型",k.get("changeType"));
+                appPosition.put("指定变种点id列表",k.get("specifyPoints"));
                 appPositions.add(appPosition);
             }
         }

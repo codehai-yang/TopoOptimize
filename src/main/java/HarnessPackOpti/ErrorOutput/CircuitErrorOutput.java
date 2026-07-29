@@ -18,9 +18,8 @@ public class CircuitErrorOutput {
       Map<String, Object> mapFile = jsonToMap.TransJsonToMap(fileStringFormat);
       Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(mapFile);
       List<Map<String, Object>> mapList = (List<Map<String, Object>>) projectInfo.get("回路用电器信息");
-      Map<String, Object> optimizeRecord = (Map<String, Object>) mapFile.get("optimizeRecord");
-      //配电驱动要优化的回路
-      String powerType = optimizeRecord.get("type").toString();
+      //配电驱动要优化的回路类型
+
       //读取到的Json格式字符串转换为List
 //        List<Map<String,Object>> maps = jsonToMap.TransJsonToList(fileStringFormat);
 //        ReadCircuitInfo readCircuitInfo=new ReadCircuitInfo();
@@ -63,25 +62,6 @@ public class CircuitErrorOutput {
         listMap.put("回路导线选型不存在-error",wireTypeInexistence);
       }else {
         listMap.put("回路导线选型不存在-error",null);
-      }
-      //配电分配优化配置检查
-      if(powerType != null && !powerType.isEmpty()) {
-        if ("3".equals(powerType)) {
-          List<String> powerList = circuitDiagnoseLibrary.powerCircuitError(mapList);
-          listMap.put("回路类型只能选择“配电回路\"&”主供电回路”-error", powerList);
-        }
-        if ("4".equals(powerType)) {
-          List<String> powerList = circuitDiagnoseLibrary.driverCircuitError(mapList);
-          listMap.put("回路类型只能选择“驱动回路”-error", powerList);
-        }
-        //终点电器件与起点电器件检查
-        List<String> startPos = circuitDiagnoseLibrary.startPositionCheck(mapList);
-        listMap.put("起点电器件可连接的终点电器件未选择-error", startPos);
-        List<String> endPos = circuitDiagnoseLibrary.endPositionCheck(mapList);
-        listMap.put("终点电器件可连接的起点电器件未选择-error", endPos);
-        //组队连接关系与互斥连接关系矛盾
-        List<String> strings = circuitDiagnoseLibrary.teamAndExclusiveConflict(mapList);
-        listMap.put("组队连接关系与互斥连接关系矛盾-error", strings);
       }
       //将bunLenErrorMap转为json文件
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
