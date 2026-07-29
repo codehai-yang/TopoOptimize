@@ -44,6 +44,7 @@ public class GINEInferenceEngine {
     private static volatile Process pythonProcess;
     private static volatile BlockingQueue<SocketConnection> pool;
     private static volatile boolean initialized = false;
+    private static final Object INIT_LOCK = new Object();
 
     // ── 脚本目录 ──
     private static String resolveScriptDir() {
@@ -73,9 +74,18 @@ public class GINEInferenceEngine {
         }
     }
 
-    // ── 初始化（惰性，仅一次） ──
-    private static synchronized void init() throws IOException {
-        if (initialized) return;
+    // ── 初始化（仅执行一次）──
+    private static void initOnce() throws IOException {
+        // 先清理端口上的任何残留进程（包括上次运行没清理干净的）
+        if (isPortInUse(PORT)) {
+            System.out.println("[GINE] 清理端口 " + PORT + " 上的残留进程...");
+            killProcessOnPort(PORT);
+            try { Thread.sleep(1000); } catch (InterruptedException ignored) { }
+        }
+        if (pythonProcess != null) {
+            pythonProcess.destroyForcibly();
+            pythonProcess = null;
+        }
 
         // 1) 启动 Python TCP 服务器
         System.out.println("[GINE] 启动 Python TCP 服务器...");
@@ -83,10 +93,9 @@ public class GINEInferenceEngine {
                 "--port", String.valueOf(PORT));
         pb.directory(new File(SCRIPT_DIR));
         pb.redirectErrorStream(false);
-        // 管道用于读取 Python 启动日志
         pythonProcess = pb.start();
 
-        // 读取 Python stderr 中的 "模型就绪" 确认
+        // 读取 Python stderr
         Thread logReader = new Thread(() -> {
             try (BufferedReader br = new BufferedReader(
                     new InputStreamReader(pythonProcess.getErrorStream(), "UTF-8"))) {
@@ -99,17 +108,22 @@ public class GINEInferenceEngine {
         logReader.setDaemon(true);
         logReader.start();
 
-        // 2) 等待服务就绪（轮询连接）
-        long deadline = System.currentTimeMillis() + 60000;
+        // 2) 等待服务就绪（最长 120s）
+        long deadline = System.currentTimeMillis() + 120_000;
         while (System.currentTimeMillis() < deadline) {
             if (!pythonProcess.isAlive()) {
                 throw new IOException("Python 进程已退出，请检查上方 [Python] 日志");
             }
             try (Socket s = new Socket("127.0.0.1", PORT)) {
-                break; // 连接成功
-            } catch (IOException e) {
-                try { Thread.sleep(500); } catch (InterruptedException ignored) { }
+                Thread.sleep(200);
+                break;
+            } catch (IOException | InterruptedException e) {
+                try { Thread.sleep(1000); } catch (InterruptedException ignored) { }
             }
+        }
+
+        if (!isPortInUse(PORT)) {
+            throw new IOException("Python 进程 120s 内未能启动，请检查上方 [Python] 日志");
         }
 
         // 3) 建立连接池
@@ -117,30 +131,40 @@ public class GINEInferenceEngine {
         for (int i = 0; i < POOL_SIZE; i++) {
             pool.offer(new SocketConnection("127.0.0.1", PORT));
         }
-        initialized = true;
 
         // JVM 退出时清理
-        Runtime.getRuntime().addShutdownHook(new Thread(GINEInferenceEngine::shutdown));
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (pool != null) {
+                for (SocketConnection conn : pool) {
+                    conn.sendExit();
+                    conn.close();
+                }
+            }
+            if (pythonProcess != null) {
+                pythonProcess.destroyForcibly();
+            }
+        }));
 
         System.out.println("[GINE] TCP 连接池就绪, 池大小=" + POOL_SIZE + ", 端口=" + PORT);
     }
 
-    private static void shutdown() {
-        initialized = false;
-        if (pool != null) {
-            for (SocketConnection conn : pool) {
-                conn.sendExit();
-                conn.close();
-            }
-        }
-        if (pythonProcess != null) {
-            pythonProcess.destroyForcibly();
-        }
-    }
-
     // ── 推理入口 ──
     public float predict(float[][] matrix, long[][] edgeIndex, float[][] edgeAttr) throws Exception {
-        if (!initialized) init();
+        // 双重检查锁：保证 initOnce() 只尝试一次
+        if (!initialized) {
+            synchronized (INIT_LOCK) {
+                if (!initialized) {
+                    try {
+                        initOnce();
+                        initialized = true;
+                    } catch (IOException e) {
+                        // 启动失败，不放其他线程再试（避免无限重启）
+                        System.err.println("[GINE] Python 启动失败: " + e.getMessage());
+                        throw e;
+                    }
+                }
+            }
+        }
 
         int nodeDim = matrix.length, edgeDim = edgeIndex[0].length;
         int edgeFeatDim = edgeAttr[0].length, nodeFeatDim = matrix[0].length;
@@ -236,6 +260,46 @@ public class GINEInferenceEngine {
             try { in.close(); } catch (IOException ignored) { }
             try { out.close(); } catch (IOException ignored) { }
             try { socket.close(); } catch (IOException ignored) { }
+        }
+    }
+
+    // ── 端口可用性检测 ──
+    // ── 端口 / 进程工具 ──
+    private static void killProcessOnPort(int port) {
+        String os = System.getProperty("os.name").toLowerCase();
+        try {
+            if (os.contains("win")) {
+                Process find = Runtime.getRuntime().exec(
+                        new String[]{"cmd", "/c",
+                                "netstat -ano | findstr :" + port + " | findstr LISTENING"});
+                java.util.Scanner sc = new java.util.Scanner(find.getInputStream(), "GBK");
+                while (sc.hasNextLine()) {
+                    String line = sc.nextLine().trim();
+                    String[] parts = line.split("\\s+");
+                    if (parts.length >= 5) {
+                        String pid = parts[parts.length - 1];
+                        Runtime.getRuntime().exec(
+                                new String[]{"taskkill", "/F", "/PID", pid}).waitFor();
+                        System.out.println("[GINE] 已终止残留进程 PID=" + pid);
+                    }
+                }
+                sc.close();
+            } else {
+                Process p = Runtime.getRuntime().exec(
+                        new String[]{"/bin/sh", "-c",
+                                "lsof -ti:" + port + " | xargs -r kill -9"});
+                p.waitFor();
+            }
+        } catch (Exception e) {
+            System.err.println("[GINE] 清理端口 " + port + " 失败: " + e.getMessage());
+        }
+    }
+
+    private static boolean isPortInUse(int port) {
+        try (Socket s = new Socket("127.0.0.1", port)) {
+            return true;
+        } catch (IOException e) {
+            return false;
         }
     }
 }

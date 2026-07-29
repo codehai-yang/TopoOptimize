@@ -170,23 +170,8 @@ public class ReadPowerInfo {
                 loopInfos.add(loopInfosMap);
             }
         }
-            if (mapFromProject.containsKey("eeParamConfigList")) {
-                List<Map<String, Object>> eeParamConfigList = (List<Map<String, Object>>) mapFromProject.get("eeParamConfigList");
-                for (Map<String, Object> map : eeParamConfigList) {
-                    String paramName = map.get("paramName").toString();
-                    Object paramValue = map.get("paramValue");
-                    String type = map.get("type") != null ? map.get("type").toString() : "";
-
-                    // 统一处理，一行搞定
-                    processParam(type, paramName, paramValue);
-                }
-                // 写入 properties 文件
-                writeDropdownOptionsToProperties();
-                ProjectCircuitInfoOutput.elecBusinessPrice = elecBusinessCostAdditionMap;
-            }
-
             Map<String, Map<String, String>> dataMap = new HashMap<>();
-            if (mapFromProject.containsKey("eeParamMaterialList")) {
+            if ( mapFromProject.containsKey("eeParamMaterialList")) {
                 //物料配置表
                 List<Map<String, Object>> eeParamMaterialList = (List<Map<String, Object>>) mapFromProject.get("eeParamMaterialList");
                 for (Map<String, Object> map : eeParamMaterialList) {
@@ -214,78 +199,6 @@ public class ReadPowerInfo {
         AllInfo.put("回路用电器信息",loopInfos);
         AllInfo.put("方案信息",caseInfo);
         return AllInfo;
-    }
-
-    public void writeDropdownOptionsToProperties() {
-        // 开发环境：src/main/resources；生产环境：以 -Dconfig.dir 指定，默认当前目录
-        String devPath = "src/main/resources/HarnessOpti.properties";
-        String defaultPath;
-        if (new java.io.File(devPath).getParentFile() != null
-                && new java.io.File(devPath).getParentFile().exists()) {
-            defaultPath = devPath;
-        } else {
-            String configDir = System.getProperty("config.dir", "resources");
-            defaultPath = configDir + java.io.File.separator + "HarnessOpti.properties";
-            // 确保目录存在
-            File dir = new File(defaultPath).getParentFile();
-            if (dir != null && !dir.exists()) {
-                dir.mkdirs();
-            }
-        }
-        writeDropdownOptionsToProperties(dropdownOptionsMap, defaultPath);
-    }
-
-    public void writeDropdownOptionsToProperties(Map<String, List<String>> map, String filePath) {
-        try {
-            Properties properties = new Properties();
-
-            // 遍历Map，将List用逗号连接
-            for (Map.Entry<String, List<String>> entry : map.entrySet()) {
-                String key = entry.getKey();
-                String value = String.join(",", entry.getValue());
-                properties.setProperty(key, value);
-            }
-
-            // 使用 UTF-8 编码写入，避免 Unicode 转义
-            try (OutputStreamWriter writer = new OutputStreamWriter(
-                    new FileOutputStream(filePath), StandardCharsets.UTF_8)) {
-                properties.store(writer, "Dropdown Options Configuration");
-            }
-
-            System.out.println("✓ 配置文件写入成功: " + filePath);
-
-        } catch (Exception e) {
-            System.err.println("✗ 配置文件写入失败: " + e.getMessage());
-            e.printStackTrace();
-        }
-    }
-
-    // 处理参数的方法
-    private void processParam(String type, String paramName, Object paramValue) {
-        // 1. 商务成本加成特殊处理
-        if ("特定用电器相关回路商务成本加成".equals(type)) {
-            double value = paramValue instanceof Number ?
-                    ((Number) paramValue).doubleValue() :
-                    Double.parseDouble(paramValue.toString());
-            elecBusinessCostAdditionMap.put(paramName, value);
-            return;
-        }
-
-        // 2. 查找匹配的处理器并执行
-        for (Map.Entry<String, BiConsumer<String, Map<String, List<String>>>> entry : TYPE_HANDLERS.entrySet()) {
-            if (type.startsWith(entry.getKey())) {
-                entry.getValue().accept(paramName, dropdownOptionsMap);
-                return;
-            }
-        }
-
-        // 3. 反射注入（原有逻辑）
-        Class<?> targetClass = TYPE_CLASS_MAPPING.get(type);
-        if (targetClass != null) {
-            inject(paramName, paramValue, targetClass);
-        } else {
-            System.err.println("未找到类型 [" + type + "] 对应的处理逻辑");
-        }
     }
 
     /**

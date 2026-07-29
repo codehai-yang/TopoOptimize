@@ -1,9 +1,7 @@
 package HarnessPackOpti.ErrorOutput;
 
-import HarnessPackOpti.DiagnoseLibrary.CircuitDiagnoseLibrary;
 import HarnessPackOpti.DiagnoseLibrary.PowerDistributionDriveLibrary;
-import HarnessPackOpti.InfoRead.ReadPowerInfo;
-import HarnessPackOpti.InfoRead.ReadProjectInfo;
+import HarnessPackOpti.InfoRead.ReadPowerPropertiesInfo;
 import HarnessPackOpti.JsonToMap;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -18,7 +16,7 @@ public class PowerDistributionDriveErrorOuput {
     public String powerDistributionDriveErrorOuput(String fileStringFormat) throws Exception {
         //获取配置
         JsonToMap jsonToMap = new JsonToMap();
-        ReadPowerInfo readProjectInfo = new ReadPowerInfo();
+        ReadPowerPropertiesInfo readProjectInfo = new ReadPowerPropertiesInfo();
         Map<String, Object> mapFile = jsonToMap.TransJsonToMap(fileStringFormat);
         Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(mapFile);
         List<Map<String, Object>> mapList = (List<Map<String, Object>>) projectInfo.get("回路用电器信息");

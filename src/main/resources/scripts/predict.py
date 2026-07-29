@@ -22,6 +22,12 @@ import socket
 import socketserver
 from typing import Optional, Tuple
 
+import warnings
+warnings.filterwarnings('ignore', message=r".*pyg-lib.*")
+warnings.filterwarnings('ignore', message=r".*torch-scatter.*")
+warnings.filterwarnings('ignore', message=r".*torch-spline-conv.*")
+warnings.filterwarnings('ignore', message=r".*torch-sparse.*")
+
 import numpy as np
 import torch
 from torch_geometric.nn import GINEConv, global_add_pool

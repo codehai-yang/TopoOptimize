@@ -10,14 +10,13 @@ import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.List;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
-public class ReadProjectInfo {
+public class ReadPowerPropertiesInfo {
     private Map<String, Double> elecBusinessCostAdditionMap = new HashMap<>();
     private static final Map<String, Field> FIELD_CACHE = new ConcurrentHashMap<>();
     //选型配置，最后回写到配置文件
@@ -128,6 +127,8 @@ public class ReadProjectInfo {
                 appPosition.put("用电器固化位置点名称",k.get("regularPointName"));
                 appPosition.put("用户更改后用电器位置id",k.get("unregularPointId"));
                 appPosition.put("用户更改后用电器位置名称",k.get("unregularPointName"));
+                appPosition.put("位置变种类型",k.get("changeType"));
+                appPosition.put("指定变种点id列表",k.get("specifyPoints"));
                 appPositions.add(appPosition);
             }
         }
@@ -161,30 +162,28 @@ public class ReadProjectInfo {
                 loopInfosMap.put("回路属性",k.get("loopAttr"));
                 loopInfosMap.put("回路导线选型",k.get("loopWireway"));
                 loopInfosMap.put("回路信号名",k.get("infoName"));
+                loopInfosMap.put("起点电器件可连接的终点电器件",k.get("startConnEndApps"));
+                loopInfosMap.put("终点电器件可连接的起点电器件",k.get("selectedEndApp"));
+                loopInfosMap.put("组队连接关系",k.get("teamConnRel"));
+                loopInfosMap.put("互斥连接关系",k.get("exclusiveConnRel"));
                 loopInfos.add(loopInfosMap);
             }
         }
-            Map<String, Map<String, String>> dataMap = new HashMap<>();
-            if ( mapFromProject.containsKey("eeParamMaterialList")) {
-                //物料配置表
-                List<Map<String, Object>> eeParamMaterialList = (List<Map<String, Object>>) mapFromProject.get("eeParamMaterialList");
-                for (Map<String, Object> map : eeParamMaterialList) {
-                    Map<String, String> tempMap = new HashMap<>();
-                    String wireType = map.get("wireType").toString();
-                    tempMap.put("导线物料价（元/米）", map.get("materialPrice").toString());
-                    tempMap.put("导线单位商务价（元/米）", map.get("businessPrice").toString());
-                    tempMap.put("导线单位重量（单位g/m）", map.get("unitWeight").toString());
-                    tempMap.put("端子成本（元/端）", map.get("terminalPrice").toString());
-                    tempMap.put("焊点成本（元/m）", map.get("weldingPointCost").toString());
-                    tempMap.put("导线打断成本（元/次）", map.get("dryBreakCost").toString());
-                    tempMap.put("湿区成本补偿——连接器塑壳（元/端）", map.get("wetHousingCost").toString());
-                    tempMap.put("湿区成本补偿——防水赛（元/个）", map.get("waterproofPlugComp").toString());
-                    tempMap.put("导线外径（毫米）", map.get("wireDiameter").toString());
-                    tempMap.put("导线两端的连接器塑壳商务价（元/端）", map.get("plasticBusinessPrice").toString());
-                    dataMap.put(wireType, tempMap);
-                }
-                ProjectCircuitInfoOutput.elecFixedLocationLibrary = dataMap;
+        if ( mapFromProject.containsKey("eeParamConfigList")) {
+            List<Map<String, Object>> eeParamConfigList = (List<Map<String, Object>>) mapFromProject.get("eeParamConfigList");
+            for (Map<String, Object> map : eeParamConfigList) {
+                String paramName = map.get("paramName").toString();
+                Object paramValue = map.get("paramValue");
+                String type = map.get("type") != null ? map.get("type").toString() : "";
+
+                // 统一处理，一行搞定
+                processParam(type, paramName, paramValue);
             }
+            // 写入 properties 文件
+            writeDropdownOptionsToProperties();
+            ProjectCircuitInfoOutput.elecBusinessPrice = elecBusinessCostAdditionMap;
+        }
+
         AllInfo.put("拓扑基本信息",topoInfo);
         AllInfo.put("所有端点信息",points);
         AllInfo.put("所有分支信息",edges);
