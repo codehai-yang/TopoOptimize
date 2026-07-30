@@ -163,8 +163,7 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, String>> loopInfos = (List<Map<String, String>>) jsonMap.get("loopInfos");
         List<Map<String, String>> points = (List<Map<String, String>>) jsonMap.get("points");
         CaseId = caseInfo.get("id").toString();
-        optimizeRecordId = "1";
-//         optimizeRecordId = optimizeRecord.get("id").toString();
+         optimizeRecordId = optimizeRecord.get("id").toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
 
         // 整车信息计算
@@ -660,6 +659,12 @@ public class HarnessBranchTopoOptimize {
         // 遗传算法
         while (true) {
             System.out.println("第" + hybridizationNumber + "代迭代开始");
+            // 用户中断检查
+            if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                System.out.println("优化被用户中断");
+                break;
+            }
+
             long startTime = System.currentTimeMillis();
             // 只有当迭代的结果top10都是同一个值的时候 才结束迭代
             // 两阶段变异:① 同时+概率变异(复用 generateInitialSchemes) ② 两两交叉变异

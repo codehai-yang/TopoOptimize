@@ -49,7 +49,7 @@ public class ProjectCircuitInfoOutput {
 
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\驱动分配优化日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         // 去掉外层可能存在的双引号（JSON被双重转义的情况）
         jsonContent = jsonContent.trim();
@@ -207,9 +207,6 @@ public class ProjectCircuitInfoOutput {
             // 单个固定回路，所有回路信息，矩阵对象，导线价格信息，用电器可变位置点，导线无聊单价商务成本
             Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, adjacencyMatrixGraph,
                     elecFixedLocationLibrary, true, null, electricalSet, elecBusinessPrice);
-            if(twoPointInfo == null){
-                System.out.println("");
-            }
             loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
         }
         // 对焊点的进行计算
