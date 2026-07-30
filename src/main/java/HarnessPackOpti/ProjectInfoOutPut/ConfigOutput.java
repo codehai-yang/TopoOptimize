@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public class ConfigOutput {
@@ -13,10 +15,10 @@ public class ConfigOutput {
 
     public ConfigOutput() throws IOException {
         resource = new Properties();
-        //读取resources文件夹下的HarnessOpti.properties文件
+        //读取resources文件夹下的HarnessOpti.properties文件（UTF-8 编码，否则中文乱码）
         try (InputStream input = this.getClass().getClassLoader().getResourceAsStream("HarnessOpti.properties")) {
             if (input != null) {
-                resource.load(input);
+                resource.load(new InputStreamReader(input, StandardCharsets.UTF_8));
             } else {
                 System.err.println("Sorry, unable to find HarnessOpti.properties");
             }

@@ -134,8 +134,7 @@ public class IntergateCircuitInfo {
             }
             circuitBreakNum += Double.parseDouble(objectMap.get("回路打断总次数(根)").toString());
             //回路打断后计算
-            Double d = parseDoubleSafe(objectMap.get("回路打断总次数(根)"));
-            int i = d == null ? 0 : (int) Math.round(d);
+            int i = Integer.parseInt(objectMap.get("回路打断总次数(根)").toString());
             i += 1;
             count += i;
         }
@@ -1069,13 +1068,13 @@ public class IntergateCircuitInfo {
                 String endName = edge.get("分支终点名称");
                 if ((p1.equals(startName) && p2.equals(endName)) || (p1.equals(endName) && p2.equals(startName))) {
                     Object verifyLenObj = edge.get("用户确认的分支长度");
-                    Double verifyLen = parseDoubleSafe(verifyLenObj);
+                    Integer verifyLen = verifyLenObj == null ? null : Integer.parseInt(verifyLenObj.toString());
                     Object refLenObj = edge.get("参考长度");
-                    Double refLen = parseDoubleSafe(refLenObj);
-                    if (verifyLen != null) {
-                        length += verifyLen;
+                    Integer refLen = refLenObj == null ? null : Integer.parseInt(refLenObj.toString());
+                    if (verifyLen != null ) {
+                        length += Double.parseDouble(verifyLen.toString());
                     } else if (refLen != null) {
-                        length += refLen;
+                        length += Double.parseDouble(refLen.toString());
                     } else {
                         length += ProjectCircuitInfoOutput.BranchEndFallback; // 默认200mm
                     }
@@ -1084,18 +1083,6 @@ public class IntergateCircuitInfo {
             }
         }
         return length;
-    }
-
-    /** 安全解析为 Double，兼容字符串/数字/浮点格式；null / 空串 / 解析失败返回 null */
-    private static Double parseDoubleSafe(Object o) {
-        if (o == null) return null;
-        String s = o.toString().trim();
-        if (s.isEmpty()) return null;
-        try {
-            return Double.parseDouble(s);
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 
     /**
