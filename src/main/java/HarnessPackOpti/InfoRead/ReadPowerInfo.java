@@ -170,6 +170,21 @@ public class ReadPowerInfo {
                 loopInfos.add(loopInfosMap);
             }
         }
+        if(ProjectCircuitInfoOutput.elecBusinessPrice == null) {
+            if (mapFromProject.containsKey("eeParamConfigList")) {
+                List<Map<String, Object>> eeParamConfigList = (List<Map<String, Object>>) mapFromProject.get("eeParamConfigList");
+                for (Map<String, Object> map : eeParamConfigList) {
+                    String paramName = map.get("paramName").toString();
+                    Object paramValue = map.get("paramValue");
+                    String type = map.get("type") != null ? map.get("type").toString() : "";
+
+                    // 统一处理，一行搞定
+                    processParam(type, paramName, paramValue);
+                }
+                HarnessPackOpti.ProjectInfoOutPut.ConfigOutput.populateResource(dropdownOptionsMap);
+                ProjectCircuitInfoOutput.elecBusinessPrice = elecBusinessCostAdditionMap;
+            }
+        }
             Map<String, Map<String, String>> dataMap = new HashMap<>();
             if ( mapFromProject.containsKey("eeParamMaterialList")) {
                 //物料配置表
@@ -199,6 +214,34 @@ public class ReadPowerInfo {
         AllInfo.put("回路用电器信息",loopInfos);
         AllInfo.put("方案信息",caseInfo);
         return AllInfo;
+    }
+
+    // 处理参数的方法
+    private void processParam(String type, String paramName, Object paramValue) {
+        // 1. 商务成本加成特殊处理
+        if ("特定用电器相关回路商务成本加成".equals(type)) {
+            double value = paramValue instanceof Number ?
+                    ((Number) paramValue).doubleValue() :
+                    Double.parseDouble(paramValue.toString());
+            elecBusinessCostAdditionMap.put(paramName, value);
+            return;
+        }
+
+        // 2. 查找匹配的处理器并执行
+        for (Map.Entry<String, BiConsumer<String, Map<String, List<String>>>> entry : TYPE_HANDLERS.entrySet()) {
+            if (type.startsWith(entry.getKey())) {
+                entry.getValue().accept(paramName, dropdownOptionsMap);
+                return;
+            }
+        }
+
+        // 3. 反射注入（原有逻辑）
+        Class<?> targetClass = TYPE_CLASS_MAPPING.get(type);
+        if (targetClass != null) {
+            inject(paramName, paramValue, targetClass);
+        } else {
+            System.err.println("未找到类型 [" + type + "] 对应的处理逻辑");
+        }
     }
 
     /**

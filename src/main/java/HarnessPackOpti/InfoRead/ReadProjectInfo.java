@@ -164,6 +164,21 @@ public class ReadProjectInfo {
                 loopInfos.add(loopInfosMap);
             }
         }
+        if(ProjectCircuitInfoOutput.elecBusinessPrice == null) {
+            if (mapFromProject.containsKey("eeParamConfigList")) {
+                List<Map<String, Object>> eeParamConfigList = (List<Map<String, Object>>) mapFromProject.get("eeParamConfigList");
+                for (Map<String, Object> map : eeParamConfigList) {
+                    String paramName = map.get("paramName").toString();
+                    Object paramValue = map.get("paramValue");
+                    String type = map.get("type") != null ? map.get("type").toString() : "";
+
+                    // 统一处理，一行搞定
+                    processParam(type, paramName, paramValue);
+                }
+                HarnessPackOpti.ProjectInfoOutPut.ConfigOutput.populateResource(dropdownOptionsMap);
+                ProjectCircuitInfoOutput.elecBusinessPrice = elecBusinessCostAdditionMap;
+            }
+        }
             Map<String, Map<String, String>> dataMap = new HashMap<>();
             if ( mapFromProject.containsKey("eeParamMaterialList")) {
                 //物料配置表

@@ -2692,6 +2692,7 @@ public class ProjectCircuitInfoOutput {
     }
 
     public boolean keyExistsIgnoreCase(Map<String, Double> map, String key) {
+        if (map == null) return false;
         for (String existingKey : map.keySet()) {
             if (existingKey.equalsIgnoreCase(key)) {
                 return true;
@@ -2701,6 +2702,7 @@ public class ProjectCircuitInfoOutput {
     }
 
     public static double getValueIgnoreCase(Map<String, Double> map, String key) {
+        if (map == null) return 0.0;
         for (String existingKey : map.keySet()) {
             if (existingKey.equalsIgnoreCase(key)) {
                 return map.get(existingKey);
