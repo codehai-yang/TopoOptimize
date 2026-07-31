@@ -105,6 +105,9 @@ public class PowerDistributionDriveOptimization {
         Map<String, Object> readProject = readProjectInfo.getProjectInfo(jsonMap);
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
         List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
+        // 记录原始方案指纹，用于判断遗传结果中是否包含原始方案
+        final String originalFingerprint = generateSchemeFingerprint(
+                (List<Map<String, String>>) jsonMap.get("loopInfos"), appPositions);
         Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
         Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
         Map<String, Object> optimizeRecord = (Map<String, Object>) jsonMap.get("optimizeRecord");
@@ -341,6 +344,24 @@ public class PowerDistributionDriveOptimization {
         System.out.println("枚举模式耗时:" + (System.currentTimeMillis() - combinationsTime));
         System.out.println("总方案数: " + combinations);
 
+        // 总方案数 ≤ 1，没有优化空间，直接返回原始方案
+        if (combinations <= 1) {
+            System.out.println("方案数 ≤ 1，无需优化，直接返回原始方案");
+            List<Map<String, Object>> result = new ArrayList<>();
+            Map<String, Object> origMap = new HashMap<>();
+            origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
+            origMap.put("appPositions", deepCopyAppPositions(appPositions));
+            origMap.put("成本", parseOriginalCost(originalResult, jsonToMap));
+            try {
+                result.add(enrichToFullScheme(origMap, jsonMap, objectMapper,
+                        projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, true));
+            } catch (Exception e) {
+                System.err.println("原始方案还原失败: " + e.getMessage());
+                result.add(origMap);
+            }
+            return objectMapper.writeValueAsString(result);
+        }
+
         // 如果方案数在限制内，进行枚举生成方案列表
         if (combinations <= caseNumbe) {
             long enumerateTime = System.currentTimeMillis();
@@ -466,6 +487,9 @@ public class PowerDistributionDriveOptimization {
             List<Map<String, Object>> topBest = new ArrayList<>();
             if (resultList.size() > 1) {
                 topBest = findBest.findBest(resultList, "成本", TopNumber);
+            } else if (resultList.size() == 1) {
+                // 只有1个方案，直接用
+                topBest.add(resultList.get(0));
             } else {
                 // 枚举无有效方案时，仅当 base 计算成功才用原始方案兜底
                 if (originalResult != null) {
@@ -492,7 +516,7 @@ public class PowerDistributionDriveOptimization {
             for (Map<String, Object> slim : topBest) {
                 try {
                     enriched.add(enrichToFullScheme(slim, jsonMap, objectMapper,
-                            projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo));
+                            projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, true));
                 } catch (Exception e) {
                     System.err.println("方案还原失败，使用精简版: " + e.getMessage());
                     enriched.add(slim);
@@ -721,8 +745,12 @@ public class PowerDistributionDriveOptimization {
         List<Map<String, Object>> enrichedTopBest = new ArrayList<>();
         for (Map<String, Object> slim : currentTopBest) {
             try {
+                List<Map<String, String>> sloopInfos = (List<Map<String, String>>) slim.get("loopInfos");
+                List<Map<String, String>> sAppPositions = (List<Map<String, String>>) slim.get("appPositions");
+                boolean isInitial = originalFingerprint != null
+                        && originalFingerprint.equals(generateSchemeFingerprint(sloopInfos, sAppPositions));
                 enrichedTopBest.add(enrichToFullScheme(slim, jsonMap, objectMapper,
-                        projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo));
+                        projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, isInitial));
             } catch (Exception e) {
                 System.err.println("方案还原失败，使用精简版: " + e.getMessage());
                 enrichedTopBest.add(slim);
@@ -1838,7 +1866,8 @@ public class PowerDistributionDriveOptimization {
             ProjectCircuitInfoOutput projectCircuitInfoOutput,
             JsonToMap jsonToMap,
             Map<String, Object> topoInfoMap,
-            Map<String, String> projectInfo) throws Exception {
+            Map<String, String> projectInfo,
+            boolean isInitial) throws Exception {
         List<Map<String, String>> loops = (List<Map<String, String>>) slim.get("loopInfos");
         List<Map<String, String>> apps = (List<Map<String, String>>) slim.get("appPositions");
 
@@ -1850,11 +1879,17 @@ public class PowerDistributionDriveOptimization {
             return slim;
 
         Map<String, Object> map2 = jsonToMap.TransJsonToMap(result);
-        map2.put("成本", slim.get("成本"));
+        Map<String, Object> projectCircuitInfo = (Map<String, Object>) map2.get("projectCircuitInfo");
+        Map<String, Double> projectCost = new HashMap<>();
+        projectCost.put("总成本", (Double) projectCircuitInfo.get("总成本"));
+        projectCost.put("总重量", (Double) projectCircuitInfo.get("回路总重量"));
+        projectCost.put("总长度", (Double) projectCircuitInfo.get("回路总长度"));
+
+        map2.put("成本", projectCost);
         map2.put("topoId", topoInfoMap.get("id").toString());
         map2.put("caseId", projectInfo.get("caseId"));
         map2.put("finishStatue", "normal");
-        map2.put("initializationScheme", false);
+        map2.put("initializationScheme", isInitial);
         // 用户设置过变种的用电器信息
         map2.put("variantAppPositions", buildVariantAppList(apps));
         return map2;
