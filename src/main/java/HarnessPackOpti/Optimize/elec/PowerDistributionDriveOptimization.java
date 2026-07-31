@@ -40,7 +40,7 @@ public class PowerDistributionDriveOptimization {
     private final OptimizeStopStatusStore optimizeStopStatusStore;
 
     // 可变数量阈值，走枚举
-    public static Integer caseNumbe = 10000;
+    public static Integer caseNumbe = 100;
 
     // 生成初始样本数量限制
     public static Integer LessRandomSamleNumber = 1000;
@@ -81,7 +81,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\电源分配优化日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动分配优化json日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -1855,7 +1855,29 @@ public class PowerDistributionDriveOptimization {
         map2.put("caseId", projectInfo.get("caseId"));
         map2.put("finishStatue", "normal");
         map2.put("initializationScheme", false);
+        // 用户设置过变种的用电器信息
+        map2.put("variantAppPositions", buildVariantAppList(apps));
         return map2;
+    }
+
+    /**
+     * 收集方案中用户设置过变种的用电器信息（名称 → 位置点名称，仅 changeType≠0 的用电器）
+     */
+    private Map<String, String> buildVariantAppList(List<Map<String, String>> apps) {
+        Map<String, String> map = new LinkedHashMap<>();
+        if (apps == null) return map;
+        for (Map<String, String> app : apps) {
+            String ct = app.get("changeType");
+            if (ct == null || "0".equals(ct)) continue;
+            String appName = app.get("appName");
+            if (appName == null) continue;
+            String posName = app.get("unregularPointName");
+            if (posName == null || posName.isEmpty()) {
+                posName = app.get("regularPointName");
+            }
+            map.put(appName, posName != null ? posName : "");
+        }
+        return map;
     }
 
     /**
