@@ -51,9 +51,8 @@ public class PowerTopoOptimizeDiagnoseLibrary {
             }
 
             Object specifyPoints = app.get("指定变种点id列表");
-            if (specifyPoints == null) {
-                errorAppIds.add(app.get("用电器id").toString());
-                continue;
+            if (specifyPoints == null || specifyPoints.toString().trim().isEmpty()) {
+                continue; // 未选择变种点，交给 appVariantPointNotSelected 单独报
             }
 
             String[] ids = specifyPoints.toString().split(",");
@@ -104,7 +103,7 @@ public class PowerTopoOptimizeDiagnoseLibrary {
      *
      * @param appPositions 用电器信息列表
      * @param edges        所有分支信息（用于算 changeType=2 的总分支点数）
-     * @return 设置了变种位置的用电器 id 列表，超标时末尾追加 "组合数:xxx > 阈值:xxx"
+     * @return 超标时返回变种用电器 id 列表，未超标返回空列表
      */
     public List<String> appVariantCountExceeded(List<Map<String, Object>> appPositions,
                                                 List<Map<String, Object>> edges) {
@@ -142,8 +141,8 @@ public class PowerTopoOptimizeDiagnoseLibrary {
             }
         }
 
-        if (exceeded) {
-            variantAppIds.add("组合数:" + product + " > 阈值:" + VARIANT_COUNT_THRESHOLD);
+        if (!exceeded) {
+            return new ArrayList<>();
         }
         return variantAppIds;
     }

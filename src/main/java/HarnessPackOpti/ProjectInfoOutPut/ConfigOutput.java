@@ -12,8 +12,14 @@ import java.util.*;
 public class ConfigOutput {
 
     public static Properties resource;
+    /** 标记是否已通过 ReadCircuitPropertiesInfo 从内存填充（避免重复读文件导致重启） */
+    private static volatile boolean resourceLoaded = false;
 
     public ConfigOutput() throws IOException {
+        // 如果已从内存填充（ReadCircuitPropertiesInfo），跳过文件读取
+        if (resourceLoaded) {
+            return;
+        }
         resource = new Properties();
         //读取resources文件夹下的HarnessOpti.properties文件（UTF-8 编码，否则中文乱码）
         try (InputStream input = this.getClass().getClassLoader().getResourceAsStream("HarnessOpti.properties")) {
@@ -25,6 +31,22 @@ public class ConfigOutput {
         } catch (Exception ex) {
             ex.printStackTrace();
         }
+    }
+
+    /**
+     * 从 ReadCircuitPropertiesInfo 直接填充内存配置，不再写文件。
+     * 避免 Spring Boot devtools 检测 resources 目录文件变更导致重启。
+     */
+    public static void populateResource(Map<String, List<String>> dropdownOptionsMap) {
+        if (dropdownOptionsMap == null || dropdownOptionsMap.isEmpty()) {
+            return;
+        }
+        Properties props = new Properties();
+        for (Map.Entry<String, List<String>> entry : dropdownOptionsMap.entrySet()) {
+            props.setProperty(entry.getKey(), String.join(",", entry.getValue()));
+        }
+        resource = props;
+        resourceLoaded = true;
     }
 
     public String getConfig() throws JsonProcessingException {

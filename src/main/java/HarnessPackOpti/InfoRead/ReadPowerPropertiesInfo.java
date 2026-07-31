@@ -179,11 +179,30 @@ public class ReadPowerPropertiesInfo {
                 // 统一处理，一行搞定
                 processParam(type, paramName, paramValue);
             }
-            // 写入 properties 文件
-            writeDropdownOptionsToProperties();
+            HarnessPackOpti.ProjectInfoOutPut.ConfigOutput.populateResource(dropdownOptionsMap);
             ProjectCircuitInfoOutput.elecBusinessPrice = elecBusinessCostAdditionMap;
         }
-
+        Map<String, Map<String, String>> dataMap = new HashMap<>();
+        if ( mapFromProject.containsKey("eeParamMaterialList")) {
+            //物料配置表
+            List<Map<String, Object>> eeParamMaterialList = (List<Map<String, Object>>) mapFromProject.get("eeParamMaterialList");
+            for (Map<String, Object> map : eeParamMaterialList) {
+                Map<String, String> tempMap = new HashMap<>();
+                String wireType = map.get("wireType").toString();
+                tempMap.put("导线物料价（元/米）", map.get("materialPrice").toString());
+                tempMap.put("导线单位商务价（元/米）", map.get("businessPrice").toString());
+                tempMap.put("导线单位重量（单位g/m）", map.get("unitWeight").toString());
+                tempMap.put("端子成本（元/端）", map.get("terminalPrice").toString());
+                tempMap.put("焊点成本（元/m）", map.get("weldingPointCost").toString());
+                tempMap.put("导线打断成本（元/次）", map.get("dryBreakCost").toString());
+                tempMap.put("湿区成本补偿——连接器塑壳（元/端）", map.get("wetHousingCost").toString());
+                tempMap.put("湿区成本补偿——防水赛（元/个）", map.get("waterproofPlugComp").toString());
+                tempMap.put("导线外径（毫米）", map.get("wireDiameter").toString());
+                tempMap.put("导线两端的连接器塑壳商务价（元/端）", map.get("plasticBusinessPrice").toString());
+                dataMap.put(wireType, tempMap);
+            }
+            ProjectCircuitInfoOutput.elecFixedLocationLibrary = dataMap;
+        }
         AllInfo.put("拓扑基本信息",topoInfo);
         AllInfo.put("所有端点信息",points);
         AllInfo.put("所有分支信息",edges);
@@ -192,50 +211,6 @@ public class ReadPowerPropertiesInfo {
         AllInfo.put("回路用电器信息",loopInfos);
         AllInfo.put("方案信息",caseInfo);
         return AllInfo;
-    }
-
-    public void writeDropdownOptionsToProperties() {
-        // 开发环境：src/main/resources；生产环境：以 -Dconfig.dir 指定，默认当前目录
-        String devPath = "src/main/resources/HarnessOpti.properties";
-        String defaultPath;
-        if (new java.io.File(devPath).getParentFile() != null
-                && new java.io.File(devPath).getParentFile().exists()) {
-            defaultPath = devPath;
-        } else {
-            String configDir = System.getProperty("config.dir", "resources");
-            defaultPath = configDir + java.io.File.separator + "HarnessOpti.properties";
-            // 确保目录存在
-            File dir = new File(defaultPath).getParentFile();
-            if (dir != null && !dir.exists()) {
-                dir.mkdirs();
-            }
-        }
-        writeDropdownOptionsToProperties(dropdownOptionsMap, defaultPath);
-    }
-
-    public void writeDropdownOptionsToProperties(Map<String, List<String>> map, String filePath) {
-        try {
-            Properties properties = new Properties();
-
-            // 遍历Map，将List用逗号连接
-            for (Map.Entry<String, List<String>> entry : map.entrySet()) {
-                String key = entry.getKey();
-                String value = String.join(",", entry.getValue());
-                properties.setProperty(key, value);
-            }
-
-            // 使用 UTF-8 编码写入，避免 Unicode 转义
-            try (OutputStreamWriter writer = new OutputStreamWriter(
-                    new FileOutputStream(filePath), StandardCharsets.UTF_8)) {
-                properties.store(writer, "Dropdown Options Configuration");
-            }
-
-            System.out.println("✓ 配置文件写入成功: " + filePath);
-
-        } catch (Exception e) {
-            System.err.println("✗ 配置文件写入失败: " + e.getMessage());
-            e.printStackTrace();
-        }
     }
 
     // 处理参数的方法

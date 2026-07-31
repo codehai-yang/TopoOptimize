@@ -49,7 +49,7 @@ public class ProjectCircuitInfoOutput {
 
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\paramTxt (9).txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         // 去掉外层可能存在的双引号（JSON被双重转义的情况）
         jsonContent = jsonContent.trim();
@@ -113,15 +113,15 @@ public class ProjectCircuitInfoOutput {
         adjacencyMatrixGraphConnector.addEdge();
         adjacencyMatrixGraphConnector.getAdj();
 
-        // 读取线径excel文件
-        ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
-        if (elecFixedLocationLibrary == null) {
-            elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
-        }
-        // 获取导线无聊单价 商务成本
-        if (elecBusinessPrice == null) {
-            elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
-        }
+//        // 读取线径excel文件
+//        ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
+//        if (elecFixedLocationLibrary == null) {
+//            elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
+//        }
+//        // 获取导线无聊单价 商务成本
+//        if (elecBusinessPrice == null) {
+//            elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
+//        }
 
         // 在points 找出所有可能发生变化点 并且将同一组的放在一起
         Map<String, List<String>> interfaceCodegroup = new HashMap<>();
