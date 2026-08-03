@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import HarnessPackOpti.InfoRead.ReadPowerInfo;
+import HarnessPackOpti.InfoRead.ReadPowerPropertiesInfo;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
@@ -40,7 +41,7 @@ public class PowerDistributionDriveOptimization {
     private final OptimizeStopStatusStore optimizeStopStatusStore;
 
     // 可变数量阈值，走枚举
-    public static Integer caseNumbe = 100;
+    public static Integer caseNumber = 100;
 
     // 生成初始样本数量限制
     public static Integer LessRandomSamleNumber = 1000;
@@ -67,7 +68,7 @@ public class PowerDistributionDriveOptimization {
     public static Double CrossoverRate = 0.7;
 
     // 线程池
-    private static ThreadPool threadPool = ThreadPool.shared(HarnessBranchTopoOptimize.Threads, HarnessBranchTopoOptimize.QueueCapacity);
+    private static ThreadPool threadPool = null;
 
     // 定义一个仓库，遗传每次生成的方案存储，防止重复
     // ConcurrentHashMap 的 putIfAbsent 本身原子，无需外部 synchronized
@@ -81,7 +82,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\配电驱动分配优化json日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\入参.json");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -101,8 +102,9 @@ public class PowerDistributionDriveOptimization {
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         JsonToMap jsonToMap = new JsonToMap();
         Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
-        ReadPowerInfo readProjectInfo = new ReadPowerInfo();
+        ReadPowerPropertiesInfo readProjectInfo = new ReadPowerPropertiesInfo();
         Map<String, Object> readProject = readProjectInfo.getProjectInfo(jsonMap);
+         threadPool = ThreadPool.shared(HarnessBranchTopoOptimize.Threads, HarnessBranchTopoOptimize.QueueCapacity);
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
         List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
         // 记录原始方案指纹，用于判断遗传结果中是否包含原始方案
@@ -289,10 +291,14 @@ public class PowerDistributionDriveOptimization {
                         loopElecById.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(trim);
                 }
             }
-            // 回路可连接的起点用电器（selectedEndApp 传的是单个用电器名称）
+            // 回路可连接的起点用电器（selectedEndApp 传的是用电器名称，逗号分隔，与终点同一约定）
             String start = loopInfo.get("selectedEndApp");
             if (start != null && !start.trim().isEmpty()) {
-                loopElecByIdStart.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(start.trim());
+                for (String name : start.split(",")) {
+                    String trim = name.trim();
+                    if (!trim.isEmpty())
+                        loopElecByIdStart.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(trim);
+                }
             }
             // 组团一起变归组（新字段 teamConnRel）
             String ct = loopInfo.get("teamConnRel");
@@ -363,7 +369,7 @@ public class PowerDistributionDriveOptimization {
         }
 
         // 如果方案数在限制内，进行枚举生成方案列表
-        if (combinations <= caseNumbe) {
+        if (combinations <= caseNumber) {
             long enumerateTime = System.currentTimeMillis();
             enumeratedSchemes.clear();
 
@@ -404,16 +410,12 @@ public class PowerDistributionDriveOptimization {
                         String loopId = entry.getKey();
                         String value = entry.getValue();
                         String[] parts = value.split("\\|");
-                        // 一根回路两个用电器都没有可变回路就采用默认位置
-                        if (parts.length == 2) {
-                            continue;
-                        }
                         // 容错：长度不足 4 段时按缺失处理为默认位置
                         String startApp = parts.length > 0 ? parts[0] : "";
                         String endApp = parts.length > 1 ? parts[1] : "";
                         String startPos = parts.length > 2 ? parts[2] : "";
                         String endPos = parts.length > 3 ? parts[3] : "";
-                        // 任一关键字段为空则采用默认位置（appPositions 原值），跳过还原
+                        // 连接关系（起点/终点用电器）为空则无法还原，保持默认，跳过该回路
                         if (startApp.isEmpty() || endApp.isEmpty()) {
                             continue;
                         }
@@ -581,18 +583,6 @@ public class PowerDistributionDriveOptimization {
                     }
                 }
             }
-        }
-
-        // 初代未生成任何有效方案，直接返回原始方案，不进入遗传迭代
-        if (topBest.isEmpty()) {
-            System.out.println("初代无有效方案，返回原始方案");
-            Map<String, Object> origMap = new HashMap<>();
-            origMap.put("成本", originalResult != null ? parseOriginalCost(originalResult, jsonToMap) : new HashMap<>());
-            origMap.put("loopInfos", new ArrayList<>(loopInfos));
-            origMap.put("appPositions", new ArrayList<>(appPositions));
-            List<Map<String, Object>> result = new ArrayList<>();
-            result.add(origMap);
-            return objectMapper.writeValueAsString(result);
         }
 
         // 遗传算法
@@ -1892,6 +1882,9 @@ public class PowerDistributionDriveOptimization {
         map2.put("initializationScheme", isInitial);
         // 用户设置过变种的用电器信息
         map2.put("variantAppPositions", buildVariantAppList(apps));
+        // 移除内部使用的精简字段，不暴露给调用方
+        map2.remove("loopInfos");
+        map2.remove("appPositions");
         return map2;
     }
 
@@ -2489,8 +2482,8 @@ public class PowerDistributionDriveOptimization {
             System.out.println("优化被用户中断");
             return;
         }
-        if (enumeratedSchemes.size() >= caseNumbe) {
-            System.out.println("枚举方案数已达到限制(" + caseNumbe + ")，提前退出");
+        if (enumeratedSchemes.size() >= caseNumber) {
+            System.out.println("枚举方案数已达到限制(" + caseNumber + ")，提前退出");
             return;
         }
         if (varIndex == varKeys.size()) {
@@ -2513,7 +2506,7 @@ public class PowerDistributionDriveOptimization {
                     varDomains, mutualIdToVarKeys, varsInMutualGroup,
                     varIndex + 1, varKeys, currentAssignment, usedEndApps,
                     targetLoops, loopById, elecChangeablePosition, loopElecByIdStart);
-            if (enumeratedSchemes.size() >= caseNumbe)
+            if (enumeratedSchemes.size() >= caseNumber)
                 break;
             usedEndApps.remove(endApp);
             currentAssignment.remove(varKey);
@@ -2534,7 +2527,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, Map<String, String>> loopById,
             Map<String, List<String>> elecChangeablePosition,
             Map<String, Set<String>> loopElecByIdStart) {
-        if (enumeratedSchemes.size() >= caseNumbe) {
+        if (enumeratedSchemes.size() >= caseNumber) {
             return;
         }
         // Step 1: 解析每个回路的起点/终点用电器（从 assignment 中获取枚举值）
@@ -2654,7 +2647,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, String> loopToStartApp,
             Map<String, String> loopToEndApp,
             Set<String> affectedLoopIds) {
-        if (enumeratedSchemes.size() >= caseNumbe) {
+        if (enumeratedSchemes.size() >= caseNumber) {
             return;
         }
         if (index == appNames.size()) {
@@ -2672,7 +2665,7 @@ public class PowerDistributionDriveOptimization {
         String appName = appNames.get(index);
         List<String> positions = appPositionDomains.get(appName);
         for (String pos : positions) {
-            if (enumeratedSchemes.size() >= caseNumbe) {
+            if (enumeratedSchemes.size() >= caseNumber) {
                 break;
             }
             currentPositions.put(appName, pos);
@@ -2755,7 +2748,7 @@ public class PowerDistributionDriveOptimization {
                 0, varKeys, currentAssignment, usedEndApps,
                 total, overflow, loopInfos, loopById, elecChangeablePosition);
 
-        long totalCombinations = overflow[0] ? caseNumbe + 1L : total[0];
+        long totalCombinations = overflow[0] ? caseNumber + 1L : total[0];
         System.out.println("可行方案总数（含约束）: " + totalCombinations);
         System.out.println("方案数计算耗时: " + (System.currentTimeMillis() - calcStart) + "ms");
         return totalCombinations;
@@ -2764,7 +2757,7 @@ public class PowerDistributionDriveOptimization {
     /**
      * 连接关系回溯统计方案数（与 enumerateSchemesByBacktrack 同口径：变量域、互斥剪枝一致）。
      * 到达叶子（一个完整连接赋值）时，调用 countSchemesForAssignment 累加该赋值下的位置组合数。
-     * 超过 caseNumbe 时通过 overflow 标记提前结束（此时总数必然 > caseNumbe，枚举分支会被跳过）。
+     * 超过 caseNumber 时通过 overflow 标记提前结束（此时总数必然 > caseNumber，枚举分支会被跳过）。
      */
     private void countSchemesByBacktrack(
             Map<String, List<String>> varDomains,
@@ -2782,7 +2775,7 @@ public class PowerDistributionDriveOptimization {
             return;
         if (varIndex == varKeys.size()) {
             total[0] += countSchemesForAssignment(currentAssignment, targetLoops, loopById, elecChangeablePosition);
-            if (total[0] > caseNumbe)
+            if (total[0] > caseNumber)
                 overflow[0] = true;
             return;
         }
@@ -2894,8 +2887,8 @@ public class PowerDistributionDriveOptimization {
         long product = 1L;
         for (List<String> positions : appPositionDomains.values()) {
             product *= positions.size();
-            if (product > caseNumbe)
-                break; // 仅为防止后续越界，外层 overflow 会据此判定 > caseNumbe
+            if (product > caseNumber)
+                break; // 仅为防止后续越界，外层 overflow 会据此判定 > caseNumber
         }
         return product;
     }

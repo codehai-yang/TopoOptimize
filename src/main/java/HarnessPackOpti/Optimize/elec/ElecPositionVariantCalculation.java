@@ -7,6 +7,7 @@ import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
 import HarnessPackOpti.CircuitInfoCalculate.CalculateInlineWet;
 import HarnessPackOpti.CircuitInfoCalculate.CalculatePathBreakNumber;
 import HarnessPackOpti.CircuitInfoCalculate.CalculatePathLength;
+import HarnessPackOpti.InfoRead.ReadCircuitPropertiesInfo;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
 import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.JsonToMap;
@@ -44,7 +45,7 @@ public class ElecPositionVariantCalculation {
     public static Integer InitialSampleNumber = 10000;
     // 优化阈值
     public static Integer OptimizeThresholdValue = 10000;
-    private static ThreadPool threadPool = ThreadPool.shared(HarnessBranchTopoOptimize.Threads, HarnessBranchTopoOptimize.QueueCapacity);
+    private static ThreadPool threadPool = null;
 
     private final OptimizeStopStatusStore optimizeStopStatusStore;
 
@@ -61,8 +62,10 @@ public class ElecPositionVariantCalculation {
         JsonToMap jsonToMap = new JsonToMap();
         ObjectMapper objectMapper = new ObjectMapper();
         Map<String, Object> initmapFile = jsonToMap.TransJsonToMap(jsonContent);
-        ReadProjectInfo readProjectInfo = new ReadProjectInfo();
+        ReadCircuitPropertiesInfo readProjectInfo = new ReadCircuitPropertiesInfo();
         Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(initmapFile);
+         threadPool = ThreadPool.shared(HarnessBranchTopoOptimize.Threads, HarnessBranchTopoOptimize.QueueCapacity);
+
         List<Map<String, Object>> appPositions = (List<Map<String, Object>>) initmapFile.get("appPositions");
         List<Map<String, Object>> edges = (List<Map<String, Object>>) initmapFile.get("edges");
         List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) initmapFile.get("loopInfos");

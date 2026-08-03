@@ -55,7 +55,7 @@ public class OldHarnessBranchTopoOptimize {
     // 每次迭代得到的top20
     public static List<Map<String, Object>> TopDetail = new ArrayList<>();
     // 线程池
-    public static ThreadPool threadPool = ThreadPool.shared(Threads, QueueCapacity);
+    public static ThreadPool threadPool = null;
 
     // 定义一个仓库
     public static List<List<String>> WareHouseTop = new ArrayList<>();
@@ -125,6 +125,8 @@ public class OldHarnessBranchTopoOptimize {
             result.put("statue", map.get("topologyStatusCode").toString());
             topoOptimizeResult.add(result);
         }
+        threadPool = ThreadPool.shared(Threads, QueueCapacity);
+
         initializeCaseResultMap.put("topoOptimizeResult", topoOptimizeResult);
         initializeCaseResultMap.put("initializationScheme", true);
 

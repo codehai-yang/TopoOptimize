@@ -16,11 +16,13 @@ public class ThreadPool {
     private volatile boolean isTerminated;  // 立即终止标志
 
     public static ThreadPool shared(int threads, int queueCapacity) {
-        if (SHARED == null) {
-            synchronized (ThreadPool.class) {
-                if (SHARED == null) {
-                    SHARED = new ThreadPool(threads, queueCapacity);
-                }
+        synchronized (ThreadPool.class) {
+            ThreadPool old = SHARED;
+            // 每次调用都无条件重建，确保线程数/队列容量取到最新值
+            SHARED = new ThreadPool(threads, queueCapacity);
+            if (old != null) {
+                // 关闭旧池（等待其当前任务完成），避免旧线程残留
+                old.shutdown();
             }
         }
         return SHARED;

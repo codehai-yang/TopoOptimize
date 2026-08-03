@@ -95,7 +95,7 @@ public class HarnessBranchTopoOptimize {
     public static Double lengthWeight = 0.01;
 
     // 线程池
-    public static ThreadPool threadPool = ThreadPool.shared(Threads, QueueCapacity);
+    public static ThreadPool threadPool = null;
 
     // 全局种子计数器，用于生成不碰撞的Random种子
     private static final AtomicLong seedCounter = new AtomicLong(System.nanoTime());
@@ -117,7 +117,7 @@ public class HarnessBranchTopoOptimize {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM测试数据.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\入参.json");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         HarnessBranchTopoOptimize newHarnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
         long startTime = System.currentTimeMillis();
@@ -144,6 +144,7 @@ public class HarnessBranchTopoOptimize {
             String s = harnessBranchTopoOptimize.topoOptimize(jsonContent);
             return s;
         }
+        threadPool = ThreadPool.shared(Threads, QueueCapacity);
         // 每次优化前清理仓库，避免跨case累积
         WAREHOUSE_KEYS.clear();
         WareHouseTop.clear();
