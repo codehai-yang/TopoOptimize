@@ -49,7 +49,7 @@ public class ProjectCircuitInfoOutput {
 
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志_2026_08_05.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         // 去掉外层可能存在的双引号（JSON被双重转义的情况）
         jsonContent = jsonContent.trim();
@@ -898,6 +898,12 @@ public class ProjectCircuitInfoOutput {
                     adjacencyMatrixGraphConnector.getAdj(),
                     adjacencyMatrixGraphConnector.getAllPoint().indexOf(startName.toString()),
                     adjacencyMatrixGraphConnector.getAllPoint().indexOf(endName.toString()));
+            //TODO 测试
+            List<String> listName2 = convertPathToNumbers(shortestPath, adjacencyMatrixGraphConnector.getAllPoint());
+            Map<String, Object> branchInfo2 = findBranchByNode.findBranchByNode(listName2, edges);
+            List<String> edgeIdList2 = (List<String>) branchInfo2.get("idList");
+            Map<String, Object> pathLength2 = calculatePathLength.calculatePathLength(edgeIdList2, projectInfo);
+            Double length2 = (Double) pathLength2.get("长度") + BranchEndFallback;
             // 找两点之间的所有路径
             List<Double> lengthList = new ArrayList<>();
             if (shortestPath != null) {
@@ -917,7 +923,10 @@ public class ProjectCircuitInfoOutput {
                 }
             }
             Double minLength = Collections.min(lengthList);
-            tempInfo.put("回路绕线长度总值(米)", Double.parseDouble(df.format(distance - minLength)));
+            if(distance - minLength < 0){
+                System.out.println("");
+            }
+            tempInfo.put("回路绕线长度总值(米)", Double.parseDouble(df.format(distance - minLength)) < 0 ? 0 : df.format(distance - minLength));
         }
     }
 

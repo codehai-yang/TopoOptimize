@@ -15,7 +15,13 @@ public class IntergateCircuitInfo {
 
     // 能量流信号名关键字列表（大小写不敏感）
     private static final Set<String> ENERGY_FLOW_KEYWORDS = new HashSet<>(Arrays.asList(
-            "KL30", "EFS", "ESW", "HSD", "DRV"));
+            "KL30", "EFS", "ESW", "HSD", "DRV","KL.30","KL.R","KL.15","KL.87"));
+
+    // 能量流路径枚举上限：防止去掉信号名剪枝后路径组合爆炸导致 OOM。
+    // 调用方只需“选最短的一条”，收集足够样本即可，无需枚举全部。
+    private static final int MAX_ENERGY_FLOW_PATHS = 200;
+    // 能量流路径最大深度（用电器/合点节点数上限），防止超长/环形路径无限展开
+    private static final int MAX_ENERGY_FLOW_DEPTH = 100;
 
     // 用电器类型常量
     private static final String TYPE_APPLIANCE = "用电器";
@@ -318,6 +324,20 @@ public class IntergateCircuitInfo {
         String endPos = safeGetString(loopInfo, "终点位置名称");
         String signalName = safeGetString(loopInfo, "回路信号名");
 
+        // 需求：能量流检测只对 回路属性 为 配电回路 / 驱动回路 的回路执行，
+        // 其他回路属性（主供电/硬线/接地/高速线缆/空/其他）一律跳过。
+        String circuitProperty = safeGetString(loopInfo, "回路属性");
+        if (circuitProperty != null) {
+            circuitProperty = circuitProperty.trim();
+        }
+        boolean isPowerOrDrive = "配电回路".equals(circuitProperty)
+                || "驱动回路".equals(circuitProperty);
+        if (!isPowerOrDrive) {
+            efResult.skipped = true;
+            efResult.skipReason = "非配电回路/驱动回路（回路属性=" + circuitProperty + "），不计算能量流";
+            return efResult;
+        }
+
         if (isEmpty(startApp) && isEmpty(endApp)) {
             efResult.skipped = true;
             efResult.skipReason = "回路缺少用电器名称";
@@ -599,15 +619,24 @@ public class IntergateCircuitInfo {
             Map<String, List<AppEdge>> appGraph, Map<String, String> appTypeMap,
             boolean highPriorityOnly, String originalConsumerType) {
 
+        // 路径数达到上限或深度越界，立即剪枝，防止 OOM
+        if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS
+                || currentAppPath.size() >= MAX_ENERGY_FLOW_DEPTH) {
+            return;
+        }
+
         List<AppEdge> neighbors = appGraph.get(currentApp);
         if (neighbors == null) return;
 
         for (AppEdge edge : neighbors) {
+            if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS) {
+                break;
+            }
             String neighborApp = edge.toApp.equals(currentApp) ? edge.fromApp : edge.toApp;
             String neighborType = edge.toApp.equals(currentApp) ? edge.fromType : edge.toType;
 
             if (visited.contains(neighborApp)) continue;
-            if (!isSignalNameValid(edge.signalName)) continue;
+            // 关键字段只在“要找的这条回路(锚点回路)”自身判定；路径上经过的其他回路不卡信号名
             if (!isValidTransition(currentApp, currentType, neighborApp, neighborType,
                     originalConsumerType, highPriorityOnly)) continue;
 
@@ -659,6 +688,12 @@ public class IntergateCircuitInfo {
             boolean highPriorityOnly,
             String originalConsumerType) {
 
+        // 路径数达到上限或深度越界，立即剪枝，防止 OOM
+        if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS
+                || currentAppPath.size() >= MAX_ENERGY_FLOW_DEPTH) {
+            return;
+        }
+
         visited.add(currentApp);
         currentAppPath.add(currentApp);
 
@@ -674,6 +709,9 @@ public class IntergateCircuitInfo {
         List<AppEdge> neighbors = appGraph.get(currentApp);
         if (neighbors != null) {
             for (AppEdge edge : neighbors) {
+                if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS) {
+                    break;
+                }
                 String neighborApp = edge.toApp.equals(currentApp) ? edge.fromApp : edge.toApp;
                 String neighborType = edge.toApp.equals(currentApp) ? edge.fromType : edge.toType;
 
@@ -681,11 +719,7 @@ public class IntergateCircuitInfo {
                     continue;
                 }
 
-                // 检查信号名是否合法
-                if (!isSignalNameValid(edge.signalName)) {
-                    continue;
-                }
-
+                // 关键字段只在“要找的这条回路(锚点回路)”自身判定；路径上经过的其他回路不卡信号名
                 // 检查类型转移是否合法（传入用电器名称以正确检测焊点）
                 if (!isValidTransition(currentApp, currentType, neighborApp, neighborType,
                         originalConsumerType, highPriorityOnly)) {
