@@ -904,28 +904,28 @@ public class ProjectCircuitInfoOutput {
             List<String> edgeIdList2 = (List<String>) branchInfo2.get("idList");
             Map<String, Object> pathLength2 = calculatePathLength.calculatePathLength(edgeIdList2, projectInfo);
             Double length2 = (Double) pathLength2.get("长度") + BranchEndFallback;
-            // 找两点之间的所有路径
-            List<Double> lengthList = new ArrayList<>();
-            if (shortestPath != null) {
-                List<List<Integer>> allPathBetweenPoint = findAllPath.findAllPathBetweenTwoPoint(
-                        adjacencyMatrixGraphConnector.getAdj(),
-                        adjacencyMatrixGraphConnector.getAllPoint().indexOf(startName.toString()),
-                        adjacencyMatrixGraphConnector.getAllPoint().indexOf(endName.toString()));
-                for (List<Integer> ids : allPathBetweenPoint) {
-                    List<String> listName = convertPathToNumbers(ids, adjacencyMatrixGraphConnector.getAllPoint());
-                    Map<String, Object> branchInfo = findBranchByNode.findBranchByNode(listName, edges);
-                    List<String> edgeIdList = (List<String>) branchInfo.get("idList");
-                    Map<String, Object> pathLength = calculatePathLength.calculatePathLength(edgeIdList, projectInfo);
-                    Double length = (Double) pathLength.get("长度") + BranchEndFallback;
-                    // 两点距离
-                    length = Double.parseDouble(df.format(length / 1000));
-                    lengthList.add(length);
-                }
+            // 用「带权 Dijkstra」直接求两点间的真实最短路径（按分支长度，而非跳数），
+            // 替代原 findAllPath 枚举（枚举不全且耗时）。
+            Double minLength = null;
+            List<Integer> weightedPath = shortestPathSearch.findShortestPathWithWeight(
+                    adjacencyMatrixGraphConnector.getAdj(),
+                    adjacencyMatrixGraphConnector.getAllPoint().indexOf(startName.toString()),
+                    adjacencyMatrixGraphConnector.getAllPoint().indexOf(endName.toString()),
+                    adjacencyMatrixGraphConnector.getAllPoint(), edges);
+            if (weightedPath != null) {
+                List<String> listName = convertPathToNumbers(weightedPath, adjacencyMatrixGraphConnector.getAllPoint());
+                Map<String, Object> branchInfo = findBranchByNode.findBranchByNode(listName, edges);
+                List<String> edgeIdList = (List<String>) branchInfo.get("idList");
+                Map<String, Object> pathLength = calculatePathLength.calculatePathLength(edgeIdList, projectInfo);
+                Double length = (Double) pathLength.get("长度") + BranchEndFallback;
+                // 两点距离(米)
+                minLength = Double.parseDouble(df.format(length / 1000));
             }
-            Double minLength = Collections.min(lengthList);
-            if(distance - minLength < 0){
-                System.out.println("");
+            if (minLength == null) {
+                // 兜底：找不到路径时，用已算好的跳数最短路径长度
+                minLength = Double.parseDouble(df.format(length2 / 1000));
             }
+
             tempInfo.put("回路绕线长度总值(米)", Double.parseDouble(df.format(distance - minLength)) < 0 ? 0 : df.format(distance - minLength));
         }
     }
