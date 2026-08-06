@@ -1184,6 +1184,9 @@ public class IntergateCircuitInfo {
                 loopInfo.put("能量流绕路长度均值(米/根)", null);
                 loopInfo.put("能量流途径分支id", null);
                 loopInfo.put("能量流不绕路途径分支id", null);
+                loopInfo.put("能量流回路id路径", null);
+                loopInfo.put("能量流用电器路径", null);
+                loopInfo.put("能量流不绕路长度(米)", null);
             } else {
                 double detourMeters = Math.max(efResult.detourLength, 0) / 1000.0;
                 loopInfo.put("能量流绕路总数量(根)", detourMeters > 0 ? 1 : 0);
@@ -1194,6 +1197,12 @@ public class IntergateCircuitInfo {
                         efResult.energyFlowBranchPoints.isEmpty() ? null : efResult.energyFlowBranchPoints);
                 loopInfo.put("能量流不绕路途径分支id",
                         efResult.noDetourBranchPoints.isEmpty() ? null : efResult.noDetourBranchPoints);
+                loopInfo.put("能量流回路id路径",
+                        efResult.circuitPath == null || efResult.circuitPath.isEmpty() ? null : efResult.circuitPath);
+                loopInfo.put("能量流用电器路径",
+                        efResult.appliancePath == null || efResult.appliancePath.isEmpty() ? null : efResult.appliancePath);
+                double noDetourMeters = Math.max(efResult.noDetourLength, 0) / 1000.0;
+                loopInfo.put("能量流不绕路长度(米)", Double.parseDouble(df.format(noDetourMeters)));
             }
         }
     }
