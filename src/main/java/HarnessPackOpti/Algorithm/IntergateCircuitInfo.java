@@ -346,7 +346,15 @@ public class IntergateCircuitInfo {
 
         if (isEmpty(startType) && startApp != null) startType = appTypeMap.get(startApp);
         if (isEmpty(endType) && endApp != null) endType = appTypeMap.get(endApp);
+        // 焊点作为端点时，"起点/终点位置名称"为null，焊点位置存放在"焊点"前缀的key里（焊点位置名称）。
+        // 读取端点位置优先用回路自身的 焊点位置名称 字段，再回退到 appPosMap（由buildApplianceGraph构建）。
+        if (isEmpty(startPos) && isSolderPoint(startApp)) {
+            startPos = safeGetString(loopInfo, "焊点位置名称");
+        }
         if (isEmpty(startPos) && startApp != null) startPos = appPosMap.get(startApp);
+        if (isEmpty(endPos) && isSolderPoint(endApp)) {
+            endPos = safeGetString(loopInfo, "焊点位置名称");
+        }
         if (isEmpty(endPos) && endApp != null) endPos = appPosMap.get(endApp);
 
         if (shouldSkipCircuit(startType, endType)) {
@@ -445,6 +453,114 @@ public class IntergateCircuitInfo {
         return -1;
     }
 
+    // 类型缩写：A=用电器 C=控制器 P=配电单元 G=发电单元 B=储电单元 J=合点
+    private static final String T_A = TYPE_APPLIANCE;
+    private static final String T_C = TYPE_ECU;
+    private static final String T_P = TYPE_PDU;
+    private static final String T_G = TYPE_GENERATOR;
+    private static final String T_B = TYPE_BATTERY;
+    private static final String T_J = "合点";
+
+    /**
+     * 根据回路两端类型，返回该回路的「能量流优先级模板」列表（从高到低）。
+     *
+     * 每个模板是一根完整的类型序列链（起点=消费端，终点=源[发电/储电单元]）。
+     * 按模板优先级从高到低查找：高优先级若能找到能量流（哪怕只有一条），
+     * 就不再尝试更低优先级模板。
+     *
+     * 模板序列仅由固定几类(用电器A/控制器C/配电P/合点J/源G/B)组成。
+     * 控制器↔控制器之间的跳转需额外满足信号名关键字，由调用方在 DFS 时校验。
+     */
+    private List<List<String>> getPriorityTemplates(String terminalType, String upstreamType) {
+        List<List<String>> templates = new ArrayList<>();
+        if (terminalType == null || upstreamType == null) return templates;
+        String t = terminalType;
+        String u = upstreamType;
+
+        if ((t.equals(T_A) && u.equals(T_C)) || (t.equals(T_C) && u.equals(T_A))) {
+            // 用电器↔控制器（消费端=用电器或控制器，链经过控制器后再经配电到源）
+            // 模板以 消费端→上游 为起点，到 发电/储电 结束
+            if (t.equals(T_A)) {
+                // 用电器为消费端
+                templates.add(list(T_A, T_C, T_P, T_G));
+                templates.add(list(T_A, T_C, T_P, T_B));
+                templates.add(list(T_A, T_C, T_P, T_P, T_G));
+                templates.add(list(T_A, T_C, T_P, T_P, T_B));
+                // 特殊：控制器-控制器之间（信号名需关键字），后两种
+                templates.add(list(T_A, T_C, T_C, T_P, T_B));
+                templates.add(list(T_A, T_C, T_C, T_P, T_G));
+            } else {
+                // 控制器为消费端
+                templates.add(list(T_C, T_A, T_P, T_G));
+                templates.add(list(T_C, T_A, T_P, T_B));
+                templates.add(list(T_C, T_A, T_P, T_P, T_G));
+                templates.add(list(T_C, T_A, T_P, T_P, T_B));
+                templates.add(list(T_C, T_A, T_C, T_P, T_B));
+                templates.add(list(T_C, T_A, T_C, T_P, T_G));
+            }
+            return templates;
+        }
+
+        if ((t.equals(T_P) && u.equals(T_A)) || (t.equals(T_A) && u.equals(T_P))) {
+            // 配电单元↔用电器（消费端=用电器）
+            templates.add(list(T_A, T_P, T_G));
+            templates.add(list(T_A, T_P, T_B));
+            templates.add(list(T_A, T_P, T_P, T_G));
+            templates.add(list(T_A, T_P, T_P, T_B));
+            return templates;
+        }
+
+        if (t.equals(T_C) && u.equals(T_C)) {
+            // 控制器↔控制器（控制器-控制器间无需信号名关键字）
+            templates.add(list(T_C, T_C, T_P, T_G));
+            templates.add(list(T_C, T_C, T_P, T_B));
+            templates.add(list(T_C, T_C, T_P, T_P, T_G));
+            templates.add(list(T_C, T_C, T_P, T_P, T_B));
+            return templates;
+        }
+
+        if (t.equals(T_A) && u.equals(T_J)) {
+            // 情况5：用电器↔合点（消费端=用电器）
+            templates.add(list(T_A, T_J, T_P, T_G));
+            templates.add(list(T_A, T_J, T_P, T_P, T_G));
+            templates.add(list(T_A, T_J, T_P, T_B));
+            templates.add(list(T_A, T_J, T_P, T_P, T_B));
+            templates.add(list(T_A, T_J, T_C, T_P, T_G));
+            templates.add(list(T_A, T_J, T_C, T_P, T_B));
+            templates.add(list(T_A, T_J, T_C, T_P, T_P, T_G));
+            templates.add(list(T_A, T_J, T_C, T_P, T_P, T_B));
+            templates.add(list(T_A, T_J, T_C, T_C, T_P, T_G));
+            templates.add(list(T_A, T_J, T_C, T_C, T_P, T_B));
+            templates.add(list(T_A, T_J, T_C, T_C, T_P, T_P, T_G));
+            templates.add(list(T_A, T_J, T_C, T_C, T_P, T_P, T_B));
+            return templates;
+        }
+
+        if (t.equals(T_C) && u.equals(T_J)) {
+            // 情况6：控制器↔合点（消费端=控制器）
+            templates.add(list(T_C, T_J, T_P, T_G));
+            templates.add(list(T_C, T_J, T_P, T_B));
+            templates.add(list(T_C, T_J, T_P, T_P, T_G));
+            templates.add(list(T_C, T_J, T_P, T_P, T_B));
+            templates.add(list(T_C, T_J, T_C, T_P, T_G));
+            templates.add(list(T_C, T_J, T_C, T_P, T_B));
+            templates.add(list(T_C, T_J, T_C, T_P, T_P, T_G));
+            templates.add(list(T_C, T_J, T_C, T_P, T_P, T_B));
+            return templates;
+        }
+
+        // 情况1：配电↔控制器（消费端=控制器），以及其余组合的兜底
+        templates.add(list(T_C, T_P, T_G));
+        templates.add(list(T_C, T_P, T_B));
+        templates.add(list(T_C, T_P, T_P, T_G));
+        templates.add(list(T_C, T_P, T_P, T_B));
+        return templates;
+    }
+
+    private static List<String> list(String... types) {
+        return Arrays.asList(types);
+    }
+
     /**
      * 以“本回路两端”为锚点计算能量流：
      * 强制能量流路径先经过 叶子端(用电器/控制器) → 上游端(合点/配电/控制器) 这一段（即本回路自身的线），
@@ -479,8 +595,8 @@ public class IntergateCircuitInfo {
             return efResult;
         }
 
-        // 信号名合法性：在回溯一开始就判断，本回路(锚点回路)自身信号名必须合法
-        // （信号名按 _ . - 分割后，最后两部分包含 KL30/efs/esw/HSD/DRV 才视为可走通的能量流回路）
+        // 信号名合法性：所有回路在检测开始前，都要求本回路(锚点回路)自身信号名包含能量流关键字。
+        // 被测回路不含关键字，则不做能量流检测（包括控制器↔控制器回路也不例外）。
         if (!isSignalNameValid(anchorSignalName)) {
             efResult.hasEnergyFlow = false;
             return efResult;
@@ -489,32 +605,36 @@ public class IntergateCircuitInfo {
         List<List<String>> allAppPaths = new ArrayList<>();
         List<List<String>> allCircuitPaths = new ArrayList<>();
 
-        // 高优先级优先；失败再低优先级（合点可走控制器）
-        for (boolean highPriority : new boolean[]{true, false}) {
+        // 按「优先级模板」查找：根据回路两端类型生成模板(高->低)，逐模板严格匹配，
+        // 高优先级若能找到能量流(哪怕一条)，即停止，不再尝试更低优先级模板。
+        List<List<String>> templates = getPriorityTemplates(terminalType, upstreamType);
+        for (List<String> tmpl : templates) {
             List<String> currentAppPath = new ArrayList<>();
             List<String> currentCircuitPath = new ArrayList<>();
             Set<String> visited = new HashSet<>();
 
-            // 强制本回路边：terminal -> upstream
+            // 强制本回路边：terminal -> upstream（模板[0]=terminal, 模板[1]=upstream）
             currentAppPath.add(terminalApp);
             currentCircuitPath.add(circuitId);
             visited.add(terminalApp);
             visited.add(upstreamApp);
             currentAppPath.add(upstreamApp);
 
-            if (isPowerSource(upstreamType)) {
-                // 上游端本身就是源
-                allAppPaths.add(new ArrayList<>(currentAppPath));
-                allCircuitPaths.add(new ArrayList<>(currentCircuitPath));
+            if (tmpl.size() <= 2) {
+                // 模板只有 消费端->源(upstream自身就是源)
+                if (isPowerSource(upstreamType)) {
+                    allAppPaths.add(new ArrayList<>(currentAppPath));
+                    allCircuitPaths.add(new ArrayList<>(currentCircuitPath));
+                }
             } else {
-                findEnergyFlowPathsDFSFromPrefix(
-                        upstreamApp, upstreamType, visited,
-                        currentAppPath, currentCircuitPath,
+                // 从模板下标2开始匹配（0=terminal,1=upstream 已在路径中）
+                matchTemplate(
+                        upstreamApp, upstreamType, tmpl, 2,
+                        visited, currentAppPath, currentCircuitPath,
                         allAppPaths, allCircuitPaths,
-                        appGraph, appTypeMap,
-                        highPriority, terminalType);
+                        appGraph, appTypeMap);
             }
-            if (!allAppPaths.isEmpty()) break;
+            if (!allAppPaths.isEmpty()) break;  // 高优先级命中即停止
         }
 
         if (allAppPaths.isEmpty()) {
@@ -608,139 +728,67 @@ public class IntergateCircuitInfo {
     }
 
     /**
-     * 从已确定的前缀（已包含 terminal→upstream）继续做 DFS，寻找到达发电/储电单元的路径。
-     * 与 findEnergyFlowPathsDFS 不同，本方法不会重复把当前节点加入路径（假定已在路径中）。
+     * 按「优先级模板」严格匹配的 DFS：从 currentApp(类型=template[idx-1]) 出发，
+     * 要求下一步邻居类型 == template[idx]，逐层推进到模板末尾(源)即记录一条完整路径。
+     *
+     * 特殊规则：控制器→控制器 的跳转，其回路信号名必须包含能量流关键字，否则该跳转不成立。
+     *
+     * @param tmplIdx 当前要匹配的模板下标（0=terminal,1=upstream 已在路径中）
      */
-    private void findEnergyFlowPathsDFSFromPrefix(
-            String currentApp, String currentType,
+    private void matchTemplate(
+            String currentApp, String currentType, List<String> tmpl, int tmplIdx,
             Set<String> visited,
             List<String> currentAppPath, List<String> currentCircuitPath,
             List<List<String>> allAppPaths, List<List<String>> allCircuitPaths,
-            Map<String, List<AppEdge>> appGraph, Map<String, String> appTypeMap,
-            boolean highPriorityOnly, String originalConsumerType) {
+            Map<String, List<AppEdge>> appGraph, Map<String, String> appTypeMap) {
 
-        // 路径数达到上限或深度越界，立即剪枝，防止 OOM
+        if (tmplIdx >= tmpl.size()) return;
         if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS
-                || currentAppPath.size() >= MAX_ENERGY_FLOW_DEPTH) {
-            return;
-        }
+                || currentAppPath.size() >= MAX_ENERGY_FLOW_DEPTH) return;
 
+        String needType = tmpl.get(tmplIdx);
         List<AppEdge> neighbors = appGraph.get(currentApp);
         if (neighbors == null) return;
 
         for (AppEdge edge : neighbors) {
-            if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS) {
-                break;
-            }
+            if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS) break;
             String neighborApp = edge.toApp.equals(currentApp) ? edge.fromApp : edge.toApp;
             String neighborType = edge.toApp.equals(currentApp) ? edge.fromType : edge.toType;
 
+            // 焊点/合点没有"用电器类型"字段(为 null)，按名称识别为"合点"
+            if (neighborType == null && isSolderPoint(neighborApp)) {
+                neighborType = "合点";
+            }
+
             if (visited.contains(neighborApp)) continue;
-            // 关键字段只在“要找的这条回路(锚点回路)”自身判定；路径上经过的其他回路不卡信号名
-            if (!isValidTransition(currentApp, currentType, neighborApp, neighborType,
-                    originalConsumerType, highPriorityOnly)) continue;
+            // 类型必须严格匹配模板当前要求（邻居用电器类型可能缺失为 null，跳过）
+            if (neighborType == null || !neighborType.equals(needType)) continue;
+
+            // 控制器→控制器 跳转：回路信号名必须含能量流关键字
+            if (neighborType != null && TYPE_ECU.equals(currentType)
+                    && TYPE_ECU.equals(neighborType)
+                    && !isSignalNameValid(edge.signalName)) {
+                continue;
+            }
 
             visited.add(neighborApp);
             currentAppPath.add(neighborApp);
             currentCircuitPath.add(edge.circuitId);
 
-            if (isPowerSource(neighborType) && currentAppPath.size() > 1) {
+            if (tmplIdx == tmpl.size() - 1) {
+                // 到达模板末尾(源)
                 allAppPaths.add(new ArrayList<>(currentAppPath));
                 allCircuitPaths.add(new ArrayList<>(currentCircuitPath));
             } else {
-                findEnergyFlowPathsDFSFromPrefix(
-                        neighborApp, neighborType, visited,
-                        currentAppPath, currentCircuitPath,
-                        allAppPaths, allCircuitPaths,
-                        appGraph, appTypeMap,
-                        highPriorityOnly, originalConsumerType);
+                matchTemplate(neighborApp, neighborType, tmpl, tmplIdx + 1,
+                        visited, currentAppPath, currentCircuitPath,
+                        allAppPaths, allCircuitPaths, appGraph, appTypeMap);
             }
 
             visited.remove(neighborApp);
             currentAppPath.remove(currentAppPath.size() - 1);
             currentCircuitPath.remove(currentCircuitPath.size() - 1);
         }
-    }
-
-    /**
-     * DFS搜索所有能量流路径
-     *
-     * @param currentApp      当前用电器名称
-     * @param currentType     当前用电器类型
-     * @param currentPos      当前用电器位置
-     * @param visited         已访问用电器集合
-     * @param currentAppPath  当前用电器路径
-     * @param currentCircuitPath 当前回路路径
-     * @param allAppPaths     收集所有用电器路径
-     * @param allCircuitPaths 收集所有回路路径
-     * @param appGraph        用电器邻接图
-     * @param appTypeMap      用电器类型映射
-     * @param highPriorityOnly 是否仅尝试高优先级（合点→配电单元）
-     * @param originalConsumerType 原始消费端类型
-     */
-    private void findEnergyFlowPathsDFS(
-            String currentApp, String currentType, String currentPos,
-            Set<String> visited,
-            List<String> currentAppPath, List<String> currentCircuitPath,
-            List<List<String>> allAppPaths, List<List<String>> allCircuitPaths,
-            Map<String, List<AppEdge>> appGraph,
-            Map<String, String> appTypeMap,
-            boolean highPriorityOnly,
-            String originalConsumerType) {
-
-        // 路径数达到上限或深度越界，立即剪枝，防止 OOM
-        if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS
-                || currentAppPath.size() >= MAX_ENERGY_FLOW_DEPTH) {
-            return;
-        }
-
-        visited.add(currentApp);
-        currentAppPath.add(currentApp);
-
-        // 到达发电单元/储电单元 → 找到一条完整路径
-        if (isPowerSource(currentType) && currentAppPath.size() > 1) {
-            allAppPaths.add(new ArrayList<>(currentAppPath));
-            allCircuitPaths.add(new ArrayList<>(currentCircuitPath));
-            visited.remove(currentApp);
-            currentAppPath.remove(currentAppPath.size() - 1);
-            return;
-        }
-
-        List<AppEdge> neighbors = appGraph.get(currentApp);
-        if (neighbors != null) {
-            for (AppEdge edge : neighbors) {
-                if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS) {
-                    break;
-                }
-                String neighborApp = edge.toApp.equals(currentApp) ? edge.fromApp : edge.toApp;
-                String neighborType = edge.toApp.equals(currentApp) ? edge.fromType : edge.toType;
-
-                if (visited.contains(neighborApp)) {
-                    continue;
-                }
-
-                // 关键字段只在“要找的这条回路(锚点回路)”自身判定；路径上经过的其他回路不卡信号名
-                // 检查类型转移是否合法（传入用电器名称以正确检测焊点）
-                if (!isValidTransition(currentApp, currentType, neighborApp, neighborType,
-                        originalConsumerType, highPriorityOnly)) {
-                    continue;
-                }
-
-                currentCircuitPath.add(edge.circuitId);
-                findEnergyFlowPathsDFS(
-                        neighborApp, neighborType,
-                        appTypeMap.getOrDefault(neighborApp, neighborType),
-                        visited, currentAppPath, currentCircuitPath,
-                        allAppPaths, allCircuitPaths,
-                        appGraph, appTypeMap,
-                        highPriorityOnly,
-                        originalConsumerType);
-                currentCircuitPath.remove(currentCircuitPath.size() - 1);
-            }
-        }
-
-        visited.remove(currentApp);
-        currentAppPath.remove(currentAppPath.size() - 1);
     }
 
     /**
@@ -753,73 +801,6 @@ public class IntergateCircuitInfo {
      * @param originalConsumerType 原始消费端类型
      * @param highPriorityOnly    是否仅尝试高优先级
      */
-    private boolean isValidTransition(String fromApp, String fromType, String toApp, String toType,
-            String originalConsumerType, boolean highPriorityOnly) {
-
-        // 通过名称判断焊点（名称含[]括号），不依赖类型字段
-        boolean fromSolder = isSolderPoint(fromApp);
-        boolean toSolder = isSolderPoint(toApp);
-
-        // 到达发电单元/储电单元 → 始终合法
-        if (isPowerSource(toType)) {
-            return true;
-        }
-
-        // 接地点不允许作为能量流路径节点
-        if (TYPE_GROUND.equals(toType)) {
-            return false;
-        }
-
-        // === 合点(焊点) 作为起始点的转移规则 ===
-        if (fromSolder) {
-            // 合点→合点（不允许回路间跳转）
-            if (toSolder) return false;
-            // 合点→配电单元（高优先级，始终允许）
-            if (TYPE_PDU.equals(toType)) return true;
-            // 合点→控制器（低优先级，仅在非高优先级模式下允许）
-            if (TYPE_ECU.equals(toType)) return !highPriorityOnly;
-            // 合点不能去其他地方
-            return false;
-        }
-
-        // === 从其他类型到达合点 ===
-        if (toSolder) {
-            // 只有用电器或控制器能到达合点
-            return TYPE_APPLIANCE.equals(fromType) || TYPE_ECU.equals(fromType);
-        }
-
-        // === 常规类型转移（fromType和toType都不为null） ===
-        if (fromType == null || toType == null) {
-            return false;
-        }
-
-        boolean fromConsumer = TYPE_APPLIANCE.equals(fromType);
-        boolean fromController = TYPE_ECU.equals(fromType);
-        boolean fromDistUnit = TYPE_PDU.equals(fromType);
-
-        boolean toDistUnit = TYPE_PDU.equals(toType);
-        boolean toController = TYPE_ECU.equals(toType);
-
-        // 配电单元 → 配电单元（级联查找上游发电/储电单元）
-        if (fromDistUnit && toDistUnit) {
-            return true;
-        }
-        // 配电单元 → 其他类型（不允许，只能向上找发电/储电单元）
-        if (fromDistUnit) {
-            return false;
-        }
-        // 用电器 → 配电单元 / 控制器
-        if (fromConsumer) {
-            return toDistUnit || toController;
-        }
-        // 控制器 → 配电单元 / 控制器
-        if (fromController) {
-            return toDistUnit || toController;
-        }
-
-        return false;
-    }
-
     /**
      * 判断是否跳过该回路的能量流计算
      * 规则1：起点或终点为发电单元/储电单元 ↔ 配电单元 的回路不计算
@@ -970,6 +951,10 @@ public class IntergateCircuitInfo {
             String signalName = safeGetString(loopInfo, "回路信号名");
 
             if (startApp == null || endApp == null) continue;
+
+            // 焊点/合点：用电器类型统一为"合点"（类型字段缺失时按名称兜底）
+            if (startType == null && isSolderPoint(startApp)) startType = "合点";
+            if (endType == null && isSolderPoint(endApp)) endType = "合点";
 
             // 记录用电器类型
             if (startType != null) appTypeMap.put(startApp, startType);
