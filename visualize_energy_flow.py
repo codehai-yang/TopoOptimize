@@ -416,8 +416,8 @@ def draw(G, pos, circuit, detour_edges, no_detour_edges, circuit_edges,
     else:
         nodetour_coll = None
 
-    # 标注能量流经过的所有回路端点：遍历能量流路径(绕路+不绕路)上的每个节点，
-    # 若该节点对应用电器(有类型)，则显示其用电器类型(该节点既是某条回路的终点也是下一条的起点)。
+    # 标注能量流路径上的位置点及对应用电器类型：显示 "位置名 [用电器类型]"。
+    # 有类型的位置点用红点强调；纯分支点(无类型)只显示位置名。
     label_arts = []
     pos_app_map = pos_app_map or {}
     path_nodes = set()
@@ -426,12 +426,18 @@ def draw(G, pos, circuit, detour_edges, no_detour_edges, circuit_edges,
     for node in path_nodes:
         if node in pos:
             app_type = pos_app_map.get(node)
+            x, y = pos[node]
             if app_type:
-                x, y = pos[node]
-                t = ax.annotate(app_type, (x, y), fontsize=8, weight='bold',
-                                color='#333333', xytext=(4, 4),
-                                textcoords='offset points')
-                label_arts.append(t)
+                # 对应用电器的位置：红点强调 + 显示 位置名[类型]
+                ax.scatter([x], [y], marker='o', s=30, c='#ff4400',
+                           edgecolors='black', zorder=4)
+                text = f"{node} [{app_type}]"
+            else:
+                # 纯分支点：只显示位置名
+                text = node
+            t = ax.annotate(text, (x, y), fontsize=7, color='#333333',
+                            xytext=(3, 3), textcoords='offset points')
+            label_arts.append(t)
 
     # 当前显示模式
     state = {'mode': 'no_detour'}   # 默认只显示不绕路

@@ -620,8 +620,6 @@ public class ProjectCircuitInfoOutput {
         IntergateCircuitInfo circuitInfoIntergation = new IntergateCircuitInfo();
         // 回路绕线长度计算
         circuitCoilingLength(loopdetails, edges, adjacencyMatrixGraphConnector, projectInfo);
-        // 所有回路信息的总和
-        Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails,adjacencyMatrixGraph,edges);
         IntergateCircuitInfo ici = new IntergateCircuitInfo();
         for (Map<String, Object> loopInfo : loopInfos) {
             Map<String, Object> objectMap = (Map<String, Object>) loopdetails.get(loopInfo.get("回路id").toString());
@@ -636,10 +634,13 @@ public class ProjectCircuitInfoOutput {
             objectMap.put("导线单价", price);
             //能量流计算
             ici.fillSingleCircuitEnergyFlow(objectMap, loopdetails,
-                    adjacencyMatrixGraphConnector.getAllPoint(),
-                    adjacencyMatrixGraphConnector.getAdj(), edges);
+                    adjacencyMatrixGraph.getAllPoint(),
+                    adjacencyMatrixGraph.getAdj(), edges);
             circuitInfo.add(objectMap);
         }
+        // 所有回路信息的总和
+        Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails,adjacencyMatrixGraph,edges);
+
         // 对分支进行计算
         Set<String> systemMapset = systemMap.keySet();
 
