@@ -33,6 +33,8 @@ import matplotlib.pyplot as plt
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'SimSun', 'Arial Unicode MS']
 plt.rcParams['axes.unicode_minus'] = False
 from matplotlib.lines import Line2D
+import matplotlib.animation as animation
+from matplotlib.animation import FuncAnimation, PillowWriter
 
 
 # --------------------------------------------------------------------------- #
@@ -77,32 +79,32 @@ def to_float(v, default=0.0):
 
 
 def build_pos_app_map(vehicle):
-    """遍历整车 json 中所有回路，建立 位置名称 -> 用电器名称 的映射。
+    """遍历整车 json 中所有回路，建立 位置名称 -> 用电器类型 的映射。
 
     用电器只挂在本回路的起点/终点位置上，中间分支点通常无对应用电器。
-    返回 dict: {位置名: 用电器名}（同一位置多个用电器时用逗号拼接）。
+    返回 dict: {位置名: 用电器类型}（同一位置多个用电器时用逗号拼接）。
     """
     pos_map = {}
     arr = _get_circuit_list(vehicle) if isinstance(vehicle, dict) else vehicle
     for c in arr:
-        app = c.get('起点用电器名称')
+        app_type = c.get('起点用电器类型')
         pos_name = c.get('起点位置名称')
-        if app and pos_name:
-            _add_pos_app(pos_map, pos_name, app)
-        app = c.get('终点用电器名称')
+        if app_type and pos_name:
+            _add_pos_app(pos_map, pos_name, app_type)
+        app_type = c.get('终点用电器类型')
         pos_name = c.get('终点位置名称') or c.get('焊点位置名称')
-        if app and pos_name:
-            _add_pos_app(pos_map, pos_name, app)
+        if app_type and pos_name:
+            _add_pos_app(pos_map, pos_name, app_type)
     return pos_map
 
 
-def _add_pos_app(pos_map, pos_name, app):
-    """把 位置->用电器 加入映射；同位置多用电器用逗号拼接去重"""
+def _add_pos_app(pos_map, pos_name, app_type):
+    """把 位置->用电器类型 加入映射；同位置多类型用逗号拼接去重"""
     existing = pos_map.get(pos_name)
     if existing is None:
-        pos_map[pos_name] = app
-    elif existing != app and app not in existing.split(','):
-        pos_map[pos_name] = existing + ',' + app
+        pos_map[pos_name] = app_type
+    elif existing != app_type and app_type not in existing.split(','):
+        pos_map[pos_name] = existing + ',' + app_type
 
 
 # --------------------------------------------------------------------------- #
@@ -178,7 +180,7 @@ def order_path_nodes(edges_list):
     边 id 列表在后端是按 源→消费端 方向存储的，因此还原出的节点序列
     第一个节点即能量流源头(发电/储电单元端)。
     edges_list: [(u,v), ...]（来自 build_edges_from_ids，无向）
-    返回有序节点列表，无法定向时返回 None。
+    返回有序节点列表（尽力还原，成环/分支时退回按边出现顺序收集）。
     """
     if not edges_list:
         return None
@@ -189,27 +191,182 @@ def order_path_nodes(edges_list):
         adj.setdefault(v, set()).add(u)
     # 找路径端点：度数为 1 的节点（一条连续路径只有两个端点）
     endpoints = [n for n, nbs in adj.items() if len(nbs) == 1]
-    if len(endpoints) != 2:
-        # 无法确定端点（可能是环或分支），退回用原始顺序的第一条边
-        return None
-    start = endpoints[0]
-    # 沿邻接走出一条有序序列
-    order = [start]
-    visited = {start}
-    cur = start
-    while len(order) < len(adj):
-        nxt = None
-        for nb in adj[cur]:
-            if nb not in visited:
-                nxt = nb
+    if len(endpoints) == 2:
+        start = endpoints[0]
+        # 沿邻接走出一条有序序列
+        order = [start]
+        visited = {start}
+        cur = start
+        while len(order) < len(adj):
+            nxt = None
+            for nb in adj[cur]:
+                if nb not in visited:
+                    nxt = nb
+                    break
+            if nxt is None:
                 break
-        if nxt is None:
-            break
-        visited.add(nxt)
-        order.append(nxt)
-        cur = nxt
+            visited.add(nxt)
+            order.append(nxt)
+            cur = nxt
+        return order
+    # 成环/分支/不连续：退回按边出现顺序收集节点，相邻共享去重，尽力保持路径顺序
+    order = []
+    for u, v in edges_list:
+        if not order:
+            order.extend([u, v])
+        else:
+            last = order[-1]
+            if v == last:
+                order.append(u)
+            elif u == last:
+                order.append(v)
+            else:
+                # 与当前末尾不连续，尝试从首部拼接，否则追加
+                if order[0] == u:
+                    order.insert(0, v)
+                elif order[0] == v:
+                    order.insert(0, u)
+                else:
+                    order.append(u)
+                    order.append(v)
     return order
 
+
+# --------------------------------------------------------------------------- #
+# 能量流动画：沿路径从源头 -> 消费端 逐段高亮 + 圆点移动
+# --------------------------------------------------------------------------- #
+def orient_energy_path(detour_edges, source_node, consumer_pos):
+    """把能量流路径节点定向为 源头 -> 消费端 的有序序列。
+
+    优先：在能量流子图上求 source_node -> consumer_pos 的最短路径（顺序最准）；
+    失败则退化为 order_path_nodes 的顺序，并把源头/消费端强制放到首尾。
+    返回有序节点列表，或 None。
+    """
+    if not detour_edges:
+        return None
+    # 能量流子图
+    G_sub = nx.Graph()
+    for u, v in detour_edges:
+        G_sub.add_edge(u, v)
+
+    # 尝试在子图上求 源->消费端 最短路径（严格方向，无环）
+    if source_node and consumer_pos \
+            and G_sub.has_node(source_node) and G_sub.has_node(consumer_pos):
+        try:
+            path = nx.shortest_path(G_sub, source_node, consumer_pos)
+            if len(path) >= 2:
+                return path
+        except nx.NetworkXNoPath:
+            pass
+
+    # 兜底：用 order_path_nodes，并强制把 源头/消费端 放到首尾（去重）
+    seq = order_path_nodes(detour_edges)
+    if not seq:
+        return None
+    out = []
+    seen = set()
+    if source_node and source_node in seq:
+        out.append(source_node)
+        seen.add(source_node)
+    for n in seq:
+        if n in (source_node, consumer_pos):
+            continue
+        if n not in seen:
+            seen.add(n)
+            out.append(n)
+    if consumer_pos and consumer_pos not in seen:
+        out.append(consumer_pos)
+    return out
+
+
+def animate_energy_flow(G, pos, circuit, detour_edges, source_node,
+                        consumer_pos, pos_app_map,
+                        save_path='energy_flow.gif', fps=2):
+    """沿能量流路径(源头->消费端)生成动画：逐段高亮 + 圆点移动，保存 GIF。
+
+    G:         整图
+    pos:       节点坐标
+    detour_edges: 能量流路径的边列表
+    source_node:  源头(发电/储电单元)位置
+    consumer_pos: 消费端位置
+    pos_app_map:  位置->用电器类型
+    """
+    # 定向路径（源头->消费端）
+    seq = orient_energy_path(detour_edges, source_node, consumer_pos)
+    if not seq or len(seq) < 2:
+        print("[INFO] 无法定向能量流路径，跳过动画。")
+        return
+
+    # 能量流路径边对
+    path_edges = [(seq[i], seq[i + 1]) for i in range(len(seq) - 1)]
+    n_seg = len(path_edges)
+
+    fig, ax = plt.subplots(figsize=(22, 16))
+    # 整图底
+    nx.draw_networkx_edges(G, pos, ax=ax, edge_color='#cccccc',
+                           width=0.5, alpha=0.5)
+    nx.draw_networkx_nodes(G, pos, ax=ax, node_size=3,
+                           node_color='#dddddd', edgecolors='none')
+    ax.invert_yaxis()
+    ax.set_aspect('equal')
+
+    # 能量流路径边(初始透明，动画逐段高亮)
+    energy_edge_coll = nx.draw_networkx_edges(
+        G, pos, edgelist=path_edges, ax=ax, edge_color='red',
+        width=3.5, alpha=0.0)
+    # 移动圆点
+    (pt,) = ax.plot([], [], 'o', color='#ff4400', markersize=16, zorder=6)
+
+    # 用电器类型标注
+    pos_app_map = pos_app_map or {}
+    for node in seq:
+        app_type = pos_app_map.get(node)
+        if app_type and node in pos:
+            x, y = pos[node]
+            ax.annotate(app_type, (x, y), fontsize=8, weight='bold',
+                        color='#333333', xytext=(4, 4),
+                        textcoords='offset points')
+
+    ax.set_title(f"能量流: 源头->消费端\n"
+                 f"{seq[0]} -> {seq[-1]} | 回路={circuit.get('回路编号')}",
+                 fontsize=12, weight='bold')
+    fig.tight_layout()
+
+    # 帧：先逐段高亮(每段一帧)，再圆点沿路径走一遍
+    frames = []
+    for k in range(1, n_seg + 1):
+        frames.append(('highlight', k))   # 高亮前 k 段
+    for idx in range(n_seg + 1):
+        frames.append(('point', idx))     # 圆点移动到第 idx 节点
+
+    def update(frame):
+        kind, val = frame
+        if kind == 'highlight':
+            # 前 val 段变红加粗
+            alpha_arr = [0.95 if j < val else 0.0 for j in range(n_seg)]
+            if hasattr(energy_edge_coll, 'set_alpha'):
+                try:
+                    energy_edge_coll.set_array(
+                        [alpha_arr[j] * 3.5 for j in range(n_seg)])
+                    energy_edge_coll.set_alpha(
+                        [alpha_arr[j] for j in range(n_seg)])
+                except Exception:
+                    pass
+            # 圆点移到当前高亮的末端
+            if 1 <= val <= n_seg:
+                node = seq[val]
+                x, y = pos[node]
+                pt.set_data([x], [y])
+        else:  # 'point'
+            node = seq[val]
+            x, y = pos[node]
+            pt.set_data([x], [y])
+        return [energy_edge_coll, pt]
+
+    ani = FuncAnimation(fig, update, frames=frames, interval=600, blit=False)
+    ani.save(save_path, writer=PillowWriter(fps=fps))
+    print(f"[OK] 动画已保存: {save_path}")
+    plt.close(fig)
 
 # --------------------------------------------------------------------------- #
 # 把一串位置名展开成真实连线边序列(在 G 中逐段最短路径)
@@ -259,20 +416,22 @@ def draw(G, pos, circuit, detour_edges, no_detour_edges, circuit_edges,
     else:
         nodetour_coll = None
 
-    # 标注两套路径上的位置名(小字)，若该位置对应用电器则附上用电器名称
-    labels = set()
-    for e in (detour_edges + no_detour_edges):
-        labels.update(e)
+    # 标注能量流经过的所有回路端点：遍历能量流路径(绕路+不绕路)上的每个节点，
+    # 若该节点对应用电器(有类型)，则显示其用电器类型(该节点既是某条回路的终点也是下一条的起点)。
     label_arts = []
     pos_app_map = pos_app_map or {}
-    for name in labels:
-        if name in pos:
-            x, y = pos[name]
-            app = pos_app_map.get(name)
-            text = f"{name} [{app}]" if app else name
-            t = ax.annotate(text, (x, y), fontsize=6, color='#333333',
-                            xytext=(2, 2), textcoords='offset points')
-            label_arts.append(t)
+    path_nodes = set()
+    for e in (detour_edges + no_detour_edges):
+        path_nodes.update(e)
+    for node in path_nodes:
+        if node in pos:
+            app_type = pos_app_map.get(node)
+            if app_type:
+                x, y = pos[node]
+                t = ax.annotate(app_type, (x, y), fontsize=8, weight='bold',
+                                color='#333333', xytext=(4, 4),
+                                textcoords='offset points')
+                label_arts.append(t)
 
     # 当前显示模式
     state = {'mode': 'no_detour'}   # 默认只显示不绕路
@@ -338,6 +497,7 @@ def draw(G, pos, circuit, detour_edges, no_detour_edges, circuit_edges,
     fig.canvas.mpl_connect('pick_event', on_pick)
 
     _update_title()
+    ax.invert_yaxis()   # Y 轴反转，匹配数据/业务坐标方向（若画反可去掉此行）
     ax.set_aspect('equal')
     plt.tight_layout()
     plt.savefig(save_path, dpi=200, bbox_inches='tight')
@@ -361,10 +521,14 @@ def main():
                         help='拓扑文件(含 edges 与坐标)，不传用默认路径')
     parser.add_argument('--circuit-idx', type=int, default=None,
                         help='绘制第几根回路(1-based)')
-    parser.add_argument('--circuit-number', type=str, default=149945,
+    parser.add_argument('--circuit-number', type=str, default=149875,
                         help='按回路编号查找(如 "149726")，与 --circuit-idx 二选一')
     parser.add_argument('--save', default='energy_flow.png',
                         help='输出图片路径，默认 energy_flow.png')
+    parser.add_argument('--animate', action='store_true',
+                        help='生成能量流动画 GIF(源头->消费端 逐段高亮+圆点移动)')
+    parser.add_argument('--animate-out', default='energy_flow.gif',
+                        help='动画 GIF 输出路径，默认 energy_flow.gif')
     args = parser.parse_args()
 
     if args.circuit_number is None and args.circuit_idx is None:
@@ -391,7 +555,7 @@ def main():
     G, pos = build_graph(edges)
     print(f"[INFO] 拓扑: {G.number_of_nodes()} 个点, {G.number_of_edges()} 条边")
 
-    # 位置 -> 用电器名称 映射（用于标注路径点后附上用电器名）
+    # 位置 -> 用电器类型 映射（用于标注路径点上的用电器类型）
     pos_app_map = build_pos_app_map(vehicle)
 
     # 三条路径
@@ -405,21 +569,51 @@ def main():
     no_detour_edges, n_missing = build_edges_from_ids(no_detour_ids, edges)
     circuit_edges, c_missing = expand_path(G, circuit_pts)
 
-    # 推断能量流源头(发电/储电单元端)：还原绕路路径的有序节点序列，取第一个节点。
+    # 还原绕路路径的有序节点序列(源端 -> 消费端)，用于按顺序打印/标注。
+    path_node_seq = None
+    if detour_edges:
+        path_node_seq = order_path_nodes(detour_edges)
+
+    # 推断能量流源头(发电/储电单元端)：取有序序列第一个节点。
     # 若该节点不是回路自身的起点/终点位置，则是真正的源头，单独标注。
     source_node = None
-    if detour_edges:
-        node_seq = order_path_nodes(detour_edges)
-        if node_seq:
-            first = node_seq[0]
-            last = node_seq[-1]
-            start_pos = circuit.get('起点位置名称')
-            end_pos = circuit.get('终点位置名称') or circuit.get('焊点位置名称')
-            # 取不在回路起终点上的那一端作为源头
-            if first != start_pos and first != end_pos:
-                source_node = first
-            elif last != start_pos and last != end_pos:
-                source_node = last
+    if path_node_seq:
+        first = path_node_seq[0]
+        last = path_node_seq[-1]
+        start_pos = circuit.get('起点位置名称')
+        end_pos = circuit.get('终点位置名称') or circuit.get('焊点位置名称')
+        # 取不在回路起终点上的那一端作为源头
+        if first != start_pos and first != end_pos:
+            source_node = first
+        elif last != start_pos and last != end_pos:
+            source_node = last
+
+    # 控制台日志：明确标注能量流路径的 起点(源头) -> 中间节点 -> 终点(消费端)。
+    # 每行输出 位置 + 用电器类型，方便核对走线方向。
+    start_pos = circuit.get('起点位置名称')
+    end_pos = circuit.get('终点位置名称') or circuit.get('焊点位置名称')
+    # 消费端 = 本回路终点位置(末端用电器所在)；源头 = source_node
+    consumer_pos = end_pos or start_pos
+    print("[INFO] ===== 能量流路径(用电器类型) =====")
+    if path_node_seq:
+        # 从 path_node_seq 里收集中间节点(去重)，排除源头与消费端
+        seen = set()
+        middle = []
+        for node in path_node_seq:
+            if node in (source_node, consumer_pos):
+                continue
+            if node not in seen:
+                seen.add(node)
+                middle.append(node)
+        print(f"      起点(源头) -> {source_node} [{pos_app_map.get(source_node) or '无'}]")
+        for m in middle:
+            print(f"      {m} [{pos_app_map.get(m) or '无'}]")
+        print(f"      终点(消费端) -> {consumer_pos} [{pos_app_map.get(consumer_pos) or '无'}]")
+    else:
+        # 无路径序列时，至少打印本回路的起终点用电器
+        print(f"      起点 -> {start_pos} [{pos_app_map.get(start_pos) or circuit.get('起点用电器类型') or '无'}]")
+        print(f"      终点 -> {end_pos} [{pos_app_map.get(end_pos) or circuit.get('终点用电器类型') or '无'}]")
+    print("[INFO] =================================")
 
     print(f"[INFO] 能量流(绕路) 分支id数={len(detour_ids)}, 展开边={len(detour_edges)}"
           + (f", 缺失={d_missing}" if d_missing else ""))
@@ -436,6 +630,13 @@ def main():
 
     draw(G, pos, circuit, detour_edges, no_detour_edges, circuit_edges,
          args.save, source_node=source_node, pos_app_map=pos_app_map)
+
+    # 生成能量流动画 GIF(源头->消费端)
+    if args.animate:
+        consumer_pos = end_pos or start_pos
+        animate_energy_flow(G, pos, circuit, detour_edges, source_node,
+                            consumer_pos, pos_app_map,
+                            save_path=args.animate_out)
 
 
 if __name__ == '__main__':

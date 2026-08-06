@@ -926,7 +926,7 @@ public class ProjectCircuitInfoOutput {
                 minLength = Double.parseDouble(df.format(length2 / 1000));
             }
 
-            tempInfo.put("回路绕线长度总值(米)", Double.parseDouble(df.format(distance - minLength)) < 0 ? 0 : df.format(distance - minLength));
+            tempInfo.put("回路绕线长度总值(米)", Double.parseDouble(df.format(distance - minLength)) < 0 ? 0 : Double.parseDouble(df.format(distance - minLength)));
         }
     }
 
