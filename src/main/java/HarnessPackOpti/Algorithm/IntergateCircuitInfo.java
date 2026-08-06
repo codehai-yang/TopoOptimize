@@ -666,11 +666,17 @@ public class IntergateCircuitInfo {
         //    保证电流确实从消费端沿着本回路自身的线走到另一端，而不是只经过两个端点。
         //  · 其余段(上游→…→源，经过其它回路)：用位置图最短路展开为真实位置序列。
         List<String> efPositionPath = new ArrayList<>();
+        double samePosSegmentLength = 0.0;  // 两端同位置回路的默认长度累加
         for (int i = 0; i < bestAppPath.size() - 1; i++) {
             String aApp = bestAppPath.get(i);
             String bApp = bestAppPath.get(i + 1);
             String aPos = appPosMap.get(aApp);
             String bPos = appPosMap.get(bApp);
+            // 两端位置相同（如发电单元和配电单元在同一位置点），该回路有默认200mm长度
+            if (aPos != null && bPos != null && aPos.equals(bPos)) {
+                samePosSegmentLength += HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput.BranchEndFallback;
+                continue;
+            }
             List<String> seg;
             boolean isAnchor = aPos != null && bPos != null
                     && aPos.equals(terminalPos) && bPos.equals(upstreamPos);
@@ -713,7 +719,7 @@ public class IntergateCircuitInfo {
         }
 
         // 绕路长度 = 能量流路径长度 - 不绕路最短路径长度（不绕路应更短，做下限保护）
-        double efLen = computePositionPathLength(efPositionPath, allPoint, adj, edges);
+        double efLen = computePositionPathLength(efPositionPath, allPoint, adj, edges) + samePosSegmentLength;
         double detourLen = Math.max(0.0, efLen - noDetourLen);
 
         efResult.hasEnergyFlow = true;
