@@ -176,17 +176,40 @@ public class IntergateCircuitInfo {
         if(count > 0){
             avgLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
-        // 能量流绕线字段（默认null，调用方需主动调用calculateEnergyFlowDetour填充）
-        IntergateCircuitInfo ici = new IntergateCircuitInfo();
-        Map<String, Object> efResult = ici.calculateEnergyFlowDetour(
-                pathId, pointList,
-                adjacencyMatrixGraph.getAllPoint(),
-                adjacencyMatrixGraph.getAdj(),
-                edges);
-        totalCost.put("能量流绕路总数量(根)", efResult.get("能量流绕路总数量(根)"));
-        totalCost.put("能量流绕路数量占比(百分比)", efResult.get("能量流绕路数量占比(百分比)"));
-        totalCost.put("能量流绕路长度总值(米)", efResult.get("能量流绕路长度总值(米)"));
-        totalCost.put("能量流绕路长度均值(米/根)", efResult.get("能量流绕路长度均值(米/根)"));
+        // 能量流绕线字段：直接从回路已有字段汇总（fillSingleCircuitEnergyFlow 已对每条回路计算过）
+        int efDetourCount = 0;
+        double efDetourTotalLen = 0.0;
+        int efAnalyzedCount = 0;
+        for (String s : pathId) {
+            Map<String, Object> obj = (Map<String, Object>) pointList.get(s);
+            if (obj == null)
+                continue;
+            Object numObj = obj.get("能量流绕路总数量(根)");
+            Object lenObj = obj.get("能量流绕路长度总值(米)");
+            if (numObj != null) {
+                efAnalyzedCount++;
+                int n = 0;
+                try {
+                    n = Integer.parseInt(numObj.toString());
+                } catch (Exception e) {
+
+                }
+                if (n > 0) {
+                    efDetourCount += n;
+                    try {
+                        efDetourTotalLen += Double.parseDouble(lenObj.toString());
+                    } catch (Exception e) {
+
+                    }
+                }
+            }
+        }
+        totalCost.put("能量流绕路总数量(根)", efDetourCount);
+        totalCost.put("能量流绕路数量占比(百分比)",
+                efAnalyzedCount > 0 ? df.format((double) efDetourCount / efAnalyzedCount * 100) + "%" : "0.00%");
+        totalCost.put("能量流绕路长度总值(米)", Double.parseDouble(df.format(efDetourTotalLen)));
+        totalCost.put("能量流绕路长度均值(米/根)",
+                efDetourCount > 0 ? Double.parseDouble(df.format(efDetourTotalLen / efDetourCount)) : 0.0);
         totalCost.put("回路长度均值(打断后)",avgLength2);
         totalCost.put("总理论直径",Double.parseDouble( df.format(Math.sqrt(lenght)*1.3)));
         totalCost.put("分支直径RGB坐标",getlengthColor((Double) totalCost.get("总理论直径")));

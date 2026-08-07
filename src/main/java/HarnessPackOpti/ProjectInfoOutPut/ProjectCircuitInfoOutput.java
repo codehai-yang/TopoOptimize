@@ -49,7 +49,7 @@ public class ProjectCircuitInfoOutput {
 
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志 (1).txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志_2026_08_05.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         // 去掉外层可能存在的双引号（JSON被双重转义的情况）
         jsonContent = jsonContent.trim();
@@ -1314,16 +1314,32 @@ public class ProjectCircuitInfoOutput {
             totalCost.put("回路重量均值(克/根)", "0.00");
             totalCost.put("回路成本均值(元/根)", "0.00");
         }
-        IntergateCircuitInfo ici = new IntergateCircuitInfo();
-        Map<String, Object> efResult = ici.calculateEnergyFlowDetour(
-                mapList, pointList,
-                adjacencyMatrixGraph.getAllPoint(),
-                adjacencyMatrixGraph.getAdj(),
-                edges);
-        totalCost.put("能量流绕路总数量(根)", efResult.get("能量流绕路总数量(根)"));
-        totalCost.put("能量流绕路数量占比(百分比)", efResult.get("能量流绕路数量占比(百分比)"));
-        totalCost.put("能量流绕路长度总值(米)", efResult.get("能量流绕路长度总值(米)"));
-        totalCost.put("能量流绕路长度均值(米/根)", efResult.get("能量流绕路长度均值(米/根)"));
+        // 回路里已经有能量流字段（fillSingleCircuitEnergyFlow 已对每条回路计算过），直接汇总
+        int efDetourCount = 0;
+        double efDetourTotalLen = 0.0;
+        int efAnalyzedCount = 0;
+        for (String cid : mapList) {
+            Map<String, Object> loopInfo = (Map<String, Object>) pointList.get(cid);
+            if (loopInfo == null)
+                continue;
+            Object numObj = loopInfo.get("能量流绕路总数量(根)");
+            Object lenObj = loopInfo.get("能量流绕路长度总值(米)");
+            if (numObj != null) {
+                efAnalyzedCount++;
+                int n = 0;
+                try { n = Integer.parseInt(numObj.toString()); } catch (Exception e) {}
+                if (n > 0) {
+                    efDetourCount += n;
+                    try { efDetourTotalLen += Double.parseDouble(lenObj.toString()); } catch (Exception e) {}
+                }
+            }
+        }
+        totalCost.put("能量流绕路总数量(根)", efDetourCount);
+        totalCost.put("能量流绕路数量占比(百分比)",
+                efAnalyzedCount > 0 ? df.format((double) efDetourCount / efAnalyzedCount * 100) + "%" : "0.00%");
+        totalCost.put("能量流绕路长度总值(米)", Double.parseDouble(df.format(efDetourTotalLen)));
+        totalCost.put("能量流绕路长度均值(米/根)",
+                efDetourCount > 0 ? Double.parseDouble(df.format(efDetourTotalLen / efDetourCount)) : 0.0);
         totalCost.put("回路长度均值(打断后)", avgLength2);
         totalCost.put("总理论直径", Double.parseDouble(df.format(totalDiameter)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
@@ -1440,17 +1456,31 @@ public class ProjectCircuitInfoOutput {
         if (count > 0) {
             vagLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
-        IntergateCircuitInfo ici = new IntergateCircuitInfo();
-        Map<String, Object> efResult = ici.calculateEnergyFlowDetour(
-                circuitIdList, pointList,
-                adjacencyMatrixGraph.getAllPoint(),
-                adjacencyMatrixGraph.getAdj(),
-                edges);
-        //放入totalCost
-        totalCost.put("能量流绕路总数量(根)", efResult.get("能量流绕路总数量(根)"));
-        totalCost.put("能量流绕路数量占比(百分比)", efResult.get("能量流绕路数量占比(百分比)"));
-        totalCost.put("能量流绕路长度总值(米)", efResult.get("能量流绕路长度总值(米)"));
-        totalCost.put("能量流绕路长度均值(米/根)", efResult.get("能量流绕路长度均值(米/根)"));
+        //回路里已经有能量流相关字段，直接汇总，不重复调用算法
+        int efDetourCount = 0;
+        double efDetourTotalLen = 0.0;
+        int efAnalyzedCount = 0;
+        for (String cid : circuitIdList) {
+            Map<String, Object> loopInfo = (Map<String, Object>) pointList.get(cid);
+            if (loopInfo == null) continue;
+            Object numObj = loopInfo.get("能量流绕路总数量(根)");
+            Object lenObj = loopInfo.get("能量流绕路长度总值(米)");
+            if (numObj != null) {
+                efAnalyzedCount++;
+                int n = 0;
+                try { n = Integer.parseInt(numObj.toString()); } catch (Exception e) {}
+                if (n > 0) {
+                    efDetourCount += n;
+                    try { efDetourTotalLen += Double.parseDouble(lenObj.toString()); } catch (Exception e) {}
+                }
+            }
+        }
+        totalCost.put("能量流绕路总数量(根)", efDetourCount);
+        totalCost.put("能量流绕路数量占比(百分比)",
+                efAnalyzedCount > 0 ? df.format((double) efDetourCount / efAnalyzedCount * 100) + "%" : "0.00%");
+        totalCost.put("能量流绕路长度总值(米)", Double.parseDouble(df.format(efDetourTotalLen)));
+        totalCost.put("能量流绕路长度均值(米/根)",
+                efDetourCount > 0 ? Double.parseDouble(df.format(efDetourTotalLen / efDetourCount)) : 0.0);
         totalCost.put("回路长度均值(打断后)", vagLength2);
         totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * ModelDiameterFactor)));
         totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
