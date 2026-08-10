@@ -4,7 +4,6 @@ import java.io.File;
 import java.nio.file.Files;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -14,9 +13,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+
 import org.apache.commons.collections4.map.LinkedMap;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Algorithm.ClassifyCircuit;
 import HarnessPackOpti.Algorithm.FindAllPath;
@@ -30,26 +32,25 @@ import HarnessPackOpti.Algorithm.SplitCircuitByInterDirectConn;
 import HarnessPackOpti.CircuitInfoCalculate.CalculateCircuitInfo;
 import HarnessPackOpti.CircuitInfoCalculate.CalculatePathLength;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
-import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 
 public class ProjectCircuitInfoOutput {
 
     public static Map<String, Map<String, String>> elecFixedLocationLibrary = null;
     public static Map<String, Double> elecBusinessPrice = null;
-    //数模直径系数
+    // 数模直径系数
     public static Double DiameterConversionFactor = 1.14;
-    //回路总理论直径系数
+    // 回路总理论直径系数
     public static Double ModelDiameterFactor = 1.3;
-    //分支补充长度
+    // 分支补充长度
     public static Double BranchEndFallback = 200.0;
-    //成本权重
+    // 成本权重
     public static Double costWeight = 0.98;
     public static Double weightWeight = 0.01;
     public static Double lengthWeight = 0.01;
 
-
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志_2026_08_05.txt");
+        File file = new File(
+                "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志_2026_08_05.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         // 去掉外层可能存在的双引号（JSON被双重转义的情况）
         jsonContent = jsonContent.trim();
@@ -92,8 +93,8 @@ public class ProjectCircuitInfoOutput {
                 branchBreakList.add(interruptedEdgelist);
             }
         }
-        Map<String,String> appTypeList = new HashMap<>();
-        //获取用电器类型
+        Map<String, String> appTypeList = new HashMap<>();
+        // 获取用电器类型
         for (Map<String, String> apppos : appposition) {
             String appName = apppos.get("用电器名称");
             String appType = apppos.get("用电器类型");
@@ -113,15 +114,15 @@ public class ProjectCircuitInfoOutput {
         adjacencyMatrixGraphConnector.addEdge();
         adjacencyMatrixGraphConnector.getAdj();
 
-//        // 读取线径excel文件
-//        ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
-//        if (elecFixedLocationLibrary == null) {
-//            elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
-//        }
-//        // 获取导线无聊单价 商务成本
-//        if (elecBusinessPrice == null) {
-//            elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
-//        }
+        // // 读取线径excel文件
+        // ReadWireInfoLibrary readWireInfoLibrary = new ReadWireInfoLibrary();
+        // if (elecFixedLocationLibrary == null) {
+        // elecFixedLocationLibrary = readWireInfoLibrary.getElecFixedLocationLibrary();
+        // }
+        // // 获取导线无聊单价 商务成本
+        // if (elecBusinessPrice == null) {
+        // elecBusinessPrice = readWireInfoLibrary.getElecBusinessPrice();
+        // }
 
         // 在points 找出所有可能发生变化点 并且将同一组的放在一起
         Map<String, List<String>> interfaceCodegroup = new HashMap<>();
@@ -610,7 +611,7 @@ public class ProjectCircuitInfoOutput {
         Map<String, Object> elecInterfaceRelatedCircuitInfo = new HashMap<>();
         Map<String, Object> bundeleRelatedCircuitInfo = new HashMap<>();
 
-        //回路详情放入用电器类型
+        // 回路详情放入用电器类型
         loopdetails.forEach((key, value) -> {
             Map<String, Object> objectMap = (Map<String, Object>) value;
             objectMap.put("起点用电器类型", appTypeList.get(objectMap.get("起点用电器名称")));
@@ -624,7 +625,7 @@ public class ProjectCircuitInfoOutput {
         for (Map<String, Object> loopInfo : loopInfos) {
             Map<String, Object> objectMap = (Map<String, Object>) loopdetails.get(loopInfo.get("回路id").toString());
             List<String> list = new ArrayList<>();
-            //计算单条回路的所有字段
+            // 计算单条回路的所有字段
             calculateCircuit(objectMap, adjacencyMatrixGraph, edges, loopdetails);
             Double price = null;
             Object wire = objectMap.get("导线选型");
@@ -632,21 +633,22 @@ public class ProjectCircuitInfoOutput {
                 price = wirePriceMap.get(wire.toString());
             }
             objectMap.put("导线单价", price);
-            //能量流计算
+            // 能量流计算
             ici.fillSingleCircuitEnergyFlow(objectMap, loopdetails,
                     adjacencyMatrixGraph.getAllPoint(),
                     adjacencyMatrixGraph.getAdj(), edges);
             circuitInfo.add(objectMap);
         }
         // 所有回路信息的总和
-        Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails,adjacencyMatrixGraph,edges);
+        Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails, adjacencyMatrixGraph, edges);
 
         // 对分支进行计算
         Set<String> systemMapset = systemMap.keySet();
 
         for (String name : systemMapset) {
             List<String> list = systemMap.get(name);
-            Map<String, Object> objectMap = circuitInfoIntergation.intergateCircuitInfo(list, loopdetails,adjacencyMatrixGraph,edges);
+            Map<String, Object> objectMap = circuitInfoIntergation.intergateCircuitInfo(list, loopdetails,
+                    adjacencyMatrixGraph, edges);
             Map<String, Object> cloneMap = (Map<String, Object>) objectMap.get("circuitInfoIntergation");
             cloneMap.remove("总理论直径");
             cloneMap.remove("分支直径RGB坐标");
@@ -661,7 +663,8 @@ public class ProjectCircuitInfoOutput {
         for (String name : elecMap.keySet()) {
             List<String> listSet = elecMap.get(name);
             Map<String, Object> objectMap1 = circuitInfoIntergation
-                    .intergateCircuitInfo(listSet.stream().collect(Collectors.toList()), loopdetails,adjacencyMatrixGraph,edges);
+                    .intergateCircuitInfo(listSet.stream().collect(Collectors.toList()), loopdetails,
+                            adjacencyMatrixGraph, edges);
             elecRelatedCircuitInfo.put(name, objectMap1);
         }
 
@@ -675,7 +678,8 @@ public class ProjectCircuitInfoOutput {
                 for (String key : interfaceDetailList.keySet()) {
                     Set<String> list1 = (Set<String>) interfaceDetailList.get(key);
                     Map<String, Object> interfaceCost = circuitInfoIntergation
-                            .intergateCircuitInfo(list1.stream().collect(Collectors.toList()), loopdetails,adjacencyMatrixGraph,edges);
+                            .intergateCircuitInfo(list1.stream().collect(Collectors.toList()), loopdetails,
+                                    adjacencyMatrixGraph, edges);
                     objectMap2.put(key, interfaceCost);
                 }
                 elecInterfaceRelatedCircuitInfo.put(name, objectMap2);
@@ -685,7 +689,8 @@ public class ProjectCircuitInfoOutput {
         // 分支
         for (Map<String, String> edge : edges) {
             String id = (String) edge.get("分支id编号");
-            Map<String, Object> objectMap = circuitInfoByEdge(id, loopdetails, (String) edge.get("分支名称"),adjacencyMatrixGraph,edges);
+            Map<String, Object> objectMap = circuitInfoByEdge(id, loopdetails, (String) edge.get("分支名称"),
+                    adjacencyMatrixGraph, edges);
             bundeleRelatedCircuitInfo.put(id, objectMap);
         }
 
@@ -741,29 +746,35 @@ public class ProjectCircuitInfoOutput {
 
     /**
      * 对单条回路字段进行计算
+     * 
      * @param objectMap
      * @return
      */
-    public void calculateCircuit(Map<String,Object> objectMap,GenerateTopoMatrix adjacencyMatrixGraph,List<Map<String, String>> edges, Object loopdetails){
+    public void calculateCircuit(Map<String, Object> objectMap, GenerateTopoMatrix adjacencyMatrixGraph,
+            List<Map<String, String>> edges, Object loopdetails) {
         DecimalFormat df = new DecimalFormat("0.00");
-        if(objectMap != null){
+        if (objectMap != null) {
             String breakNumb = objectMap.get("回路打断总次数(根)").toString();
-            //打断后回路数量
-            Integer circuitNum =  Integer.parseInt(breakNumb) + 1;
-            objectMap.put("回路数量-A类(根)",circuitNum);
-            objectMap.put("回路数量-B类(根)",1);
-            objectMap.put("回路长度均值(米/根)",objectMap.get("回路长度"));
-            objectMap.put("回路长度均值(打断后)",Double.parseDouble(df.format(Double.parseDouble(objectMap.get("回路长度").toString()) / circuitNum)));
+            // 打断后回路数量
+            Integer circuitNum = Integer.parseInt(breakNumb) + 1;
+            objectMap.put("回路数量-A类(根)", circuitNum);
+            objectMap.put("回路数量-B类(根)", 1);
+            objectMap.put("回路长度均值(米/根)", objectMap.get("回路长度"));
+            objectMap.put("回路长度均值(打断后)",
+                    Double.parseDouble(df.format(Double.parseDouble(objectMap.get("回路长度").toString()) / circuitNum)));
             double coilingLength = Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString());
-            Integer coiling = coilingLength > 0 ? 1:0;
-            objectMap.put("回器绕线总数量(根)",coiling);
-            objectMap.put("回路重量均值(克/根)",objectMap.get("回路重量"));
-            objectMap.put("回路成本均值(元/根)",objectMap.get("回路总成本"));
-            objectMap.put("回路绕线长度均值(米/根)",objectMap.get("回路绕线长度总值(米)"));
-            double coilingPercent = (double)coiling / 1 * 100;
-            objectMap.put("回路绕线数量占比(百分比)",df.format(coilingPercent) + "%");
-            objectMap.put("回路打断数量占比(百分比)", df.format(Double.parseDouble(objectMap.get("回路打断总次数(根)").toString()) / 1 * 100) + "%");
-            objectMap.put("回路打断成本均值(元/根)",df.format(Double.parseDouble(objectMap.get("回路打断成本总值(元)").toString()) / 1));
+            Integer coiling = coilingLength > 0 ? 1 : 0;
+            objectMap.put("回器绕线总数量(根)", coiling);
+            objectMap.put("回路重量均值(克/根)", objectMap.get("回路重量"));
+            objectMap.put("回路成本均值(元/根)", objectMap.get("回路总成本"));
+            objectMap.put("回路绕线长度均值(米/根)", objectMap.get("回路绕线长度总值(米)"));
+            double coilingPercent = (double) coiling / 1 * 100;
+            objectMap.put("回路绕线数量占比(百分比)", df.format(coilingPercent) + "%");
+            // 单根回路计算：打断次数>0则占比为100%，否则为0%
+            double breakCount = Double.parseDouble(objectMap.get("回路打断总次数(根)").toString());
+            double breakPercent = breakCount > 0 ? 100.0 : 0.0;
+            objectMap.put("回路打断数量占比(百分比)", df.format(breakPercent) + "%");
+            objectMap.put("回路打断成本均值(元/根)", df.format(Double.parseDouble(objectMap.get("回路打断成本总值(元)").toString()) / 1));
         }
     }
 
@@ -899,7 +910,7 @@ public class ProjectCircuitInfoOutput {
                     adjacencyMatrixGraphConnector.getAdj(),
                     adjacencyMatrixGraphConnector.getAllPoint().indexOf(startName.toString()),
                     adjacencyMatrixGraphConnector.getAllPoint().indexOf(endName.toString()));
-            //TODO 测试
+            // TODO 测试
             List<String> listName2 = convertPathToNumbers(shortestPath, adjacencyMatrixGraphConnector.getAllPoint());
             Map<String, Object> branchInfo2 = findBranchByNode.findBranchByNode(listName2, edges);
             List<String> edgeIdList2 = (List<String>) branchInfo2.get("idList");
@@ -927,7 +938,8 @@ public class ProjectCircuitInfoOutput {
                 minLength = Double.parseDouble(df.format(length2 / 1000));
             }
 
-            tempInfo.put("回路绕线长度总值(米)", Double.parseDouble(df.format(distance - minLength)) < 0 ? 0 : Double.parseDouble(df.format(distance - minLength)));
+            tempInfo.put("回路绕线长度总值(米)", Double.parseDouble(df.format(distance - minLength)) < 0 ? 0
+                    : Double.parseDouble(df.format(distance - minLength)));
         }
     }
 
@@ -1145,7 +1157,8 @@ public class ProjectCircuitInfoOutput {
      * @input pointList 整车回路整合后的信息
      * @Return 当前分支下面的回路信息
      */
-    public static Map<String, Object> circuitInfoByEdge(String edgeId, Map<String, Object> pointList, String edgeName,GenerateTopoMatrix adjacencyMatrixGraph,List<Map<String, String>> edges) {
+    public static Map<String, Object> circuitInfoByEdge(String edgeId, Map<String, Object> pointList, String edgeName,
+            GenerateTopoMatrix adjacencyMatrixGraph, List<Map<String, String>> edges) {
 
         Map<String, Object> map = new HashMap<>();
         // 返回的回路
@@ -1176,6 +1189,7 @@ public class ProjectCircuitInfoOutput {
         double lenght = 0.0;
         int count = 0;
         int circuitBreakNum = 0;
+        int brokenCircuitCount = 0;
         DecimalFormat df = new DecimalFormat("0.00");
         DecimalFormat oneDf = new DecimalFormat("0.0");
         // 遍历查找分支所经过的回路
@@ -1221,6 +1235,9 @@ public class ProjectCircuitInfoOutput {
                 lenght += Double.parseDouble(objectMap.get("回路理论直径").toString())
                         * Double.parseDouble(objectMap.get("回路理论直径").toString());
                 circuitBreakNum += Double.parseDouble(objectMap.get("回路打断总次数(根)").toString());
+                if (Double.parseDouble(objectMap.get("回路打断总次数(根)").toString()) > 0) {
+                    brokenCircuitCount++;
+                }
                 mapList.add(objectMap.get("回路id").toString());
                 // 导线选型与系统统计
                 String wireType = objectMap.get("导线选型").toString();
@@ -1277,17 +1294,21 @@ public class ProjectCircuitInfoOutput {
         }
         if (coiling > 0) {
             totalCost.put("回路绕线长度均值(米/根)",
-                    Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString()) / coiling)));
+                    Double.parseDouble(
+                            df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString()) / coiling)));
         }
         if (mapList.size() > 0) {
             double coilingPercent = (double) coiling / mapList.size() * 100;
-            double breakNumb = Double.parseDouble(totalCost.get("回路打断总次数(根)").toString()) / mapList.size() * 100;
+            // 被打断的回路数 / 回路总数量 * 100
+            double breakNumb = (double) brokenCircuitCount / mapList.size() * 100;
             totalCost.put("回路打断成本均值(元/根)", Double
-                    .parseDouble(df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString()) / mapList.size())));
+                    .parseDouble(
+                            df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString()) / mapList.size())));
             totalCost.put("回路绕线数量占比(百分比)", df.format(coilingPercent) + "%");
             totalCost.put("回路打断数量占比(百分比)", df.format(breakNumb) + "%");
         } else {
             totalCost.put("回路绕线数量占比(百分比)", "0.00%");
+            totalCost.put("回路打断数量占比(百分比)", "0.00%");
         }
         totalCost.put("回器绕线总数量(根)", coiling);
         totalCost.put("回路数量-A类(根)", count);
@@ -1307,10 +1328,12 @@ public class ProjectCircuitInfoOutput {
         Double totalDiameter = Math.sqrt(lenght) * ModelDiameterFactor;
         // 数模直径
         Double mathematicalDiameter = totalDiameter * DiameterConversionFactor;
-        if(mapList.size() > 0) {
-            totalCost.put("回路重量均值(克/根)", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / mapList.size())));
-            totalCost.put("回路成本均值(元/根)", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("总成本").toString()) / mapList.size())));
-        }else{
+        if (mapList.size() > 0) {
+            totalCost.put("回路重量均值(克/根)", Double
+                    .parseDouble(df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / mapList.size())));
+            totalCost.put("回路成本均值(元/根)", Double
+                    .parseDouble(df.format(Double.parseDouble(totalCost.get("总成本").toString()) / mapList.size())));
+        } else {
             totalCost.put("回路重量均值(克/根)", "0.00");
             totalCost.put("回路成本均值(元/根)", "0.00");
         }
@@ -1327,10 +1350,16 @@ public class ProjectCircuitInfoOutput {
             if (numObj != null) {
                 efAnalyzedCount++;
                 int n = 0;
-                try { n = Integer.parseInt(numObj.toString()); } catch (Exception e) {}
+                try {
+                    n = Integer.parseInt(numObj.toString());
+                } catch (Exception e) {
+                }
                 if (n > 0) {
                     efDetourCount += n;
-                    try { efDetourTotalLen += Double.parseDouble(lenObj.toString()); } catch (Exception e) {}
+                    try {
+                        efDetourTotalLen += Double.parseDouble(lenObj.toString());
+                    } catch (Exception e) {
+                    }
                 }
             }
         }
@@ -1357,7 +1386,8 @@ public class ProjectCircuitInfoOutput {
      * @Return 当前分支下面的回路信息
      *         包括：总成本、回路湿区成本总加成、回路打断总成本、回路两端端子总成本、回路导线总成本、回路总重量、总理论直径、回路总长度
      */
-    public Map<String, Object> circuitProjectInfo(Map<String, Object> pointList,GenerateTopoMatrix adjacencyMatrixGraph,List<Map<String, String>> edges) {
+    public Map<String, Object> circuitProjectInfo(Map<String, Object> pointList,
+            GenerateTopoMatrix adjacencyMatrixGraph, List<Map<String, String>> edges) {
         // 总成本
         Map<String, Object> totalCost = new HashMap<>();
         totalCost.put("总成本", 0.0);
@@ -1381,6 +1411,7 @@ public class ProjectCircuitInfoOutput {
         int count = 0;
         int coiling = 0;
         int circuitBreakNum = 0;
+        int brokenCircuitCount = 0;
         DecimalFormat df = new DecimalFormat("0.00");
         Set multiLoopInfosSet = pointList.keySet();
         List<String> circuitIdList = new ArrayList<>();
@@ -1418,6 +1449,9 @@ public class ProjectCircuitInfoOutput {
             lenght += Double.parseDouble(objectMap.get("回路理论直径").toString())
                     * Double.parseDouble(objectMap.get("回路理论直径").toString());
             circuitBreakNum += Double.parseDouble(objectMap.get("回路打断总次数(根)").toString());
+            if (Double.parseDouble(objectMap.get("回路打断总次数(根)").toString()) > 0) {
+                brokenCircuitCount++;
+            }
             if (Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString()) > 0) {
                 coiling++;
             }
@@ -1429,7 +1463,8 @@ public class ProjectCircuitInfoOutput {
         totalCost.put("回器绕线总数量(根)", coiling);
         if (coiling > 0) {
             totalCost.put("回路绕线长度均值(米/根)",
-                    Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString()) / coiling)));
+                    Double.parseDouble(
+                            df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString()) / coiling)));
         }
         if (pointList.size() > 0) {
             double coilingPercent = (double) coiling / pointList.size() * 100;
@@ -1439,14 +1474,17 @@ public class ProjectCircuitInfoOutput {
         }
         totalCost.put("回路数量-B类(根)", multiLoopInfosSet.size());
         totalCost.put("回路数量-A类(根)", count);
-        totalCost.put("回路重量均值(克/根)", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / multiLoopInfosSet.size())));
-        totalCost.put("回路成本均值(元/根)", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("总成本").toString()) / multiLoopInfosSet.size())));
+        totalCost.put("回路重量均值(克/根)", Double.parseDouble(
+                df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / multiLoopInfosSet.size())));
+        totalCost.put("回路成本均值(元/根)", Double.parseDouble(
+                df.format(Double.parseDouble(totalCost.get("总成本").toString()) / multiLoopInfosSet.size())));
         // 打断前回路均值
         double avgLength = 0.00;
         if (multiLoopInfosSet.size() > 0) {
             avgLength = Double.parseDouble(
                     df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / multiLoopInfosSet.size()));
-            double breakNumb = Double.parseDouble(totalCost.get("回路打断总次数(根)").toString()) / multiLoopInfosSet.size() * 100;
+            // 被打断的回路数 / 回路总数量 * 100
+            double breakNumb = (double) brokenCircuitCount / multiLoopInfosSet.size() * 100;
             totalCost.put("回路打断数量占比(百分比)", df.format(breakNumb) + "%");
             totalCost.put("回路打断成本均值(元/根)", Double.parseDouble(
                     df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString()) / multiLoopInfosSet.size())));
@@ -1456,22 +1494,29 @@ public class ProjectCircuitInfoOutput {
         if (count > 0) {
             vagLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
-        //回路里已经有能量流相关字段，直接汇总，不重复调用算法
+        // 回路里已经有能量流相关字段，直接汇总，不重复调用算法
         int efDetourCount = 0;
         double efDetourTotalLen = 0.0;
         int efAnalyzedCount = 0;
         for (String cid : circuitIdList) {
             Map<String, Object> loopInfo = (Map<String, Object>) pointList.get(cid);
-            if (loopInfo == null) continue;
+            if (loopInfo == null)
+                continue;
             Object numObj = loopInfo.get("能量流绕路总数量(根)");
             Object lenObj = loopInfo.get("能量流绕路长度总值(米)");
             if (numObj != null) {
                 efAnalyzedCount++;
                 int n = 0;
-                try { n = Integer.parseInt(numObj.toString()); } catch (Exception e) {}
+                try {
+                    n = Integer.parseInt(numObj.toString());
+                } catch (Exception e) {
+                }
                 if (n > 0) {
                     efDetourCount += n;
-                    try { efDetourTotalLen += Double.parseDouble(lenObj.toString()); } catch (Exception e) {}
+                    try {
+                        efDetourTotalLen += Double.parseDouble(lenObj.toString());
+                    } catch (Exception e) {
+                    }
                 }
             }
         }
@@ -1928,9 +1973,9 @@ public class ProjectCircuitInfoOutput {
                         if (stringMap.get("回路起点用电器接口编号") != null) {
                             String startAppPort = stringMap.get("回路起点用电器接口编号");
                             Map<String, String> map1 = (Map<String, String>) objectMap.get(elecName);
-                            if(map1.get(startAppPort) == null){
+                            if (map1.get(startAppPort) == null) {
                                 appNode.add(findNode(elecName, appPositions));
-                            }else{
+                            } else {
                                 appNode.add(map1.get(startAppPort));
                             }
                         } else {
@@ -1946,9 +1991,9 @@ public class ProjectCircuitInfoOutput {
                         if (stringMap.get("回路终点用电器接口编号") != null) {
                             String endAppPort = stringMap.get("回路终点用电器接口编号");
                             Map<String, String> map1 = (Map<String, String>) objectMap.get(elecName);
-                            if(map1.get(endAppPort) == null){
+                            if (map1.get(endAppPort) == null) {
                                 appNode.add(findNode(elecName, appPositions));
-                            }else{
+                            } else {
                                 appNode.add(map1.get(endAppPort));
                             }
                         } else {
@@ -2604,7 +2649,7 @@ public class ProjectCircuitInfoOutput {
      * @input number 湿区补偿成本
      * @Return 返回传入值的对应的颜色
      */
-    //TODO 新增2跨度出线方向
+    // TODO 新增2跨度出线方向
     public static String getCostColor(double number) {
         if (number == 0) {
             return "rgb(248,246,231)";
@@ -2651,7 +2696,7 @@ public class ProjectCircuitInfoOutput {
         }
     }
 
-    //分支出线方向颜色
+    // 分支出线方向颜色
     public static String getDirectionColor(double number) {
         if (number == 0) {
             return "rgb(248,246,231)";
@@ -2732,7 +2777,8 @@ public class ProjectCircuitInfoOutput {
     }
 
     public boolean keyExistsIgnoreCase(Map<String, Double> map, String key) {
-        if (map == null) return false;
+        if (map == null)
+            return false;
         for (String existingKey : map.keySet()) {
             if (existingKey.equalsIgnoreCase(key)) {
                 return true;
@@ -2742,7 +2788,8 @@ public class ProjectCircuitInfoOutput {
     }
 
     public static double getValueIgnoreCase(Map<String, Double> map, String key) {
-        if (map == null) return 0.0;
+        if (map == null)
+            return 0.0;
         for (String existingKey : map.keySet()) {
             if (existingKey.equalsIgnoreCase(key)) {
                 return map.get(existingKey);

@@ -1,7 +1,5 @@
 package HarnessPackOpti.Algorithm;
 
-import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
-
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -11,11 +9,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
+
 public class IntergateCircuitInfo {
 
     // 能量流信号名关键字列表（大小写不敏感）
     private static final Set<String> ENERGY_FLOW_KEYWORDS = new HashSet<>(Arrays.asList(
-            "KL30", "EFS", "ESW", "HSD", "DRV","KL.30","KL.R","KL.15","KL.87"));
+            "KL30", "EFS", "ESW", "HSD", "DRV", "KL.30", "KL.R", "KL.15", "KL.87"));
 
     // 能量流路径枚举上限：防止去掉信号名剪枝后路径组合爆炸导致 OOM。
     // 调用方只需“选最短的一条”，收集足够样本即可，无需枚举全部。
@@ -35,18 +35,18 @@ public class IntergateCircuitInfo {
      * 能量流路径计算结果
      */
     public static class EnergyFlowResult {
-        public String circuitId;             // 起始回路id
-        public List<String> appliancePath;    // 能量流用电器路径（按顺序）
-        public List<String> circuitPath;      // 能量流回路id路径（按顺序）
-        public double energyFlowLength;       // 能量流路径总长度
-        public double noDetourLength;         // 不绕路最短路径长度
-        public double detourLength;           // 绕路长度
-        public List<String> energyFlowBranchPoints;   // 能量流途径分支id
-        public List<String> noDetourBranchPoints;     // 不绕路途径分支id
-        public boolean skipped;               // 是否跳过计算
-        public String skipReason;             // 跳过原因
-        public boolean hasEnergyFlow;         // 是否有有效能量流路径
-        public int priority;                  // 该结果对应朝向的优先级（用于多朝向择优）
+        public String circuitId; // 起始回路id
+        public List<String> appliancePath; // 能量流用电器路径（按顺序）
+        public List<String> circuitPath; // 能量流回路id路径（按顺序）
+        public double energyFlowLength; // 能量流路径总长度
+        public double noDetourLength; // 不绕路最短路径长度
+        public double detourLength; // 绕路长度
+        public List<String> energyFlowBranchPoints; // 能量流途径分支id
+        public List<String> noDetourBranchPoints; // 不绕路途径分支id
+        public boolean skipped; // 是否跳过计算
+        public String skipReason; // 跳过原因
+        public boolean hasEnergyFlow; // 是否有有效能量流路径
+        public int priority; // 该结果对应朝向的优先级（用于多朝向择优）
 
         public EnergyFlowResult() {
             this.circuitPath = new ArrayList<>();
@@ -72,8 +72,8 @@ public class IntergateCircuitInfo {
         String toType;
         String circuitId;
         String signalName;
-        String startPosName;   // 起点位置名称
-        String endPosName;     // 终点位置名称
+        String startPosName; // 起点位置名称
+        String endPosName; // 终点位置名称
 
         AppEdge(String fromApp, String toApp, String fromType, String toType,
                 String circuitId, String signalName, String startPosName, String endPosName) {
@@ -95,9 +95,10 @@ public class IntergateCircuitInfo {
      * @input pointList 整车回路整合后信息
      * @Return 整合后的回路信息
      */
-    public Map<String, Object> intergateCircuitInfo(List<String> pathId, Map<String, Object> pointList,GenerateTopoMatrix adjacencyMatrixGraph,List<Map<String, String>> edges) {
+    public Map<String, Object> intergateCircuitInfo(List<String> pathId, Map<String, Object> pointList,
+            GenerateTopoMatrix adjacencyMatrixGraph, List<Map<String, String>> edges) {
         Map<String, Object> resultMap = new HashMap<>();
-//        总成本
+        // 总成本
         Map<String, Object> totalCost = new HashMap<>();
         totalCost.put("总成本", 0.0);
         totalCost.put("回路湿区成本总加成", 0.0);
@@ -115,65 +116,93 @@ public class IntergateCircuitInfo {
         double lenght = 0.0;
         int coiling = 0;
         int circuitBreakNum = 0;
+        int brokenCircuitCount = 0;
         DecimalFormat df = new DecimalFormat("0.00");
         int count = 0;
         for (String s : pathId) {
             Map<String, Object> objectMap = (Map<String, Object>) pointList.get(s);
-            //排除分支信息为空的
-            if(objectMap == null){
+            // 排除分支信息为空的
+            if (objectMap == null) {
                 continue;
             }
-            totalCost.put("总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("总成本").toString()) + Double.parseDouble(objectMap.get("回路总成本").toString()))));
-            totalCost.put("回路湿区成本总加成",Double.parseDouble( df.format(Double.parseDouble( totalCost.get("回路湿区成本总加成").toString()) + Double.parseDouble(objectMap.get("回路湿区成本加成").toString()))));
-            totalCost.put("回路打断成本总值(元)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString()) + Double.parseDouble(objectMap.get("回路打断成本总值(元)").toString()))));
-            totalCost.put("回路两端端子总成本",Double.parseDouble(df.format(Double.parseDouble( totalCost.get("回路两端端子总成本").toString()) + Double.parseDouble(objectMap.get("回路两端端子成本").toString()))));
-            totalCost.put("回路导线总成本",Double.parseDouble( df.format(Double.parseDouble( totalCost.get("回路导线总成本").toString()) + Double.parseDouble(objectMap.get("回路导线成本").toString()))));
-            totalCost.put("回路总重量",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) + Double.parseDouble(objectMap.get("回路重量").toString()))));
-            totalCost.put("回路总长度",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) + Double.parseDouble(objectMap.get("回路长度").toString()))));
-            totalCost.put("端子总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("端子总成本").toString()) + Double.parseDouble(objectMap.get("端子成本").toString()))));
-            totalCost.put("连接器塑壳总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("连接器塑壳总成本").toString()) + Double.parseDouble(objectMap.get("连接器塑壳成本").toString()))));
-            totalCost.put("防水塞总成本",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("防水塞总成本").toString()) + Double.parseDouble(objectMap.get("防水塞成本").toString()))));
-            totalCost.put("回路绕线长度总值(米)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString()) + Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString()))));
-            lenght += Double.parseDouble( objectMap.get("回路理论直径").toString()) * Double.parseDouble( objectMap.get("回路理论直径").toString());
-            if( Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString()) > 0 ){
+            totalCost.put("总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("总成本").toString())
+                    + Double.parseDouble(objectMap.get("回路总成本").toString()))));
+            totalCost.put("回路湿区成本总加成",
+                    Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路湿区成本总加成").toString())
+                            + Double.parseDouble(objectMap.get("回路湿区成本加成").toString()))));
+            totalCost.put("回路打断成本总值(元)",
+                    Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString())
+                            + Double.parseDouble(objectMap.get("回路打断成本总值(元)").toString()))));
+            totalCost.put("回路两端端子总成本",
+                    Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路两端端子总成本").toString())
+                            + Double.parseDouble(objectMap.get("回路两端端子成本").toString()))));
+            totalCost.put("回路导线总成本",
+                    Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路导线总成本").toString())
+                            + Double.parseDouble(objectMap.get("回路导线成本").toString()))));
+            totalCost.put("回路总重量", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总重量").toString())
+                    + Double.parseDouble(objectMap.get("回路重量").toString()))));
+            totalCost.put("回路总长度", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString())
+                    + Double.parseDouble(objectMap.get("回路长度").toString()))));
+            totalCost.put("端子总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("端子总成本").toString())
+                    + Double.parseDouble(objectMap.get("端子成本").toString()))));
+            totalCost.put("连接器塑壳总成本",
+                    Double.parseDouble(df.format(Double.parseDouble(totalCost.get("连接器塑壳总成本").toString())
+                            + Double.parseDouble(objectMap.get("连接器塑壳成本").toString()))));
+            totalCost.put("防水塞总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("防水塞总成本").toString())
+                    + Double.parseDouble(objectMap.get("防水塞成本").toString()))));
+            totalCost.put("回路绕线长度总值(米)",
+                    Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString())
+                            + Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString()))));
+            lenght += Double.parseDouble(objectMap.get("回路理论直径").toString())
+                    * Double.parseDouble(objectMap.get("回路理论直径").toString());
+            if (Double.parseDouble(objectMap.get("回路绕线长度总值(米)").toString()) > 0) {
                 coiling++;
             }
             circuitBreakNum += Double.parseDouble(objectMap.get("回路打断总次数(根)").toString());
-            //回路打断后计算
+            if (Double.parseDouble(objectMap.get("回路打断总次数(根)").toString()) > 0) {
+                brokenCircuitCount++;
+            }
+            // 回路打断后计算
             Double d = parseDoubleSafe(objectMap.get("回路打断总次数(根)"));
             int i = d == null ? 0 : (int) Math.round(d);
             i += 1;
             count += i;
         }
         totalCost.put("回路打断总次数(根)", circuitBreakNum);
-        if(coiling > 0){
-            totalCost.put("回路绕线长度均值(米/根)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString()) / coiling)));
+        if (coiling > 0) {
+            totalCost.put("回路绕线长度均值(米/根)", Double
+                    .parseDouble(df.format(Double.parseDouble(totalCost.get("回路绕线长度总值(米)").toString()) / coiling)));
         }
-        //回路打断前与打断后统计
-        totalCost.put("回器绕线总数量(根)",coiling);
-        if(pathId.size() > 0){
-            double coilingPercent = (double)coiling / pathId.size() * 100;
-            double breakNumb = Double.parseDouble(totalCost.get("回路打断总次数(根)").toString()) / pathId.size() * 100;
-            totalCost.put("回路打断成本均值(元/根)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString()) / pathId.size())));
-            totalCost.put("回路绕线数量占比(百分比)",df.format(coilingPercent) + "%");
-            totalCost.put("回路打断数量占比(百分比)",df.format(breakNumb) + "%");
-        }else {
-            totalCost.put("回路绕线数量占比(百分比)","0.00%");
-            totalCost.put("回路打断数量占比(百分比)","0.00%");
+        // 回路打断前与打断后统计
+        totalCost.put("回器绕线总数量(根)", coiling);
+        if (pathId.size() > 0) {
+            double coilingPercent = (double) coiling / pathId.size() * 100;
+            // 被打断的回路数 / 回路总数量 * 100
+            double breakNumb = (double) brokenCircuitCount / pathId.size() * 100;
+            totalCost.put("回路打断成本均值(元/根)", Double.parseDouble(
+                    df.format(Double.parseDouble(totalCost.get("回路打断成本总值(元)").toString()) / pathId.size())));
+            totalCost.put("回路绕线数量占比(百分比)", df.format(coilingPercent) + "%");
+            totalCost.put("回路打断数量占比(百分比)", df.format(breakNumb) + "%");
+        } else {
+            totalCost.put("回路绕线数量占比(百分比)", "0.00%");
+            totalCost.put("回路打断数量占比(百分比)", "0.00%");
         }
-        totalCost.put("回路重量均值(克/根)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / pathId.size())));
+        totalCost.put("回路重量均值(克/根)",
+                Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / pathId.size())));
         totalCost.put("回路数量-B类(根)", pathId.size());
         totalCost.put("回路数量-A类(根)", count);
-        totalCost.put("回路成本均值(元/根)",Double.parseDouble( df.format(Double.parseDouble(totalCost.get("总成本").toString()) / pathId.size())));
-        //回路均值打断前
+        totalCost.put("回路成本均值(元/根)",
+                Double.parseDouble(df.format(Double.parseDouble(totalCost.get("总成本").toString()) / pathId.size())));
+        // 回路均值打断前
         double avgLength = 0.00;
-        if(pathId.size() > 0){
-            avgLength = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / pathId.size()));
+        if (pathId.size() > 0) {
+            avgLength = Double
+                    .parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / pathId.size()));
         }
-        totalCost.put("回路长度均值(米/根)",avgLength);
-        //回路均值打断后
+        totalCost.put("回路长度均值(米/根)", avgLength);
+        // 回路均值打断后
         double avgLength2 = 0.00;
-        if(count > 0){
+        if (count > 0) {
             avgLength2 = Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) / count));
         }
         // 能量流绕线字段：直接从回路已有字段汇总（fillSingleCircuitEnergyFlow 已对每条回路计算过）
@@ -210,9 +239,9 @@ public class IntergateCircuitInfo {
         totalCost.put("能量流绕路长度总值(米)", Double.parseDouble(df.format(efDetourTotalLen)));
         totalCost.put("能量流绕路长度均值(米/根)",
                 efDetourCount > 0 ? Double.parseDouble(df.format(efDetourTotalLen / efDetourCount)) : 0.0);
-        totalCost.put("回路长度均值(打断后)",avgLength2);
-        totalCost.put("总理论直径",Double.parseDouble( df.format(Math.sqrt(lenght)*1.3)));
-        totalCost.put("分支直径RGB坐标",getlengthColor((Double) totalCost.get("总理论直径")));
+        totalCost.put("回路长度均值(打断后)", avgLength2);
+        totalCost.put("总理论直径", Double.parseDouble(df.format(Math.sqrt(lenght) * 1.3)));
+        totalCost.put("分支直径RGB坐标", getlengthColor((Double) totalCost.get("总理论直径")));
         resultMap.put("circuitInfoIntergation", totalCost);
         resultMap.put("circuitList", pathId);
         return resultMap;
@@ -309,9 +338,11 @@ public class IntergateCircuitInfo {
             result.put("能量流绕路长度均值(米/根)", 0.0);
         }
         // result.put("能量流途径分支id",
-        //         allEnergyFlowBranchPoints.isEmpty() ? null : String.join("; ", allEnergyFlowBranchPoints));
+        // allEnergyFlowBranchPoints.isEmpty() ? null : String.join("; ",
+        // allEnergyFlowBranchPoints));
         // result.put("能量流不绕路途径分支id",
-        //         allNoDetourBranchPoints.isEmpty() ? null : String.join("; ", allNoDetourBranchPoints));
+        // allNoDetourBranchPoints.isEmpty() ? null : String.join("; ",
+        // allNoDetourBranchPoints));
         result.put("perCircuitResults", perCircuitResults);
 
         return result;
@@ -367,18 +398,22 @@ public class IntergateCircuitInfo {
             return efResult;
         }
 
-        if (isEmpty(startType) && startApp != null) startType = appTypeMap.get(startApp);
-        if (isEmpty(endType) && endApp != null) endType = appTypeMap.get(endApp);
+        if (isEmpty(startType) && startApp != null)
+            startType = appTypeMap.get(startApp);
+        if (isEmpty(endType) && endApp != null)
+            endType = appTypeMap.get(endApp);
         // 焊点作为端点时，"起点/终点位置名称"为null，焊点位置存放在"焊点"前缀的key里（焊点位置名称）。
         // 读取端点位置优先用回路自身的 焊点位置名称 字段，再回退到 appPosMap（由buildApplianceGraph构建）。
         if (isEmpty(startPos) && isSolderPoint(startApp)) {
             startPos = safeGetString(loopInfo, "焊点位置名称");
         }
-        if (isEmpty(startPos) && startApp != null) startPos = appPosMap.get(startApp);
+        if (isEmpty(startPos) && startApp != null)
+            startPos = appPosMap.get(startApp);
         if (isEmpty(endPos) && isSolderPoint(endApp)) {
             endPos = safeGetString(loopInfo, "焊点位置名称");
         }
-        if (isEmpty(endPos) && endApp != null) endPos = appPosMap.get(endApp);
+        if (isEmpty(endPos) && endApp != null)
+            endPos = appPosMap.get(endApp);
 
         if (shouldSkipCircuit(startType, endType)) {
             efResult.skipped = true;
@@ -394,9 +429,9 @@ public class IntergateCircuitInfo {
         }
 
         // 两个端点
-        String[][] ends = new String[][]{
-                {startApp, startType, startPos},
-                {endApp, endType, endPos}
+        String[][] ends = new String[][] {
+                { startApp, startType, startPos },
+                { endApp, endType, endPos }
         };
 
         // 生成朝向：以“叶子端(消费端)”为终端，另一端为上游。
@@ -405,13 +440,13 @@ public class IntergateCircuitInfo {
         for (int i = 0; i < 2; i++) {
             int pri = terminalPriority(ends[i][1]);
             if (pri >= 0) {
-                orientations.add(new int[]{i, 1 - i, pri});
+                orientations.add(new int[] { i, 1 - i, pri });
             }
         }
         if (orientations.isEmpty()) {
             // 两端都不是叶子类型（如 配电↔配电），退化为两端都试
-            orientations.add(new int[]{0, 1, 0});
-            orientations.add(new int[]{1, 0, 0});
+            orientations.add(new int[] { 0, 1, 0 });
+            orientations.add(new int[] { 1, 0, 0 });
         }
 
         // 读取本回路自身经过的分支点(位置序列)，用于把能量流路径展开为真实走线
@@ -419,7 +454,8 @@ public class IntergateCircuitInfo {
         Object bpObj = loopInfo.get("回路途径分支点");
         if (bpObj instanceof List) {
             for (Object o : (List<?>) bpObj) {
-                if (o != null) ownBranchPoints.add(String.valueOf(o));
+                if (o != null)
+                    ownBranchPoints.add(String.valueOf(o));
             }
         }
 
@@ -471,8 +507,10 @@ public class IntergateCircuitInfo {
      * 因此合点不参与 leaf 选取，仅在 DFS 展开时按高/低优先级规则被穿过。
      */
     private int terminalPriority(String type) {
-        if (TYPE_APPLIANCE.equals(type)) return 1;
-        if (TYPE_ECU.equals(type)) return 0;
+        if (TYPE_APPLIANCE.equals(type))
+            return 1;
+        if (TYPE_ECU.equals(type))
+            return 0;
         return -1;
     }
 
@@ -496,7 +534,8 @@ public class IntergateCircuitInfo {
      */
     private List<List<String>> getPriorityTemplates(String terminalType, String upstreamType) {
         List<List<String>> templates = new ArrayList<>();
-        if (terminalType == null || upstreamType == null) return templates;
+        if (terminalType == null || upstreamType == null)
+            return templates;
         String t = terminalType;
         String u = upstreamType;
 
@@ -657,7 +696,8 @@ public class IntergateCircuitInfo {
                         allAppPaths, allCircuitPaths,
                         appGraph, appTypeMap);
             }
-            if (!allAppPaths.isEmpty()) break;  // 高优先级命中即停止
+            if (!allAppPaths.isEmpty())
+                break; // 高优先级命中即停止
         }
 
         if (allAppPaths.isEmpty()) {
@@ -685,21 +725,22 @@ public class IntergateCircuitInfo {
         String sourcePos = appPosMap.get(sourceApp);
 
         // 构造能量流“位置级”路径：逐段展开为真实经过的分支点。
-        //  · 锚点段(终端→上游，即本回路自身)：使用本回路的 回路途径分支点(按终端→上游定向)，
-        //    保证电流确实从消费端沿着本回路自身的线走到另一端，而不是只经过两个端点。
-        //  · 其余段(上游→…→源，经过其它回路)：用位置图最短路展开为真实位置序列。
+        // · 锚点段(终端→上游，即本回路自身)：使用本回路的 回路途径分支点(按终端→上游定向)，
+        // 保证电流确实从消费端沿着本回路自身的线走到另一端，而不是只经过两个端点。
+        // · 其余段(上游→…→源，经过其它回路)：用位置图最短路展开为真实位置序列。
         List<String> efPositionPath = new ArrayList<>();
-        double samePosSegmentLength = 0.0;  // 两端同位置回路的默认长度累加
+        double samePosSegmentLength = 0.0; // 两端同位置回路的默认长度累加
         for (int i = 0; i < bestAppPath.size() - 1; i++) {
             String aApp = bestAppPath.get(i);
             String bApp = bestAppPath.get(i + 1);
             String aPos = appPosMap.get(aApp);
             String bPos = appPosMap.get(bApp);
             // 两端位置相同（如发电单元和配电单元在同一位置点），该回路有默认200mm长度
-            if (aPos != null && bPos != null && aPos.equals(bPos)) {
-                samePosSegmentLength += HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput.BranchEndFallback;
-                continue;
-            }
+            // if (aPos != null && bPos != null && aPos.equals(bPos)) {
+            // samePosSegmentLength +=
+            // HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput.BranchEndFallback;
+            // continue;
+            // }
             List<String> seg;
             boolean isAnchor = aPos != null && bPos != null
                     && aPos.equals(terminalPos) && bPos.equals(upstreamPos);
@@ -707,18 +748,20 @@ public class IntergateCircuitInfo {
                 List<String> oriented = orientOwnBranchPoints(ownBranchPoints, terminalPos, upstreamPos);
                 boolean ok = oriented.size() >= 2
                         && (oriented.get(0).equals(terminalPos)
-                            || oriented.get(oriented.size() - 1).equals(terminalPos));
+                                || oriented.get(oriented.size() - 1).equals(terminalPos));
                 seg = ok ? oriented : shortestPositionNames(aPos, bPos, allPoint, adj);
             } else {
                 seg = shortestPositionNames(aPos, bPos, allPoint, adj);
             }
-            if (seg == null || seg.isEmpty()) continue;
+            if (seg == null || seg.isEmpty())
+                continue;
             if (efPositionPath.isEmpty()) {
                 efPositionPath.addAll(seg);
             } else {
                 String last = efPositionPath.get(efPositionPath.size() - 1);
                 int start = seg.get(0).equals(last) ? 1 : 0;
-                for (int k = start; k < seg.size(); k++) efPositionPath.add(seg.get(k));
+                for (int k = start; k < seg.size(); k++)
+                    efPositionPath.add(seg.get(k));
             }
         }
         // 统一为 源 → ... → 消费端 的展示顺序（与历史输出一致）
@@ -771,16 +814,20 @@ public class IntergateCircuitInfo {
             List<List<String>> allAppPaths, List<List<String>> allCircuitPaths,
             Map<String, List<AppEdge>> appGraph, Map<String, String> appTypeMap) {
 
-        if (tmplIdx >= tmpl.size()) return;
+        if (tmplIdx >= tmpl.size())
+            return;
         if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS
-                || currentAppPath.size() >= MAX_ENERGY_FLOW_DEPTH) return;
+                || currentAppPath.size() >= MAX_ENERGY_FLOW_DEPTH)
+            return;
 
         String needType = tmpl.get(tmplIdx);
         List<AppEdge> neighbors = appGraph.get(currentApp);
-        if (neighbors == null) return;
+        if (neighbors == null)
+            return;
 
         for (AppEdge edge : neighbors) {
-            if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS) break;
+            if (allAppPaths.size() >= MAX_ENERGY_FLOW_PATHS)
+                break;
             String neighborApp = edge.toApp.equals(currentApp) ? edge.fromApp : edge.toApp;
             String neighborType = edge.toApp.equals(currentApp) ? edge.fromType : edge.toType;
 
@@ -789,9 +836,11 @@ public class IntergateCircuitInfo {
                 neighborType = "合点";
             }
 
-            if (visited.contains(neighborApp)) continue;
+            if (visited.contains(neighborApp))
+                continue;
             // 类型必须严格匹配模板当前要求（邻居用电器类型可能缺失为 null，跳过）
-            if (neighborType == null || !neighborType.equals(needType)) continue;
+            if (neighborType == null || !neighborType.equals(needType))
+                continue;
 
             // 控制器→控制器 跳转：回路信号名必须含能量流关键字
             if (neighborType != null && TYPE_ECU.equals(currentType)
@@ -823,12 +872,12 @@ public class IntergateCircuitInfo {
     /**
      * 检查类型转移是否合法（基于用电器名称判断合点/焊点）
      *
-     * @param fromApp             当前用电器名称
-     * @param fromType            当前用电器类型
-     * @param toApp               目标用电器名称
-     * @param toType              目标用电器类型
+     * @param fromApp              当前用电器名称
+     * @param fromType             当前用电器类型
+     * @param toApp                目标用电器名称
+     * @param toType               目标用电器类型
      * @param originalConsumerType 原始消费端类型
-     * @param highPriorityOnly    是否仅尝试高优先级
+     * @param highPriorityOnly     是否仅尝试高优先级
      */
     /**
      * 判断是否跳过该回路的能量流计算
@@ -850,20 +899,20 @@ public class IntergateCircuitInfo {
     /**
      * 判断该回路是否属于需要计算能量流的“规则回路”。
      * 允许的端点类型组合（无序）对应规则 2~7：
-     *   配电↔控制器（规则2）、配电↔用电器（规则3）、控制器↔用电器（规则4）、
-     *   控制器↔控制器（规则5）、用电器↔合点（规则6）、控制器↔合点（规则7）。
+     * 配电↔控制器（规则2）、配电↔用电器（规则3）、控制器↔用电器（规则4）、
+     * 控制器↔控制器（规则5）、用电器↔合点（规则6）、控制器↔合点（规则7）。
      * 其余组合（含 发电/储电↔配电 已在 shouldSkipCircuit 跳过、以及
      * 用电器↔用电器、配电↔配电、合点↔合点 等）一律不参与计算。
      */
     private boolean isRuleCircuit(String typeA, String nameA, String typeB, String nameB) {
         String tA = normalizeType(typeA, nameA);
         String tB = normalizeType(typeB, nameB);
-        return matches(tA, tB, TYPE_PDU, TYPE_ECU)            // 规则2：配电↔控制器
-                || matches(tA, tB, TYPE_PDU, TYPE_APPLIANCE)   // 规则3：配电↔用电器
-                || matches(tA, tB, TYPE_ECU, TYPE_APPLIANCE)   // 规则4：控制器↔用电器
-                || matches(tA, tB, TYPE_ECU, TYPE_ECU)         // 规则5：控制器↔控制器
-                || matches(tA, tB, TYPE_APPLIANCE, "合点")      // 规则6：用电器↔合点
-                || matches(tA, tB, TYPE_ECU, "合点");          // 规则7：控制器↔合点
+        return matches(tA, tB, TYPE_PDU, TYPE_ECU) // 规则2：配电↔控制器
+                || matches(tA, tB, TYPE_PDU, TYPE_APPLIANCE) // 规则3：配电↔用电器
+                || matches(tA, tB, TYPE_ECU, TYPE_APPLIANCE) // 规则4：控制器↔用电器
+                || matches(tA, tB, TYPE_ECU, TYPE_ECU) // 规则5：控制器↔控制器
+                || matches(tA, tB, TYPE_APPLIANCE, "合点") // 规则6：用电器↔合点
+                || matches(tA, tB, TYPE_ECU, "合点"); // 规则7：控制器↔合点
     }
 
     /**
@@ -885,7 +934,8 @@ public class IntergateCircuitInfo {
      * 无序二元匹配：判断 (a,b) 是否等于 (x,y) 或 (y,x)。
      */
     private boolean matches(String a, String b, String x, String y) {
-        if (a == null || b == null) return false;
+        if (a == null || b == null)
+            return false;
         return (a.equals(x) && b.equals(y)) || (a.equals(y) && b.equals(x));
     }
 
@@ -898,11 +948,13 @@ public class IntergateCircuitInfo {
 
     /**
      * 判断是否为消费端类型（用电器/控制器/合点）
+     * 
      * @param type 用电器类型
      * @param name 用电器名称（用于合点/焊点判断，焊点名称含[]括号）
      */
     private boolean isConsumerType(String type, String name) {
-        if (type == null && name == null) return false;
+        if (type == null && name == null)
+            return false;
         return TYPE_APPLIANCE.equals(type) || TYPE_ECU.equals(type) || isSolderPoint(name);
     }
 
@@ -910,7 +962,8 @@ public class IntergateCircuitInfo {
      * 判断用电器名称/类型是否为焊点/合点（名称带[]括号）
      */
     private boolean isSolderPoint(String name) {
-        if (name == null) return false;
+        if (name == null)
+            return false;
         return name.contains("[") && name.contains("]");
     }
 
@@ -955,7 +1008,8 @@ public class IntergateCircuitInfo {
         Map<String, String> solderPosLookup = new HashMap<>();
         for (Map.Entry<String, Object> entry : loopdetails.entrySet()) {
             Map<String, Object> loopInfo = (Map<String, Object>) entry.getValue();
-            if (loopInfo == null) continue;
+            if (loopInfo == null)
+                continue;
             String solderName = safeGetString(loopInfo, "焊点名称");
             if (solderName != null && isSolderPoint(solderName)) {
                 String solderPos = safeGetString(loopInfo, "焊点位置名称");
@@ -968,7 +1022,8 @@ public class IntergateCircuitInfo {
         // 第二遍：构建用电器图
         for (Map.Entry<String, Object> entry : loopdetails.entrySet()) {
             Map<String, Object> loopInfo = (Map<String, Object>) entry.getValue();
-            if (loopInfo == null) continue;
+            if (loopInfo == null)
+                continue;
 
             String circuitId = entry.getKey();
             String startApp = safeGetString(loopInfo, "起点用电器名称");
@@ -979,28 +1034,35 @@ public class IntergateCircuitInfo {
             String endPos = safeGetString(loopInfo, "终点位置名称");
             String signalName = safeGetString(loopInfo, "回路信号名");
 
-            if (startApp == null || endApp == null) continue;
+            if (startApp == null || endApp == null)
+                continue;
 
             // 焊点/合点：用电器类型统一为"合点"（类型字段缺失时按名称兜底）
-            if (startType == null && isSolderPoint(startApp)) startType = "合点";
-            if (endType == null && isSolderPoint(endApp)) endType = "合点";
+            if (startType == null && isSolderPoint(startApp))
+                startType = "合点";
+            if (endType == null && isSolderPoint(endApp))
+                endType = "合点";
 
             // 记录用电器类型
-            if (startType != null) appTypeMap.put(startApp, startType);
-            if (endType != null) appTypeMap.put(endApp, endType);
+            if (startType != null)
+                appTypeMap.put(startApp, startType);
+            if (endType != null)
+                appTypeMap.put(endApp, endType);
 
             // 记录用电器位置：端点自带位置优先，合点且为null则从跨回路的焊点表补
             if (startPos != null) {
                 appPosMap.put(startApp, startPos);
             } else if (isSolderPoint(startApp)) {
                 String pos = solderPosLookup.get(startApp);
-                if (pos != null) appPosMap.put(startApp, pos);
+                if (pos != null)
+                    appPosMap.put(startApp, pos);
             }
             if (endPos != null) {
                 appPosMap.put(endApp, endPos);
             } else if (isSolderPoint(endApp)) {
                 String pos = solderPosLookup.get(endApp);
-                if (pos != null) appPosMap.put(endApp, pos);
+                if (pos != null)
+                    appPosMap.put(endApp, pos);
             }
 
             // 添加双向边
@@ -1058,7 +1120,7 @@ public class IntergateCircuitInfo {
             }
         }
         // 与 CalculateCircuitInfo 一致：总长后统一补上分支末端默认长度
-        return totalLength + ProjectCircuitInfoOutput.BranchEndFallback;
+        return totalLength;
     }
 
     /**
@@ -1066,7 +1128,8 @@ public class IntergateCircuitInfo {
      * bestAppPath 中该锚点段为 terminal→upstream，故返回序列首部应为 terminalPos。
      */
     private List<String> orientOwnBranchPoints(List<String> own, String terminalPos, String upstreamPos) {
-        if (own == null || own.isEmpty()) return new ArrayList<>();
+        if (own == null || own.isEmpty())
+            return new ArrayList<>();
         List<String> lst = new ArrayList<>(own);
         if (lst.size() >= 1 && !lst.get(0).equals(terminalPos)) {
             if (lst.get(lst.size() - 1).equals(terminalPos)) {
@@ -1082,12 +1145,14 @@ public class IntergateCircuitInfo {
      */
     private List<String> shortestPositionNames(String aPos, String bPos,
             List<String> allPoint, List<List<Integer>> adj) {
-        if (aPos == null || bPos == null) return new ArrayList<>();
+        if (aPos == null || bPos == null)
+            return new ArrayList<>();
         int ai = allPoint.indexOf(aPos);
         int bi = allPoint.indexOf(bPos);
         if (ai < 0 || bi < 0) {
             List<String> fb = new ArrayList<>();
-            if (aPos != null) fb.add(aPos);
+            if (aPos != null)
+                fb.add(aPos);
             return fb;
         }
         FindShortestPath sp = new FindShortestPath();
@@ -1136,9 +1201,11 @@ public class IntergateCircuitInfo {
 
     /** 安全解析为 Double，兼容字符串/数字/浮点格式；null / 空串 / 解析失败返回 null */
     private static Double parseDoubleSafe(Object o) {
-        if (o == null) return null;
+        if (o == null)
+            return null;
         String s = o.toString().trim();
-        if (s.isEmpty()) return null;
+        if (s.isEmpty())
+            return null;
         try {
             return Double.parseDouble(s);
         } catch (NumberFormatException e) {
@@ -1179,11 +1246,11 @@ public class IntergateCircuitInfo {
      * 计算单条回路的能量流字段并写入回路信息
      * 供 calculateCircuit 等场景调用，直接修改 loopInfo 中的对应字段
      *
-     * @param loopInfo   单条回路信息Map（会被原地修改，写入6个能量流字段）
+     * @param loopInfo    单条回路信息Map（会被原地修改，写入6个能量流字段）
      * @param loopdetails 全部回路详情
-     * @param allPoint   全连通图所有分支点名称列表
-     * @param adj        全连通邻接表
-     * @param edges      所有分支信息
+     * @param allPoint    全连通图所有分支点名称列表
+     * @param adj         全连通邻接表
+     * @param edges       所有分支信息
      */
     public void fillSingleCircuitEnergyFlow(
             Map<String, Object> loopInfo,
@@ -1192,10 +1259,12 @@ public class IntergateCircuitInfo {
             List<List<Integer>> adj,
             List<Map<String, String>> edges) {
 
-        if (loopInfo == null) return;
+        if (loopInfo == null)
+            return;
 
         String circuitId = safeGetString(loopInfo, "回路id");
-        if (circuitId == null) return;
+        if (circuitId == null)
+            return;
 
         List<String> singleList = new ArrayList<>();
         singleList.add(circuitId);
@@ -1229,7 +1298,8 @@ public class IntergateCircuitInfo {
                 loopInfo.put("能量流回路id路径",
                         efResult.circuitPath == null || efResult.circuitPath.isEmpty() ? null : efResult.circuitPath);
                 loopInfo.put("能量流用电器路径",
-                        efResult.appliancePath == null || efResult.appliancePath.isEmpty() ? null : efResult.appliancePath);
+                        efResult.appliancePath == null || efResult.appliancePath.isEmpty() ? null
+                                : efResult.appliancePath);
                 double noDetourMeters = Math.max(efResult.noDetourLength, 0) / 1000.0;
                 loopInfo.put("能量流不绕路长度(米)", Double.parseDouble(df.format(noDetourMeters)));
             }
@@ -1240,7 +1310,8 @@ public class IntergateCircuitInfo {
      * 将位置名称路径转为分支 id 路径（前端需要分支id而非名称）
      */
     private List<String> convertPositionPathToEdgeIds(List<String> posPath, List<Map<String, String>> edges) {
-        if (posPath == null || posPath.size() < 2) return new ArrayList<>();
+        if (posPath == null || posPath.size() < 2)
+            return new ArrayList<>();
         Map<String, String> edgeMap = new HashMap<>();
         for (Map<String, String> edge : edges) {
             String s = edge.get("分支起点名称");
@@ -1255,12 +1326,13 @@ public class IntergateCircuitInfo {
         for (int i = 0; i < posPath.size() - 1; i++) {
             String key = posPath.get(i) + "|" + posPath.get(i + 1);
             String edgeId = edgeMap.get(key);
-            if (edgeId != null) ids.add(edgeId);
+            if (edgeId != null)
+                ids.add(edgeId);
         }
         return ids;
     }
 
-    //    根据传入的值找到对应的颜色
+    // 根据传入的值找到对应的颜色
     public static String getlengthColor(double number) {
         if (number == 0) {
             return "rgb(248,246,231)";
