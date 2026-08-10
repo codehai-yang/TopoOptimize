@@ -16,16 +16,15 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import HarnessPackOpti.InfoRead.ReadPowerInfo;
-import HarnessPackOpti.InfoRead.ReadPowerPropertiesInfo;
-import HarnessPackOpti.InfoRead.ReadProjectInfo;
-import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
-import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Algorithm.FindBest;
 import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
+import HarnessPackOpti.InfoRead.ReadPowerPropertiesInfo;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
+import HarnessPackOpti.Optimize.topo.HarnessBranchTopoOptimize;
+import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import HarnessPackOpti.utils.ThreadPool;
 
 /**
@@ -96,6 +95,7 @@ public class PowerDistributionDriveOptimization {
         WareHouse.clear();
         BestRepetitionNumber = 0;
         BestCost.clear();
+        enumeratedSchemes.clear();
 
         long categoryTime = System.currentTimeMillis();
         ObjectMapper objectMapper = new ObjectMapper();
@@ -104,7 +104,7 @@ public class PowerDistributionDriveOptimization {
         Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
         ReadPowerPropertiesInfo readProjectInfo = new ReadPowerPropertiesInfo();
         Map<String, Object> readProject = readProjectInfo.getProjectInfo(jsonMap);
-         threadPool = ThreadPool.shared(HarnessBranchTopoOptimize.Threads, HarnessBranchTopoOptimize.QueueCapacity);
+        threadPool = ThreadPool.shared(HarnessBranchTopoOptimize.Threads, HarnessBranchTopoOptimize.QueueCapacity);
         List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
         List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
         // 记录原始方案指纹，用于判断遗传结果中是否包含原始方案
@@ -240,20 +240,20 @@ public class PowerDistributionDriveOptimization {
                         list.add(pointName);
 
                         // 如果该位置点是直连接口，将整个接口组的位置都加入
-//                        if (whetherToChange && pointNameSet.contains(pointName)) {
-//                            // 查找该位置点属于哪个接口组
-//                            for (List<String> interfacePoints : interfaceCodegroup.values()) {
-//                                if (interfacePoints.contains(pointName)) {
-//                                    // 将整个接口组的位置都加入可变列表
-//                                    for (String interfacePoint : interfacePoints) {
-//                                        if (!list.contains(interfacePoint) && allPoint.contains(interfacePoint)) {
-//                                            list.add(interfacePoint);
-//                                        }
-//                                    }
-//                                    break;
-//                                }
-//                            }
-//                        }
+                        // if (whetherToChange && pointNameSet.contains(pointName)) {
+                        // // 查找该位置点属于哪个接口组
+                        // for (List<String> interfacePoints : interfaceCodegroup.values()) {
+                        // if (interfacePoints.contains(pointName)) {
+                        // // 将整个接口组的位置都加入可变列表
+                        // for (String interfacePoint : interfacePoints) {
+                        // if (!list.contains(interfacePoint) && allPoint.contains(interfacePoint)) {
+                        // list.add(interfacePoint);
+                        // }
+                        // }
+                        // break;
+                        // }
+                        // }
+                        // }
                     }
                 }
                 list.retainAll(allPoint);
@@ -405,39 +405,9 @@ public class PowerDistributionDriveOptimization {
                     }
                     List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(appPositions);
 
-                    // 遍历该方案中的所有回路，还原方案
-                    for (Map.Entry<String, String> entry : scheme.entrySet()) {
-                        String loopId = entry.getKey();
-                        String value = entry.getValue();
-                        String[] parts = value.split("\\|");
-                        // 容错：长度不足 4 段时按缺失处理为默认位置
-                        String startApp = parts.length > 0 ? parts[0] : "";
-                        String endApp = parts.length > 1 ? parts[1] : "";
-                        String startPos = parts.length > 2 ? parts[2] : "";
-                        String endPos = parts.length > 3 ? parts[3] : "";
-                        // 连接关系（起点/终点用电器）为空则无法还原，保持默认，跳过该回路
-                        if (startApp.isEmpty() || endApp.isEmpty()) {
-                            continue;
-                        }
-
-                        for (Map<String, String> loop : loopInfoCopy) {
-                            if (loop.get("id").equals(loopId)) {
-                                loop.put("startApp", startApp);
-                                loop.put("endApp", endApp);
-                            }
-                        }
-
-                        for (Map<String, String> stringStringMap : appPositionsCopy) {
-                            if (stringStringMap.get("appName").equals(startApp) && !startPos.isEmpty()) {
-                                stringStringMap.put("unregularPointName", startPos);
-                                stringStringMap.put("unregularPointId", pointNameId.get(startPos));
-                            }
-                            if (stringStringMap.get("appName").equals(endApp) && !endPos.isEmpty()) {
-                                stringStringMap.put("unregularPointName", endPos);
-                                stringStringMap.put("unregularPointId", pointNameId.get(endPos));
-                            }
-                        }
-                    }
+                    // 遍历该方案中的所有回路，还原方案（抽出为 applyEnumeratedSchemeToLoops）
+                    applyEnumeratedSchemeToLoops(loopInfoCopy, appPositionsCopy, scheme, elecChangeablePosition,
+                            pointNameId);
 
                     // 生成完整方案的指纹（包含所有回路和所有用电器位置）
                     String fingerprint = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
@@ -556,8 +526,7 @@ public class PowerDistributionDriveOptimization {
                     jsonMap,
                     loopElecById,
                     loopElecByIdStart,
-                    resourceNum
-            );
+                    resourceNum);
 
             System.out.println("初代样本生成耗时: " + (System.currentTimeMillis() - gaInitTime) + "ms");
             System.out.println("有效初代样本数: " + initialPopulation.size());
@@ -615,8 +584,7 @@ public class PowerDistributionDriveOptimization {
                     projectInfo,
                     loopElecById,
                     random,
-                    resourceNum, jsonMap
-            );
+                    resourceNum, jsonMap);
 
             System.out.println("交叉生成 " + crossedSchemes.size() + " 个方案");
 
@@ -642,11 +610,11 @@ public class PowerDistributionDriveOptimization {
                     loopElecById,
                     loopElecByIdStart,
                     random,
-                    resourceNum
-            );
+                    resourceNum);
             System.out.println("变异生成 " + mutatedSchemes.size() + " 个方案");
 
-            if (mutatedSchemes.isEmpty()) {
+            boolean noProgress = mutatedSchemes.isEmpty() && crossedSchemes.isEmpty();
+            if (noProgress) {
                 emptyGenCount++;
                 System.out.println("第" + (hybridizationNumber + 1) + "代未生成有效方案（连续空代: "
                         + emptyGenCount + "/" + MaxConsecutiveEmptyGenerations + "），继续下一轮");
@@ -658,7 +626,9 @@ public class PowerDistributionDriveOptimization {
                 hybridizationNumber++;
                 continue;
             }
-            emptyGenCount = 0; // 有新方案，重置连续空代计数
+            // 只要交叉或变异任一产生新方案都算有进展，但只在变异成功时清零（交叉只是配对不直接入代）
+            if (!mutatedSchemes.isEmpty())
+                emptyGenCount = 0;
 
             List<Map<String, Object>> resuliList = new ArrayList<>(currentTopBest);
             resuliList.addAll(crossedSchemes);
@@ -682,8 +652,7 @@ public class PowerDistributionDriveOptimization {
                         jsonMap,
                         loopElecById,
                         loopElecByIdStart,
-                        resourceNum
-                );
+                        resourceNum);
                 numb++;
                 if (numb > AutoCompleteNumber) {
                     break;
@@ -732,6 +701,84 @@ public class PowerDistributionDriveOptimization {
         }
 
         System.out.println("遗传算法完成，共迭代 " + hybridizationNumber + " 代");
+
+        // 兜底1：GA 一代有效方案都没出，且 combinations 规模小，直接走枚举
+        if (currentTopBest.isEmpty() && combinations > 1 && combinations <= caseNumber * 10
+                && (enumeratedSchemes == null || enumeratedSchemes.isEmpty())) {
+            System.out.println("[兜底] GA 未产出有效方案，尝试兜底枚举生成 topBest ...");
+            try {
+                List<Map<String, String>> fallbackTarget = null;
+                if (typeList.contains("3") && typeList.contains("4"))
+                    fallbackTarget = combinedList;
+                else if ("4".equals(optimizeType))
+                    fallbackTarget = driveLoopList;
+                else if ("3".equals(optimizeType))
+                    fallbackTarget = elecLoopList;
+                else if ("5".equals(optimizeType))
+                    fallbackTarget = combinedList;
+                if (fallbackTarget != null && !fallbackTarget.isEmpty()) {
+                    enumerateAllSchemes(fallbackTarget, elecChangeablePosition, togetherGroup, mutualGroup,
+                            loopInfos, loopElecById, loopElecByIdStart);
+                    // enumerateAllSchemes 内部会把方案塞到 enumeratedSchemes，这里再还原成 currentTopBest
+                    for (int i = 0; i < enumeratedSchemes.size(); i++) {
+                        Map<String, String> scheme = enumeratedSchemes.get(i);
+                        // 构造 loopInfoCopy + appPositionsCopy
+                        List<Map<String, String>> loopInfoCopy = new ArrayList<>();
+                        for (Map<String, String> loop : loopInfos)
+                            loopInfoCopy.add(new HashMap<>(loop));
+                        List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(appPositions);
+                        applyEnumeratedSchemeToLoops(loopInfoCopy, appPositionsCopy, scheme, elecChangeablePosition,
+                                pointNameId);
+                        Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
+                        jsonMapCopy.put("loopInfos", loopInfoCopy);
+                        jsonMapCopy.put("appPositions", appPositionsCopy);
+                        String result = projectCircuitInfoOutput.projectCircuitInfoOutput(
+                                objectMapper.writeValueAsString(jsonMapCopy));
+                        if (result == null || result.isEmpty())
+                            continue;
+                        Map<String, Object> parsed = jsonToMap.TransJsonToMap(result);
+                        Map<String, Object> pcInfo = (Map<String, Object>) parsed.get("projectCircuitInfo");
+                        if (pcInfo == null)
+                            continue;
+                        Object tc = pcInfo.get("总成本");
+                        Object tw = pcInfo.get("回路总重量");
+                        Object tl = pcInfo.get("回路总长度");
+                        if (!(tc instanceof Number && tw instanceof Number && tl instanceof Number))
+                            continue;
+                        Map<String, Double> projectCost = new HashMap<>();
+                        projectCost.put("总成本", ((Number) tc).doubleValue());
+                        projectCost.put("总重量", ((Number) tw).doubleValue());
+                        projectCost.put("总长度", ((Number) tl).doubleValue());
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("成本", projectCost);
+                        map.put("loopInfos", loopInfoCopy);
+                        map.put("appPositions", appPositionsCopy);
+                        String fp = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
+                        if (WareHouse.add(fp))
+                            currentTopBest.add(map);
+                        if (currentTopBest.size() >= TopNumber)
+                            break;
+                    }
+                    if (!currentTopBest.isEmpty()) {
+                        currentTopBest = findBest.findBest(currentTopBest, "成本", TopNumber);
+                        System.out.println("[兜底] 枚举兜底生成 " + currentTopBest.size() + " 个有效方案");
+                    }
+                }
+            } catch (Exception ex) {
+                System.out.println("[兜底] 枚举兜底失败: " + ex.getMessage());
+            }
+        }
+
+        // 兜底2：所有方案都没拿到，返回原始方案
+        if (currentTopBest.isEmpty()) {
+            System.out.println("[兜底] 全部失败，返回原始方案");
+            Map<String, Object> origMap = new HashMap<>();
+            origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
+            origMap.put("appPositions", deepCopyAppPositions(appPositions));
+            origMap.put("成本", parseOriginalCost(originalResult, jsonToMap));
+            currentTopBest.add(origMap);
+        }
+
         List<Map<String, Object>> enrichedTopBest = new ArrayList<>();
         for (Map<String, Object> slim : currentTopBest) {
             try {
@@ -747,6 +794,55 @@ public class PowerDistributionDriveOptimization {
             }
         }
         return objectMapper.writeValueAsString(enrichedTopBest);
+    }
+
+    /**
+     * 将单个枚举方案（loopId → "startApp|endApp|startPos|endPos"）还原到 loopInfoCopy /
+     * appPositionsCopy。
+     * startApp/endApp 为空时跳过该回路。
+     */
+    private void applyEnumeratedSchemeToLoops(
+            List<Map<String, String>> loopInfoCopy,
+            List<Map<String, String>> appPositionsCopy,
+            Map<String, String> scheme,
+            Map<String, List<String>> elecChangeablePosition,
+            Map<String, String> pointNameId) {
+        if (scheme == null)
+            return;
+        Map<String, Map<String, String>> appIndex = new HashMap<>();
+        for (Map<String, String> ap : appPositionsCopy)
+            appIndex.put(ap.get("appName"), ap);
+        for (Map.Entry<String, String> entry : scheme.entrySet()) {
+            String loopId = entry.getKey();
+            String value = entry.getValue();
+            if (value == null || value.isEmpty())
+                continue;
+            String[] parts = value.split("\\|");
+            String startApp = parts.length > 0 ? parts[0] : "";
+            String endApp = parts.length > 1 ? parts[1] : "";
+            String startPos = parts.length > 2 ? parts[2] : "";
+            String endPos = parts.length > 3 ? parts[3] : "";
+            if (startApp.isEmpty() || endApp.isEmpty())
+                continue;
+
+            for (Map<String, String> loop : loopInfoCopy) {
+                if (loop.get("id").equals(loopId)) {
+                    loop.put("startApp", startApp);
+                    loop.put("endApp", endApp);
+                }
+            }
+
+            Map<String, String> startAp = appIndex.get(startApp);
+            if (startAp != null && !startPos.isEmpty()) {
+                startAp.put("unregularPointName", startPos);
+                startAp.put("unregularPointId", pointNameId.get(startPos));
+            }
+            Map<String, String> endAp = appIndex.get(endApp);
+            if (endAp != null && !endPos.isEmpty()) {
+                endAp.put("unregularPointName", endPos);
+                endAp.put("unregularPointId", pointNameId.get(endPos));
+            }
+        }
     }
 
     /**
@@ -901,13 +997,18 @@ public class PowerDistributionDriveOptimization {
         List<Map<String, Object>> shuffledSchemes = new ArrayList<>(topSchemes);
         Collections.shuffle(shuffledSchemes, random);
 
+        // 按 CrossoverRate 过滤进入配对池，池内再随机配对（避免按序配对时跳过导致个体浪费）
+        List<Map<String, Object>> pool = new ArrayList<>();
+        for (Map<String, Object> s : shuffledSchemes) {
+            if (random.nextDouble() < CrossoverRate)
+                pool.add(s);
+        }
+        Collections.shuffle(pool, random);
         // 收集有效的交叉配对
         List<Map<String, Object>[]> pairs = new ArrayList<>();
-        for (int i = 0; i < shuffledSchemes.size() - 1; i += 2) {
-            if (random.nextDouble() > CrossoverRate)
-                continue;
+        for (int i = 0; i + 1 < pool.size(); i += 2) {
             @SuppressWarnings("unchecked")
-            Map<String, Object>[] pair = new Map[]{shuffledSchemes.get(i), shuffledSchemes.get(i + 1)};
+            Map<String, Object>[] pair = new Map[] { pool.get(i), pool.get(i + 1) };
             pairs.add(pair);
         }
 
@@ -1249,8 +1350,9 @@ public class PowerDistributionDriveOptimization {
 
     /**
      * 变异操作（修正：位置随机加入概率保留，并增加约束修复）
+     *
      * @param maxSchemes 生成上限，达到后不再继续变异
-     * 注：所有共享框架数据从 jsonMap 读取，方法签名只接收变化数据。
+     *                   注：所有共享框架数据从 jsonMap 读取，方法签名只接收变化数据。
      */
     private List<Map<String, Object>> mutateTopSchemes(
             List<Map<String, Object>> topSchemes,
@@ -1273,6 +1375,8 @@ public class PowerDistributionDriveOptimization {
 
         long mStartMs = System.currentTimeMillis();
         List<Map<String, Object>> mutatedSchemes = Collections.synchronizedList(new ArrayList<>());
+        // 原子计数器：用 CAS 替代 synchronizedList.size() 检查，避免 race
+        java.util.concurrent.atomic.AtomicInteger mutationCount = new java.util.concurrent.atomic.AtomicInteger(0);
         System.out.println("开始并行对 " + topSchemes.size() + " 个方案进行多分支变异...");
 
         for (int schemeIdx = 0; schemeIdx < topSchemes.size(); schemeIdx++) {
@@ -1282,7 +1386,7 @@ public class PowerDistributionDriveOptimization {
             final Map<String, Object> scheme = topSchemes.get(schemeIdx);
             threadPool.execute(() -> {
                 // 已达上限，跳过本任务
-                if (mutatedSchemes.size() >= maxSchemes)
+                if (mutationCount.get() >= maxSchemes)
                     return;
                 // 提取父本数据（每个线程读取不变数据，安全）
                 List<Map<String, String>> originalLoops = (List<Map<String, String>>) scheme.get("loopInfos");
@@ -1307,13 +1411,14 @@ public class PowerDistributionDriveOptimization {
                             togetherGroup, mutualGroup));
 
                     for (List<Map<String, String>> variantLoops : allVariants) {
-                        // 已达上限，停止生成
-                        if (mutatedSchemes.size() >= maxSchemes)
+                        // 已达上限，停止生成（用原子计数器避免 race）
+                        if (mutationCount.get() >= maxSchemes)
                             return;
 
                         List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(originalApps);
-                        syncAppPositionsWithProbability(variantLoops, appPositionsCopy, elecChangeablePosition,
-                                pointNameId, rnd, 0.3);
+                        // 强制同步：变连接关系必变位置（start/end app 改了，位置必须跟着重选）
+                        syncPositionsForLoops(variantLoops, appPositionsCopy, elecChangeablePosition,
+                                pointNameId, rnd);
                         if (!enforceAllConstraints(variantLoops, appPositionsCopy, togetherGroup, mutualGroup,
                                 loopElecById, elecChangeablePosition, pointNameId, rnd))
                             continue;
@@ -1340,6 +1445,14 @@ public class PowerDistributionDriveOptimization {
                         map.put("成本", projectCost);
                         map.put("loopInfos", variantLoops);
                         map.put("appPositions", appPositionsCopy);
+
+                        // CAS 自增：超过上限则不放行
+                        int cur = mutationCount.incrementAndGet();
+                        if (cur > maxSchemes) {
+                            mutationCount.decrementAndGet();
+                            WareHouse.remove(fingerprint);
+                            return;
+                        }
                         mutatedSchemes.add(map);
                     }
                 } catch (Exception e) {
@@ -1422,7 +1535,7 @@ public class PowerDistributionDriveOptimization {
             }
         }
 
-        // 互斥组变异（简化版）
+        // 互斥组变异：贪心失败时回退到 backtrack，最多尝试 100 次
         for (Map.Entry<String, List<String>> entry : mutualGroup.entrySet()) {
             String mutualId = entry.getKey();
             List<String> allMemberLoopIds = entry.getValue();
@@ -1436,49 +1549,61 @@ public class PowerDistributionDriveOptimization {
             if (!hasTargetLoop)
                 continue;
 
-            List<Set<String>> optionsList = new ArrayList<>();
-            Map<Integer, String> indexToLoopId = new HashMap<>();
-            int idx = 0;
+            // 收集有合法 endApp 选项的成员
+            List<List<String>> optionsList = new ArrayList<>();
+            List<String> optionLoopIds = new ArrayList<>();
             for (String loopId : allMemberLoopIds) {
                 Set<String> allowedEndApps = loopElecById.get(loopId);
                 if (allowedEndApps != null && !allowedEndApps.isEmpty()) {
-                    optionsList.add(allowedEndApps);
-                    indexToLoopId.put(idx, loopId);
-                    idx++;
+                    optionsList.add(new ArrayList<>(allowedEndApps));
+                    optionLoopIds.add(loopId);
                 }
             }
             if (optionsList.isEmpty())
                 continue;
 
-            for (int attempt = 0; attempt < Math.min(5, optionsList.get(0).size()); attempt++) {
+            int maxAttempts = Math.max(10, Math.min(100,
+                    optionsList.size() * optionsList.get(0).size() * 2));
+            for (int attempt = 0; attempt < maxAttempts; attempt++) {
                 List<Map<String, String>> copyVariant = deepCopyLoopInfos(originalLoops);
                 Set<String> usedEndApps = new HashSet<>();
-                boolean success = true;
-                for (int i = 0; i < optionsList.size(); i++) {
-                    String loopId = indexToLoopId.get(i);
-                    Set<String> options = optionsList.get(i);
-                    String selectedEndApp = null;
-                    for (String endApp : options) {
-                        if (!usedEndApps.contains(endApp)) {
-                            selectedEndApp = endApp;
-                            break;
-                        }
-                    }
-                    if (selectedEndApp == null) {
-                        success = false;
-                        break;
-                    }
-                    usedEndApps.add(selectedEndApp);
-                    for (Map<String, String> loop : copyVariant) {
-                        if (loop.get("id").equals(loopId))
-                            loop.put("endApp", selectedEndApp);
-                    }
-                }
+                boolean success = assignMutualGroup(copyVariant, optionsList, optionLoopIds, usedEndApps, 0);
                 if (success)
                     variants.add(copyVariant);
             }
         }
         return variants;
+    }
+
+    /**
+     * 互斥组 endApp 分配 backtrack：对 optionsList[fromIdx..] 尝试给每个成员分配不重复的 endApp。
+     * 找到一组即返回 true。
+     */
+    private boolean assignMutualGroup(
+            List<Map<String, String>> copyVariant,
+            List<List<String>> optionsList,
+            List<String> optionLoopIds,
+            Set<String> usedEndApps,
+            int fromIdx) {
+        if (fromIdx == optionsList.size())
+            return true;
+        List<String> opts = optionsList.get(fromIdx);
+        // 随机洗牌增加多样性
+        List<String> shuffled = new ArrayList<>(opts);
+        Collections.shuffle(shuffled, new Random());
+        for (String endApp : shuffled) {
+            if (usedEndApps.contains(endApp))
+                continue;
+            usedEndApps.add(endApp);
+            for (Map<String, String> loop : copyVariant) {
+                if (loop.get("id").equals(optionLoopIds.get(fromIdx)))
+                    loop.put("endApp", endApp);
+            }
+            if (assignMutualGroup(copyVariant, optionsList, optionLoopIds, usedEndApps, fromIdx + 1))
+                return true;
+            usedEndApps.remove(endApp);
+        }
+        return false;
     }
 
     /**
@@ -1529,22 +1654,39 @@ public class PowerDistributionDriveOptimization {
                 continue;
             }
 
-            // 最多生成3个变异方案
-            int maxAttempts = Math.min(3, Math.max(
-                    allowedEndApps != null ? allowedEndApps.size() : 1,
-                    allowedStartApps != null ? allowedStartApps.size() : 1));
-            List<String> endAppList = allowedEndApps != null ? new ArrayList<>(allowedEndApps)
-                    : Collections.singletonList(null);
-            List<String> startAppList = allowedStartApps != null ? new ArrayList<>(allowedStartApps)
-                    : Collections.singletonList(null);
-            Collections.shuffle(endAppList, random);
-            Collections.shuffle(startAppList, random);
-
+            // 收集所有合法的 (endApp, startApp) 组合，去掉 startApp==endApp 与重复
+            List<String[]> validPairs = new ArrayList<>();
+            Set<String> seenPair = new HashSet<>();
+            List<String> endAppPool = new ArrayList<>();
+            if (allowedEndApps != null)
+                endAppPool.addAll(allowedEndApps);
+            else
+                endAppPool.add(null);
+            List<String> startAppPool = new ArrayList<>();
+            if (allowedStartApps != null)
+                startAppPool.addAll(allowedStartApps);
+            else
+                startAppPool.add(null);
+            for (String endApp : endAppPool) {
+                for (String startApp : startAppPool) {
+                    if (endApp != null && startApp != null && endApp.equals(startApp))
+                        continue;
+                    String key = endApp + "|" + startApp;
+                    if (seenPair.contains(key))
+                        continue;
+                    seenPair.add(key);
+                    validPairs.add(new String[] { endApp, startApp });
+                }
+            }
+            if (validPairs.isEmpty())
+                continue;
+            Collections.shuffle(validPairs, random);
+            int maxAttempts = Math.min(3, validPairs.size());
             for (int i = 0; i < maxAttempts; i++) {
+                String[] pair = validPairs.get(i);
+                String selectedEndApp = pair[0];
+                String selectedStartApp = pair[1];
                 List<Map<String, String>> copyVariant = deepCopyLoopInfos(originalLoops);
-                String selectedEndApp = endAppList.get(i % endAppList.size());
-                String selectedStartApp = startAppList.get(i % startAppList.size());
-
                 for (Map<String, String> loop : copyVariant) {
                     if (loop.get("id").equals(loopId)) {
                         if (selectedEndApp != null)
@@ -1633,6 +1775,47 @@ public class PowerDistributionDriveOptimization {
             variants.add(copyVariant);
         }
         return variants;
+    }
+
+    /**
+     * 统一位置同步：遍历变异后的 loops，对每个 startApp/endApp，
+     * 从 elecChangeablePosition 中随机选位并写入 appPositions。
+     * 跳过已无合法位置的用电器。
+     * 必须配合"起点终点连接关系变化"使用，不能单独调用。
+     */
+    private void syncPositionsForLoops(
+            List<Map<String, String>> loops,
+            List<Map<String, String>> appPositions,
+            Map<String, List<String>> elecChangeablePosition,
+            Map<String, String> pointNameId,
+            Random random) {
+        if (loops == null || appPositions == null)
+            return;
+        Set<String> appsUsed = new HashSet<>();
+        for (Map<String, String> loop : loops) {
+            String s = loop.get("startApp");
+            String e = loop.get("endApp");
+            if (s != null && !s.isEmpty())
+                appsUsed.add(s);
+            if (e != null && !e.isEmpty())
+                appsUsed.add(e);
+        }
+        // 用电器→位置的索引（避免每轮都线性扫描）
+        Map<String, Map<String, String>> appIndex = new HashMap<>();
+        for (Map<String, String> ap : appPositions)
+            appIndex.put(ap.get("appName"), ap);
+
+        for (String appName : appsUsed) {
+            List<String> positions = elecChangeablePosition.get(appName);
+            if (positions == null || positions.isEmpty())
+                continue;
+            String chosenPos = positions.get(random.nextInt(positions.size()));
+            Map<String, String> ap = appIndex.get(appName);
+            if (ap == null)
+                continue;
+            ap.put("unregularPointName", chosenPos);
+            ap.put("unregularPointId", pointNameId.get(chosenPos));
+        }
     }
 
     /**
@@ -1781,7 +1964,7 @@ public class PowerDistributionDriveOptimization {
 
     /**
      * 整车全量成本计算：根据回路连接关系和用电器位置，调用 projectCircuitInfoOutput 计算总成本/重量/长度。
-     * 返回 null 表示计算失败。
+     * 返回 null 表示计算失败，并打印具体原因以便定位。
      */
     private Map<String, Double> computeFullCost(
             List<Map<String, String>> loopInfos,
@@ -1793,19 +1976,42 @@ public class PowerDistributionDriveOptimization {
         Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
         jsonMapCopy.put("loopInfos", loopInfos);
         jsonMapCopy.put("appPositions", appPositions);
-        String result = projectCircuitInfoOutput.projectCircuitInfoOutput(
-                objectMapper.writeValueAsString(jsonMapCopy));
-        if (result == null || result.isEmpty())
+        String result;
+        try {
+            result = projectCircuitInfoOutput.projectCircuitInfoOutput(
+                    objectMapper.writeValueAsString(jsonMapCopy));
+        } catch (Exception ex) {
+            // 拓扑/数据异常：典型场景是用电器位置没绑 / 回路 id 找不到 / 位置点不在图上
+            System.out.println("[computeFullCost] 调用 projectCircuitInfoOutput 抛异常: " + ex.getClass().getSimpleName()
+                    + "  msg=" + ex.getMessage());
             return null;
-        Map<String, Object> parsed = jsonToMap.TransJsonToMap(result);
+        }
+        if (result == null || result.isEmpty()) {
+            System.out.println("[computeFullCost] projectCircuitInfoOutput 返回空（通常是 data 缺失或位置未绑定）");
+            return null;
+        }
+        Map<String, Object> parsed;
+        try {
+            parsed = jsonToMap.TransJsonToMap(result);
+        } catch (Exception ex) {
+            System.out.println("[computeFullCost] 解析 projectCircuitInfoOutput 结果失败: " + ex.getMessage());
+            return null;
+        }
         Map<String, Object> pcInfo = (Map<String, Object>) parsed.get("projectCircuitInfo");
-        if (pcInfo == null)
+        if (pcInfo == null) {
+            System.out.println("[computeFullCost] 结果无 projectCircuitInfo 字段，原始片段: "
+                    + (result.length() > 200 ? result.substring(0, 200) + "..." : result));
             return null;
+        }
         Object tc = pcInfo.get("总成本");
         Object tw = pcInfo.get("回路总重量");
         Object tl = pcInfo.get("回路总长度");
-        if (!(tc instanceof Number && tw instanceof Number && tl instanceof Number))
+        if (!(tc instanceof Number && tw instanceof Number && tl instanceof Number)) {
+            System.out.println("[computeFullCost] 成本字段类型异常 tc=" + (tc == null ? "null" : tc.getClass().getSimpleName())
+                    + " tw=" + (tw == null ? "null" : tw.getClass().getSimpleName())
+                    + " tl=" + (tl == null ? "null" : tl.getClass().getSimpleName()));
             return null;
+        }
         Map<String, Double> totals = new HashMap<>();
         totals.put("总成本", ((Number) tc).doubleValue());
         totals.put("回路总重量", ((Number) tw).doubleValue());
@@ -1814,7 +2020,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     private String generateSchemeFingerprint(List<Map<String, String>> loopInfos,
-                                             List<Map<String, String>> appPositions) {
+            List<Map<String, String>> appPositions) {
         StringBuilder fingerprint = new StringBuilder();
         List<Map<String, String>> sortedLoops = new ArrayList<>(loopInfos);
         sortedLoops.sort((a, b) -> a.get("id").compareTo(b.get("id")));
@@ -1893,12 +2099,15 @@ public class PowerDistributionDriveOptimization {
      */
     private Map<String, String> buildVariantAppList(List<Map<String, String>> apps) {
         Map<String, String> map = new LinkedHashMap<>();
-        if (apps == null) return map;
+        if (apps == null)
+            return map;
         for (Map<String, String> app : apps) {
             String ct = app.get("changeType");
-            if (ct == null || "0".equals(ct)) continue;
+            if (ct == null || "0".equals(ct))
+                continue;
             String appName = app.get("appName");
-            if (appName == null) continue;
+            if (appName == null)
+                continue;
             String posName = app.get("unregularPointName");
             if (posName == null || posName.isEmpty()) {
                 posName = app.get("regularPointName");
@@ -1930,6 +2139,8 @@ public class PowerDistributionDriveOptimization {
             Map<String, AppResourceLimit> resourceNum) throws Exception {
         // 线程安全的结果收集器
         List<Map<String, Object>> population = Collections.synchronizedList(new ArrayList<>());
+        // 原子计数器：用 CAS 替代 synchronizedList.size() 检查，避免多线程 read-then-check race
+        java.util.concurrent.atomic.AtomicInteger currentSize = new java.util.concurrent.atomic.AtomicInteger(0);
         // 每个任务最多重试次数
         int maxRetriesPerTask = Math.max(10, populationSize / 5);
         // 任务数：略多于目标数，补偿失败率
@@ -1941,15 +2152,14 @@ public class PowerDistributionDriveOptimization {
         for (int t = 0; t < totalTasks; t++) {
             // 队列满时 execute 会自动阻塞，形成自然背压
             threadPool.execute(() -> {
-                // 检查是否需要继续（已满 或 用户中断）
-                if (population.size() >= populationSize
-                        || optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                // 用乐观的 CAS 抢占名额：如果失败说明已满，直接退出
+                if (!tryAcquireSlot(currentSize, populationSize))
                     return;
-                }
                 Random random = new Random();
                 for (int retry = 0; retry < maxRetriesPerTask; retry++) {
-                    if (population.size() >= populationSize
+                    if (currentSize.get() >= populationSize
                             || optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                        currentSize.decrementAndGet(); // 释放抢占的名额
                         return;
                     }
                     try {
@@ -2000,7 +2210,7 @@ public class PowerDistributionDriveOptimization {
                         map.put("appPositions", appPositionsCopy);
 
                         population.add(map);
-                        int curSize = population.size();
+                        int curSize = currentSize.incrementAndGet(); // 真正加入时再自增
                         if (curSize % 200 == 0 || curSize == populationSize) {
                             long elapsed = System.currentTimeMillis() - genStartMs;
                             System.out.println("已生成 " + curSize + "/" + populationSize
@@ -2024,6 +2234,20 @@ public class PowerDistributionDriveOptimization {
                 + "总耗时 " + elapsed + "ms, "
                 + (elapsed > 0 ? (result.size() * 1000L / elapsed) : "?") + " 个/秒");
         return result;
+    }
+
+    /**
+     * 乐观 CAS 抢占名额：未达上限则 +1 返回 true；已满返回 false。
+     * 失败的任务在退出前需要 decrementAndGet 释放。
+     */
+    private boolean tryAcquireSlot(java.util.concurrent.atomic.AtomicInteger currentSize, int limit) {
+        while (true) {
+            int cur = currentSize.get();
+            if (cur >= limit)
+                return false;
+            if (currentSize.compareAndSet(cur, cur + 1))
+                return true;
+        }
     }
 
     /**
@@ -2075,15 +2299,19 @@ public class PowerDistributionDriveOptimization {
                 else
                     endAppIntersection.retainAll(allowedEndApps);
             }
-            if (endAppIntersection == null || endAppIntersection.isEmpty())
-                return false;
+            if (endAppIntersection == null || endAppIntersection.isEmpty()) {
+                // 交集为空：该组所有成员没有共同的合法 endApp，保持原样不扰动
+                // 后续由 enforceAllConstraints 兜底校验
+                continue;
+            }
 
             List<String> endAppList = new ArrayList<>(endAppIntersection);
             String selectedEndApp = endAppList.get(random.nextInt(endAppList.size()));
             List<String> positions = elecChangeablePosition.get(selectedEndApp);
-            if (positions == null || positions.isEmpty())
-                return false;
-            String selectedPosition = positions.get(random.nextInt(positions.size()));
+            String selectedPosition = null;
+            if (positions != null && !positions.isEmpty()) {
+                selectedPosition = positions.get(random.nextInt(positions.size()));
+            }
 
             String mutualId = null;
             for (String loopId : allMemberLoopIds) {
@@ -2105,11 +2333,13 @@ public class PowerDistributionDriveOptimization {
                 if (loop == null)
                     continue;
                 loop.put("endApp", selectedEndApp);
-                for (Map<String, String> appPos : appPositionsCopy) {
-                    if (appPos.get("appName").equals(selectedEndApp)) {
-                        appPos.put("unregularPointName", selectedPosition);
-                        appPos.put("unregularPointId", pointNameId.get(selectedPosition));
-                        break;
+                if (selectedPosition != null) {
+                    for (Map<String, String> appPos : appPositionsCopy) {
+                        if (appPos.get("appName").equals(selectedEndApp)) {
+                            appPos.put("unregularPointName", selectedPosition);
+                            appPos.put("unregularPointId", pointNameId.get(selectedPosition));
+                            break;
+                        }
                     }
                 }
                 String startApp = loop.get("startApp");
@@ -2164,8 +2394,10 @@ public class PowerDistributionDriveOptimization {
                 }
                 List<String> candidates = new ArrayList<>(allowedEndApps);
                 candidates.removeAll(usedEndApps);
-                if (candidates.isEmpty())
-                    return false;
+                if (candidates.isEmpty()) {
+                    // 无可用 endApp，保持原样不扰动，后续由 enforceAllConstraints 兜底校验
+                    continue;
+                }
                 String selectedEndApp = candidates.get(random.nextInt(candidates.size()));
                 usedEndApps.add(selectedEndApp);
                 loop.put("endApp", selectedEndApp);
@@ -2283,9 +2515,9 @@ public class PowerDistributionDriveOptimization {
         final List<String> varKeys;
 
         ConnectionPlan(Map<String, List<String>> varDomains,
-                       Map<String, List<String>> mutualIdToVarKeys,
-                       Set<String> varsInAnyMutualGroup,
-                       List<String> varKeys) {
+                Map<String, List<String>> mutualIdToVarKeys,
+                Set<String> varsInAnyMutualGroup,
+                List<String> varKeys) {
             this.varDomains = varDomains;
             this.mutualIdToVarKeys = mutualIdToVarKeys;
             this.varsInAnyMutualGroup = varsInAnyMutualGroup;
@@ -2515,9 +2747,9 @@ public class PowerDistributionDriveOptimization {
 
     /**
      * @Description: 统一入口——对给定的连接关系赋值，枚举所有用电器位置组合
-     * 连接关系变化和用电器位置变化是乘积关系：
-     * 一条回路 = 起点用电器选项 × 起点位置选项 × 终点用电器选项 × 终点位置选项
-     * 全局方案 = 所有回路选项的乘积（受互斥/同组约束）
+     *               连接关系变化和用电器位置变化是乘积关系：
+     *               一条回路 = 起点用电器选项 × 起点位置选项 × 终点用电器选项 × 终点位置选项
+     *               全局方案 = 所有回路选项的乘积（受互斥/同组约束）
      * @input: assignment 当前连接关系赋值（varKeys 为空时为空 Map）
      * @Complexity: O(Π ( p_i) * L)，p_i 为每个有可变位置的用电器的位置数，L 为回路数
      */
@@ -2740,8 +2972,8 @@ public class PowerDistributionDriveOptimization {
         // 连接关系回溯 + 互斥剪枝：在每一个完整连接赋值上，
         // 按 generateSchemesForAssignment 的口径累加"真正被选中且位置可变"的用电器位置组合数，
         // 使 总方案数 == 实际枚举出的方案总数（不再把位置数无条件乘进全局乘积）。
-        long[] total = {0L};
-        boolean[] overflow = {false};
+        long[] total = { 0L };
+        boolean[] overflow = { false };
         Map<String, String> currentAssignment = new LinkedHashMap<>();
         Set<String> usedEndApps = new HashSet<>();
         countSchemesByBacktrack(varDomains, varsInAnyMutualGroup,
