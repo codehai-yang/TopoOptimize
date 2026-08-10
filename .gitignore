@@ -13,6 +13,9 @@ target/
 *.ipr
 src/main/resources/*
 !src/main/resources/scripts/
+ppt_gen/node_modules/
+ppt_gen/lib.js
+ppt_gen/main.js
 
 ### Eclipse ###
 .apt_generated
