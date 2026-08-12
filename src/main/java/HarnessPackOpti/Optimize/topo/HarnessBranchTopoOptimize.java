@@ -37,7 +37,6 @@ import HarnessPackOpti.Algorithm.GenerateTopoMatrix;
 import HarnessPackOpti.Algorithm.GenerateTopoMatrixConnector;
 import HarnessPackOpti.CircuitInfoCalculate.CalculateCircuitInfo;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
-import HarnessPackOpti.InfoRead.ReadWireInfoLibrary;
 import HarnessPackOpti.Optimize.OptimizeStopStatusStore;
 import HarnessPackOpti.ProjectInfoOutPut.ProjectCircuitInfoOutput;
 import HarnessPackOpti.utils.GINEInferenceEngine;
@@ -53,13 +52,13 @@ public class HarnessBranchTopoOptimize {
     // 迭代最少样本数量（提高每代候选池规模，保证进化方向充分探索）
     public static Integer HybridizationLessRandomSamleNumber = 10000;
     // top几的数量规定
-    public static  Integer TopNumber = 1000;
+    public static Integer TopNumber = 1000;
     // 遗传最后一轮要精确计算的top
     public static Integer InteratorLastTop = 100;
     // 最终返回前端的参数
-    public static  Integer resultNumber = 20;
+    public static Integer resultNumber = 20;
     // 绕线优化:分支累计绕线成本贡献阈值,超过则 B 改 C
-    public static  Double WindingCostThreshold = 10.0;
+    public static Double WindingCostThreshold = 10.0;
     // 每次迭代最优的成本
     public static Map<String, Double> BestCost = new HashMap<>();
     // 最优样本重复次数
@@ -144,6 +143,28 @@ public class HarnessBranchTopoOptimize {
             String s = harnessBranchTopoOptimize.topoOptimize(jsonContent);
             return s;
         }
+        // 启用AI:捕获Python环境等异常(如线上服务器未配置Python),输出日志并对原始base方案做整车计算返回
+        try {
+            return runWithAI(jsonContent, jsonMap);
+        } catch (Exception e) {
+            System.err.println("[HarnessBranchTopoOptimize] AI 流程异常 : " + e.getMessage());
+            e.printStackTrace();
+            // 异常时对原始base方案进行整车计算,按算法返回格式返回
+            try {
+                return buildBaseSchemeResult(jsonContent, jsonMap);
+            } catch (Exception ex) {
+                System.err.println("[HarnessBranchTopoOptimize] base方案整车计算失败 : " + ex.getMessage());
+                ex.printStackTrace();
+                return null;
+            }
+        }
+    }
+
+    /**
+     * AI 拓扑优化流程(从 topoOptimize 抽取,便于异常隔离)。
+     * 包含:线程池初始化 → 整车信息计算 → 分支分类 → 遗传迭代 → TOP100 → 绕线优化。
+     */
+    private String runWithAI(String jsonContent, Map<String, Object> jsonMap) throws Exception {
         threadPool = ThreadPool.shared(Threads, QueueCapacity);
         // 每次优化前清理仓库，避免跨case累积
         WAREHOUSE_KEYS.clear();
@@ -152,7 +173,7 @@ public class HarnessBranchTopoOptimize {
         BestCost.clear();
         BestRepetitionNumber = 0;
         final long topoOptimizeStart = System.currentTimeMillis();
-
+        JsonToMap jsonToMap = new JsonToMap();
         ObjectMapper objectMapper = new ObjectMapper();// 创建ObjectMapper实例
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
 
@@ -164,7 +185,7 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, String>> loopInfos = (List<Map<String, String>>) jsonMap.get("loopInfos");
         List<Map<String, String>> points = (List<Map<String, String>>) jsonMap.get("points");
         CaseId = caseInfo.get("id").toString();
-         optimizeRecordId = optimizeRecord.get("id").toString();
+        optimizeRecordId = optimizeRecord.get("id").toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
 
         // 整车信息计算
@@ -765,16 +786,61 @@ public class HarnessBranchTopoOptimize {
         // ★追踪:写出方案状态变更追踪 Excel
         // 记录每个最终方案(绕线后)在三个阶段的状态:精确前 / 精确后 / 绕线后,
         // 并标注入口索引(500 中的哪一个、100 中的哪一个)。
-//        try {
-//            SchemeChangeTraceExcel.writeTrace(
-//                    "src/main/resources/", CaseId, normList, maps);
-//        } catch (Exception traceEx) {
-//            System.out.println("[topoOptimize] 写出方案状态变更追踪 Excel 失败: " + traceEx.getMessage());
-//            traceEx.printStackTrace();
-//        }
+        // try {
+        // SchemeChangeTraceExcel.writeTrace(
+        // "src/main/resources/", CaseId, normList, maps);
+        // } catch (Exception traceEx) {
+        // System.out.println("[topoOptimize] 写出方案状态变更追踪 Excel 失败: " +
+        // traceEx.getMessage());
+        // traceEx.printStackTrace();
+        // }
 
         long totalDuration = System.currentTimeMillis() - topoOptimizeStart;
         System.out.println("topoOptimize 总耗时：" + totalDuration + " ms");
+        return objectMapper.writeValueAsString(maps);
+    }
+
+    /**
+     * 构造原始base方案的返回结果(格式与runWithAI返回一致)。
+     * 用于AI流程异常时降级:对原始入参做整车计算,按算法输出格式包装返回。
+     */
+    private String buildBaseSchemeResult(String jsonContent, Map<String, Object> jsonMap) throws Exception {
+        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
+        JsonToMap jsonToMap = new JsonToMap();
+        ObjectMapper objectMapper = new ObjectMapper();
+        // 整车计算
+        String circuitResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
+        Map<String, Object> resultMap = jsonToMap.TransJsonToMap(circuitResult);
+        Map<String, Object> circuitInfoMap = (Map<String, Object>) resultMap.get("projectCircuitInfo");
+        // 提取成本字段,与processSingleSchemeForWinding返回格式对齐
+        Map<String, Double> cost = new HashMap<>();
+        cost.put("总成本", Double.parseDouble(circuitInfoMap.get("总成本").toString()));
+        cost.put("总重量", Double.parseDouble(circuitInfoMap.get("回路总重量").toString()));
+        cost.put("总长度", Double.parseDouble(circuitInfoMap.get("回路总长度").toString()));
+        // 构造topoOptimizeResult和serviceableStatue(原始base方案,分支状态不变)
+        List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
+        Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
+        Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
+        List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
+        List<String> serviceableStatue = new ArrayList<>();
+        for (Map<String, Object> edge : edges) {
+            Map<String, String> r = new HashMap<>();
+            r.put("edgeId", edge.get("id").toString());
+            r.put("statue", edge.get("topologyStatusCode").toString());
+            topoOptimizeResult.add(r);
+            serviceableStatue.add(edge.get("topologyStatusCode").toString());
+        }
+        // 包装返回字段,与算法返回格式一致
+        resultMap.put("成本", cost);
+        resultMap.put("topoId", topoInfoMap.get("id").toString());
+        resultMap.put("caseId", caseInfo.get("id").toString());
+        resultMap.put("topoOptimizeResult", topoOptimizeResult);
+        resultMap.put("finishStatue", "normal");
+        resultMap.put("initializationScheme", true);
+        resultMap.put("serviceableStatue", serviceableStatue);
+        resultMap.put("serviceableEdges", edges);
+        List<Map<String, Object>> maps = new ArrayList<>();
+        maps.add(resultMap);
         return objectMapper.writeValueAsString(maps);
     }
 
@@ -813,11 +879,12 @@ public class HarnessBranchTopoOptimize {
             final int windingInputIndex = windingInputIdx;
             final Map<String, Object> map = mapList.get(windingInputIdx);
             // 预填追踪字段(在原 map 上轻量添加,后续 processSingleSchemeForWinding 会再覆盖)
-//            map.put("_windingInputIndex", windingInputIndex);
-//            Object preStat = map.get("serviceableStatue");
-//            if (preStat instanceof List) {
-//                map.put("_windingInputServiceableStatue", new ArrayList<>((List<String>) preStat));
-//            }
+            // map.put("_windingInputIndex", windingInputIndex);
+            // Object preStat = map.get("serviceableStatue");
+            // if (preStat instanceof List) {
+            // map.put("_windingInputServiceableStatue", new ArrayList<>((List<String>)
+            // preStat));
+            // }
             tasks.add(() -> {
                 return processSingleSchemeForWinding(
                         map, windingInputIndex, adjacencyMatrixGraphConnector, edges, normList, canChangeS, wearId,
@@ -2101,7 +2168,7 @@ public class HarnessBranchTopoOptimize {
         if (findBestPre != null) {
             for (int i = 0; i < 3; i++) {
                 Map<String, Object> preMap = findBestPre.get(i);
-                    resultList.add(preMap);
+                resultList.add(preMap);
             }
         }
         List<Map<String, Object>> topBeat = findBest.findBest(resultList, "成本", resultNumber);

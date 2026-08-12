@@ -1724,13 +1724,12 @@ public class ProjectCircuitInfoOutput {
                 adjacencyMatrixGraph.getAllPoint().indexOf(endName));
         // 获取回路的所有路径
         // 成本计算
+        DecimalFormat df = new DecimalFormat("0.00");
         if (shortestPath != null) {
             // 寻找从起点到终点的不同路径，通过破坏已知最短路径得到
             List<List<Integer>> allPathBetweenTwoPoint = findAllPath.findAllPathBetweenTwoPoint(
                     adjacencyMatrixGraph.getAdj(), adjacencyMatrixGraph.getAllPoint().indexOf(startName),
                     adjacencyMatrixGraph.getAllPoint().indexOf(endName));
-
-            DecimalFormat df = new DecimalFormat("0.00");
             for (List<Integer> list : allPathBetweenTwoPoint) {
                 Map<String, Object> sinaglePath = new LinkedMap<>();
                 CalculateCircuitInfo acceptLoopInfo = new CalculateCircuitInfo();
@@ -1850,7 +1849,7 @@ public class ProjectCircuitInfoOutput {
         Double connectPrice = Double.parseDouble(bestMap.get("inline湿区连接器成本补偿").toString())
                 + Double.parseDouble(bestMap.get("湿区两端连接器成本补偿").toString());
         bestMap.put("端子成本", wireTerminalPrice);
-        bestMap.put("连接器塑壳成本", shellPrice + connectPrice);
+        bestMap.put("连接器塑壳成本",df.format(shellPrice + connectPrice));
         bestMap.put("防水塞成本", waterPrice);
         return bestMap;
     }
@@ -2188,7 +2187,7 @@ public class ProjectCircuitInfoOutput {
                     Double connectPrice = Double.parseDouble(bestPath.get("inline湿区连接器成本补偿").toString())
                             + Double.parseDouble(bestPath.get("湿区两端连接器成本补偿").toString());
                     bestPath.put("端子成本", wireTerminalPrice);
-                    bestPath.put("连接器塑壳成本", shellPrice + connectPrice);
+                    bestPath.put("连接器塑壳成本",df.format(shellPrice + connectPrice) );
                     bestPath.put("防水塞成本", waterPrice);
                     sonMap.put("到" + pathNumber + "用电器的信息", detailMap);
                     pathNumber++;
@@ -2340,7 +2339,7 @@ public class ProjectCircuitInfoOutput {
                 Double connectPrice = Double.parseDouble(objectMap1.get("inline湿区连接器成本补偿").toString())
                         + Double.parseDouble(objectMap1.get("湿区两端连接器成本补偿").toString());
                 objectMap1.put("端子成本", wireTerminalPrice);
-                objectMap1.put("连接器塑壳成本", oneSheLLPriceDry + connectPrice);
+                objectMap1.put("连接器塑壳成本",df.format(oneSheLLPriceDry + connectPrice) );
                 objectMap1.put("防水塞成本", waterPrice);
                 detailMap.put("最优路径", objectMap1);
                 groupMap.put("到" + pathNumber + "用电器的信息", detailMap);

@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -36,6 +37,8 @@ public class PowerDistributionDriveOptimization {
     private static String CaseId = null;
     private static String optimizeRecordId = null;
     private static Integer TopNumber = 20;
+    // 当前优化类型，供导线选型更新使用
+    private String currentOptimizeType = "5";
 
     private final OptimizeStopStatusStore optimizeStopStatusStore;
 
@@ -66,6 +69,11 @@ public class PowerDistributionDriveOptimization {
     // 交叉概率（0.7 表示 70% 的方案参与交叉）
     public static Double CrossoverRate = 0.7;
 
+    // 导线选型电流系数（从线上 eeParamConfigList 反射注入）
+    public static Double range0to45A = 0.7;
+    public static Double range45to90A = 0.6;
+    public static Double rangeAbove90A = 0.5;
+
     // 线程池
     private static ThreadPool threadPool = null;
 
@@ -81,7 +89,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\入参.json");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\电源分配优化日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -147,6 +155,7 @@ public class PowerDistributionDriveOptimization {
         // 判断是哪种类型优化（新格式：优化类型取自 optimizeRecord.type）
         // 4=驱动回路，3=配电回路，5=配电回路+主供电回路+驱动回路（包括硬线/高速线缆/接地回路）
         String optimizeType = optimizeRecord.get("type") != null ? optimizeRecord.get("type").toString() : "5";
+        currentOptimizeType = optimizeType;
         String[] split = optimizeType.split(",");
         List<String> typeList = Arrays.asList(split);
         Random random = new Random();
@@ -408,6 +417,8 @@ public class PowerDistributionDriveOptimization {
                     // 遍历该方案中的所有回路，还原方案（抽出为 applyEnumeratedSchemeToLoops）
                     applyEnumeratedSchemeToLoops(loopInfoCopy, appPositionsCopy, scheme, elecChangeablePosition,
                             pointNameId);
+                    // 修复 +/- 同名用电器同控制器约束
+                    fixPlusMinusControllerConstraint(loopInfoCopy, appPositions);
 
                     // 生成完整方案的指纹（包含所有回路和所有用电器位置）
                     String fingerprint = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
@@ -425,6 +436,8 @@ public class PowerDistributionDriveOptimization {
                     validSchemeCount++;
                     jsonMapCopy.put("loopInfos", loopInfoCopy);
                     jsonMapCopy.put("appPositions", appPositionsCopy);
+                    // 导线选型更新（成本计算前）
+                    updateWireSelectionForScheme(loopInfoCopy, appPositionsCopy, currentOptimizeType);
                     // ========== 修复1：计算成本时使用修改后的方案 ==========
                     String modifiedJson = objectMapper.writeValueAsString(jsonMapCopy);
                     String s = projectCircuitInfoOutput.projectCircuitInfoOutput(modifiedJson);
@@ -460,35 +473,26 @@ public class PowerDistributionDriveOptimization {
             if (resultList.size() > 1) {
                 topBest = findBest.findBest(resultList, "成本", TopNumber);
             } else if (resultList.size() == 1) {
-                // 只有1个方案，直接用
                 topBest.add(resultList.get(0));
-            } else {
-                // 枚举无有效方案时，仅当 base 计算成功才用原始方案兜底
-                if (originalResult != null) {
-                    Map<String, Object> origMap = new HashMap<>();
-                    origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
-                    origMap.put("appPositions", deepCopyAppPositions(appPositions));
-                    Map<String, Object> rawMap = jsonToMap.TransJsonToMap(originalResult);
-                    Map<String, Object> pcInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
-                    if (pcInfo != null) {
-                        Map<String, Double> projectCost = new HashMap<>();
-                        projectCost.put("总成本", ((Number) pcInfo.get("总成本")).doubleValue());
-                        projectCost.put("总重量", ((Number) pcInfo.get("回路总重量")).doubleValue());
-                        projectCost.put("总长度", ((Number) pcInfo.get("回路总长度")).doubleValue());
-                        origMap.put("成本", projectCost);
-                    }
-                    if (origMap.containsKey("成本")) {
-                        topBest.add(origMap);
-                    }
-                }
             }
+            // base 方案必须加入最后返回的 top
+            Map<String, Object> baseScheme = buildBaseSchemeMap(originalResult, loopInfos, appPositions, jsonToMap);
+            if (baseScheme != null) {
+                topBest.add(baseScheme);
+            }
+            // 按 成本+用电器可变位置 去重
+            topBest = dedupByCostAndPositions(topBest);
             System.out.println("枚举总耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
             // 最终输出前：为 top 方案补齐完整整车计算结果
             List<Map<String, Object>> enriched = new ArrayList<>();
             for (Map<String, Object> slim : topBest) {
                 try {
+                    List<Map<String, String>> sloopInfos = (List<Map<String, String>>) slim.get("loopInfos");
+                    List<Map<String, String>> sAppPositions = (List<Map<String, String>>) slim.get("appPositions");
+                    boolean isInitial = originalFingerprint != null
+                            && originalFingerprint.equals(generateSchemeFingerprint(sloopInfos, sAppPositions));
                     enriched.add(enrichToFullScheme(slim, jsonMap, objectMapper,
-                            projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, true));
+                            projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, isInitial));
                 } catch (Exception e) {
                     System.err.println("方案还原失败，使用精简版: " + e.getMessage());
                     enriched.add(slim);
@@ -533,23 +537,10 @@ public class PowerDistributionDriveOptimization {
 
             if (!initialPopulation.isEmpty()) {
                 topBest = findBest.findBest(initialPopulation, "成本", TopNumber);
-                // 原始方案（仅当有 base 计算结果时才加入对比）
-                if (originalResult != null) {
-                    Map<String, Object> origMap = new HashMap<>();
-                    origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
-                    origMap.put("appPositions", deepCopyAppPositions(appPositions));
-                    Map<String, Object> rawMap = jsonToMap.TransJsonToMap(originalResult);
-                    Map<String, Object> pcInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
-                    if (pcInfo != null) {
-                        Map<String, Double> projectCost = new HashMap<>();
-                        projectCost.put("总成本", ((Number) pcInfo.get("总成本")).doubleValue());
-                        projectCost.put("总重量", ((Number) pcInfo.get("回路总重量")).doubleValue());
-                        projectCost.put("总长度", ((Number) pcInfo.get("回路总长度")).doubleValue());
-                        origMap.put("成本", projectCost);
-                    }
-                    if (origMap.containsKey("成本")) {
-                        topBest.add(origMap);
-                    }
+                // base 方案加入初代 top 对比
+                Map<String, Object> baseScheme = buildBaseSchemeMap(originalResult, loopInfos, appPositions, jsonToMap);
+                if (baseScheme != null) {
+                    topBest.add(baseScheme);
                 }
             }
         }
@@ -729,9 +720,13 @@ public class PowerDistributionDriveOptimization {
                         List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(appPositions);
                         applyEnumeratedSchemeToLoops(loopInfoCopy, appPositionsCopy, scheme, elecChangeablePosition,
                                 pointNameId);
+                        // 修复 +/- 同名用电器同控制器约束
+                        fixPlusMinusControllerConstraint(loopInfoCopy, appPositions);
                         Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
                         jsonMapCopy.put("loopInfos", loopInfoCopy);
                         jsonMapCopy.put("appPositions", appPositionsCopy);
+                        // 导线选型更新（成本计算前）
+                        updateWireSelectionForScheme(loopInfoCopy, appPositionsCopy, currentOptimizeType);
                         String result = projectCircuitInfoOutput.projectCircuitInfoOutput(
                                 objectMapper.writeValueAsString(jsonMapCopy));
                         if (result == null || result.isEmpty())
@@ -778,6 +773,13 @@ public class PowerDistributionDriveOptimization {
             origMap.put("成本", parseOriginalCost(originalResult, jsonToMap));
             currentTopBest.add(origMap);
         }
+        // base 方案必须加入最后返回的 top
+        Map<String, Object> baseSchemeFinal = buildBaseSchemeMap(originalResult, loopInfos, appPositions, jsonToMap);
+        if (baseSchemeFinal != null) {
+            currentTopBest.add(baseSchemeFinal);
+        }
+        // 按 成本+用电器可变位置 去重
+        currentTopBest = dedupByCostAndPositions(currentTopBest);
 
         List<Map<String, Object>> enrichedTopBest = new ArrayList<>();
         for (Map<String, Object> slim : currentTopBest) {
@@ -1963,6 +1965,383 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
+     * 构造 base 方案 Map（原始方案的精简表示）
+     * 从 originalResult 解析成本，搭配原始 loopInfos/appPositions 深拷贝
+     * 返回 null 表示 base 方案不可用
+     */
+    private Map<String, Object> buildBaseSchemeMap(String originalResult,
+            List<Map<String, String>> loopInfos,
+            List<Map<String, String>> appPositions,
+            JsonToMap jsonToMap) {
+        if (originalResult == null) {
+            return null;
+        }
+        try {
+            Map<String, Object> origMap = new HashMap<>();
+            origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
+            origMap.put("appPositions", deepCopyAppPositions(appPositions));
+            Map<String, Object> rawMap = jsonToMap.TransJsonToMap(originalResult);
+            Map<String, Object> pcInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
+            if (pcInfo != null) {
+                Map<String, Double> projectCost = new HashMap<>();
+                projectCost.put("总成本", ((Number) pcInfo.get("总成本")).doubleValue());
+                projectCost.put("总重量", ((Number) pcInfo.get("回路总重量")).doubleValue());
+                projectCost.put("总长度", ((Number) pcInfo.get("回路总长度")).doubleValue());
+                origMap.put("成本", projectCost);
+            }
+            if (origMap.containsKey("成本")) {
+                return origMap;
+            }
+        } catch (Exception e) {
+            System.err.println("构造 base 方案失败: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * 按 成本+用电器可变位置 去重
+     * 成本相同（总成本+总重量+总长度）且可变位置相同的方案只保留一个
+     */
+    private List<Map<String, Object>> dedupByCostAndPositions(List<Map<String, Object>> schemes) {
+        if (schemes == null || schemes.size() <= 1) {
+            return schemes;
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (Map<String, Object> scheme : schemes) {
+            String key = buildCostAndPositionKey(scheme);
+            if (seen.add(key)) {
+                result.add(scheme);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 构造成本+可变位置的指纹 key
+     */
+    private String buildCostAndPositionKey(Map<String, Object> scheme) {
+        StringBuilder sb = new StringBuilder();
+        Object costObj = scheme.get("成本");
+        if (costObj instanceof Map) {
+            Map<String, Object> cost = (Map<String, Object>) costObj;
+            sb.append("C:").append(cost.getOrDefault("总成本", "")).append(",")
+                    .append(cost.getOrDefault("总重量", "")).append(",")
+                    .append(cost.getOrDefault("总长度", ""));
+        }
+        sb.append("|P:");
+        Object appsObj = scheme.get("appPositions");
+        if (appsObj instanceof List) {
+            List<Map<String, String>> apps = (List<Map<String, String>>) appsObj;
+            List<String> parts = new ArrayList<>();
+            for (Map<String, String> app : apps) {
+                String ct = app.get("changeType");
+                if (ct == null || "0".equals(ct)) {
+                    continue;
+                }
+                String appName = app.get("appName");
+                String posName = app.get("unregularPointName");
+                if (posName == null || posName.isEmpty()) {
+                    posName = app.get("regularPointName");
+                }
+                parts.add(appName + "=" + (posName != null ? posName : ""));
+            }
+            Collections.sort(parts);
+            sb.append(String.join(";", parts));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 导线选型更新：根据下游用电器回路线径相加决定上游回路导线选型
+     * 优化类型3: 仅更新 配电单元-配电单元 回路
+     * 优化类型5: 先更新 配电单元-控制器 回路，再更新 配电单元-配电单元 回路
+     */
+    /**
+     * 导线选型更新入口，在每次成本计算前调用
+     * 根据优化类型构建树并更新对应回路的导线选型
+     */
+    private void updateWireSelectionForScheme(List<Map<String, String>> loopInfos,
+            List<Map<String, String>> appPositions, String optimizeType) {
+        if (loopInfos == null || loopInfos.isEmpty() || appPositions == null) {
+            return;
+        }
+        // 仅对类型3和5做导线选型更新
+        if (!"3".equals(optimizeType) && !"5".equals(optimizeType)) {
+            return;
+        }
+        // 构建用电器类型映射
+        Map<String, String> appTypeMap = new HashMap<>();
+        for (Map<String, String> app : appPositions) {
+            String name = app.get("appName");
+            String type = app.get("appType");
+            if (name != null && type != null) {
+                appTypeMap.put(name, type);
+            }
+        }
+        // 构建邻接表: appName -> [(neighborApp, loopInfo)]
+        Map<String, List<Object[]>> adjacency = new HashMap<>();
+        for (Map<String, String> loop : loopInfos) {
+            String startApp = loop.get("startApp");
+            String endApp = loop.get("endApp");
+            if (startApp == null || endApp == null) {
+                continue;
+            }
+            adjacency.computeIfAbsent(startApp, k -> new ArrayList<>()).add(new Object[] { endApp, loop });
+            adjacency.computeIfAbsent(endApp, k -> new ArrayList<>()).add(new Object[] { startApp, loop });
+        }
+        // 查找根节点: 优先发电单元，无发电单元才用储电单元
+        String root = null;
+        for (Map.Entry<String, String> entry : appTypeMap.entrySet()) {
+            if ("发电单元".equals(entry.getValue())) {
+                root = entry.getKey();
+                break;
+            }
+        }
+        if (root == null) {
+            for (Map.Entry<String, String> entry : appTypeMap.entrySet()) {
+                if ("储电单元".equals(entry.getValue())) {
+                    root = entry.getKey();
+                    break;
+                }
+            }
+        }
+        if (root == null) {
+            return;
+        }
+        // BFS构建有向树: parent -> [(child, loop)]
+        Map<String, List<Object[]>> treeChildren = new HashMap<>();
+        Map<String, String> parentMap = new HashMap<>();
+        Map<String, Map<String, String>> parentLoopMap = new HashMap<>();
+        Set<String> visited = new LinkedHashSet<>();
+        LinkedList<String> queue = new LinkedList<>();
+        queue.add(root);
+        visited.add(root);
+        while (!queue.isEmpty()) {
+            String node = queue.poll();
+            List<Object[]> neighbors = adjacency.get(node);
+            if (neighbors == null) {
+                continue;
+            }
+            for (Object[] edge : neighbors) {
+                String neighbor = (String) edge[0];
+                Map<String, String> loop = (Map<String, String>) edge[1];
+                if (!visited.contains(neighbor)) {
+                    visited.add(neighbor);
+                    treeChildren.computeIfAbsent(node, k -> new ArrayList<>()).add(new Object[] { neighbor, loop });
+                    parentMap.put(neighbor, node);
+                    parentLoopMap.put(neighbor, loop);
+                    queue.add(neighbor);
+                }
+            }
+        }
+        // 反向BFS序(自底向上)处理
+        List<String> bfsOrder = new ArrayList<>(visited);
+        Collections.reverse(bfsOrder);
+        // 记录已更新的回路线径: loopId -> newGauge
+        Map<String, Double> updatedGauges = new HashMap<>();
+        boolean updateController = "5".equals(optimizeType);
+        for (String node : bfsOrder) {
+            String nodeType = appTypeMap.get(node);
+            List<Object[]> children = treeChildren.get(node);
+            if (children == null || children.isEmpty()) {
+                continue;
+            }
+            // 类型5: 更新 配电单元->控制器 回路
+            if (updateController && "控制器".equals(nodeType)) {
+                double sum = 0;
+                for (Object[] child : children) {
+                    Map<String, String> loop = (Map<String, String>) child[1];
+                    sum += extractWireGauge(loop.get("loopWireway"));
+                }
+                double calculated = applyWireCoefficient(sum);
+                String newWireType = findClosestWireType(calculated);
+                if (newWireType != null) {
+                    Map<String, String> parentLoop = parentLoopMap.get(node);
+                    if (parentLoop != null) {
+                        parentLoop.put("loopWireway", newWireType);
+                        updatedGauges.put(parentLoop.get("id"), calculated);
+                    }
+                }
+            }
+            // 类型3和5: 更新 配电单元->配电单元 回路
+            if ("配电单元".equals(nodeType)) {
+                String parent = parentMap.get(node);
+                if (parent == null) {
+                    continue;
+                }
+                String parentType = appTypeMap.get(parent);
+                // 父节点必须是配电单元才更新(不更新 发电/储电->配电单元)
+                if (!"配电单元".equals(parentType)) {
+                    continue;
+                }
+                double sum = 0;
+                for (Object[] child : children) {
+                    Map<String, String> loop = (Map<String, String>) child[1];
+                    String loopId = loop.get("id");
+                    if (loopId != null && updatedGauges.containsKey(loopId)) {
+                        sum += updatedGauges.get(loopId);
+                    } else {
+                        sum += extractWireGauge(loop.get("loopWireway"));
+                    }
+                }
+                double calculated = applyWireCoefficient(sum);
+                String newWireType = findClosestWireType(calculated);
+                if (newWireType != null) {
+                    Map<String, String> parentLoop = parentLoopMap.get(node);
+                    if (parentLoop != null) {
+                        parentLoop.put("loopWireway", newWireType);
+                        updatedGauges.put(parentLoop.get("id"), calculated);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 从导线选型字符串中提取线径(最后一段数字)
+     * 如 "FLRY-B 0.35" -> 0.35, "Dacar 462" -> 462.0
+     */
+    private double extractWireGauge(String loopWireway) {
+        if (loopWireway == null || loopWireway.trim().isEmpty()) {
+            return 0;
+        }
+        String[] split = loopWireway.trim().split("\\s+");
+        if (split.length < 2) {
+            return 0;
+        }
+        try {
+            return Double.parseDouble(split[split.length - 1]);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * 根据线径总和区间应用系数
+     * 0~45A -> range0to45A(默认0.7), 45~90A -> range45to90A(默认0.6), >90A ->
+     * rangeAbove90A(默认0.5)
+     */
+    private double applyWireCoefficient(double sum) {
+        double coeff;
+        if (sum <= 45) {
+            coeff = range0to45A != null ? range0to45A : 0.7;
+        } else if (sum <= 90) {
+            coeff = range45to90A != null ? range45to90A : 0.6;
+        } else {
+            coeff = rangeAbove90A != null ? rangeAbove90A : 0.5;
+        }
+        return sum * coeff;
+    }
+
+    /**
+     * 从所有导线选型中找线径最贴近计算值的导线选型
+     */
+    private String findClosestWireType(double calculatedValue) {
+        Map<String, Map<String, String>> library = ProjectCircuitInfoOutput.elecFixedLocationLibrary;
+        if (library == null || library.isEmpty()) {
+            return null;
+        }
+        String bestType = null;
+        double bestDiff = Double.MAX_VALUE;
+        for (String wireType : library.keySet()) {
+            double gauge = extractWireGauge(wireType);
+            if (gauge <= 0) {
+                continue;
+            }
+            double diff = Math.abs(gauge - calculatedValue);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                bestType = wireType;
+            }
+        }
+        return bestType;
+    }
+
+    /**
+     * 修复 +/- 同名用电器同控制器约束
+     * 找到 startApp 名称以 + 或 - 结尾的回路，同基名的必须连接同一个控制器
+     * 取这些回路可连接用电器(startConnEndApps)的交集，选一个控制器类型的用电器
+     */
+    private void fixPlusMinusControllerConstraint(List<Map<String, String>> loopInfos,
+            List<Map<String, String>> appPositions) {
+        if (loopInfos == null || loopInfos.isEmpty() || appPositions == null) {
+            return;
+        }
+        // 构建用电器类型映射
+        Map<String, String> appTypeMap = new HashMap<>();
+        for (Map<String, String> app : appPositions) {
+            String name = app.get("appName");
+            String type = app.get("appType");
+            if (name != null && type != null) {
+                appTypeMap.put(name, type);
+            }
+        }
+        // 按基名分组: baseName -> [(loop, suffix)]
+        Map<String, List<Object[]>> plusMinusGroups = new HashMap<>();
+        for (Map<String, String> loop : loopInfos) {
+            String startApp = loop.get("startApp");
+            if (startApp == null || startApp.length() < 2) {
+                continue;
+            }
+            char lastChar = startApp.charAt(startApp.length() - 1);
+            if (lastChar == '+' || lastChar == '-') {
+                String baseName = startApp.substring(0, startApp.length() - 1);
+                plusMinusGroups.computeIfAbsent(baseName, k -> new ArrayList<>())
+                        .add(new Object[] { loop, String.valueOf(lastChar) });
+            }
+        }
+        // 对每个 +/- 分组进行处理
+        for (Map.Entry<String, List<Object[]>> entry : plusMinusGroups.entrySet()) {
+            List<Object[]> group = entry.getValue();
+            if (group.size() < 2) {
+                continue;
+            }
+            // 取所有回路 startConnEndApps 的交集
+            Set<String> intersection = null;
+            for (Object[] item : group) {
+                Map<String, String> loop = (Map<String, String>) item[0];
+                String connEndApps = loop.get("startConnEndApps");
+                if (connEndApps == null || connEndApps.trim().isEmpty()) {
+                    intersection = null;
+                    break;
+                }
+                Set<String> connSet = new HashSet<>();
+                for (String name : connEndApps.split(",")) {
+                    String trimmed = name.trim();
+                    if (!trimmed.isEmpty()) {
+                        connSet.add(trimmed);
+                    }
+                }
+                if (intersection == null) {
+                    intersection = new HashSet<>(connSet);
+                } else {
+                    intersection.retainAll(connSet);
+                }
+            }
+            if (intersection == null || intersection.isEmpty()) {
+                continue;
+            }
+            // 从交集中筛选控制器类型
+            String selectedController = null;
+            for (String candidate : intersection) {
+                if ("控制器".equals(appTypeMap.get(candidate))) {
+                    selectedController = candidate;
+                    break;
+                }
+            }
+            if (selectedController == null) {
+                continue;
+            }
+            // 将所有同组回路的 endApp 设为同一个控制器
+            for (Object[] item : group) {
+                Map<String, String> loop = (Map<String, String>) item[0];
+                loop.put("endApp", selectedController);
+            }
+        }
+    }
+
+    /**
      * 整车全量成本计算：根据回路连接关系和用电器位置，调用 projectCircuitInfoOutput 计算总成本/重量/长度。
      * 返回 null 表示计算失败，并打印具体原因以便定位。
      */
@@ -1976,6 +2355,10 @@ public class PowerDistributionDriveOptimization {
         Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
         jsonMapCopy.put("loopInfos", loopInfos);
         jsonMapCopy.put("appPositions", appPositions);
+        // 修复 +/- 同名用电器同控制器约束
+        fixPlusMinusControllerConstraint(loopInfos, appPositions);
+        // 导线选型更新（成本计算前）
+        updateWireSelectionForScheme(loopInfos, appPositions, currentOptimizeType);
         String result;
         try {
             result = projectCircuitInfoOutput.projectCircuitInfoOutput(
@@ -2070,6 +2453,10 @@ public class PowerDistributionDriveOptimization {
         Map<String, Object> tempJsonMap = new HashMap<>(jsonMap);
         tempJsonMap.put("loopInfos", loops);
         tempJsonMap.put("appPositions", apps);
+        // 修复 +/- 同名用电器同控制器约束
+        fixPlusMinusControllerConstraint(loops, apps);
+        // 导线选型更新（成本计算前）
+        updateWireSelectionForScheme(loops, apps, currentOptimizeType);
         String result = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(tempJsonMap));
         if (result == null || result.isEmpty())
             return slim;
