@@ -89,7 +89,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\电源分配优化日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\驱动分配优化日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -475,13 +475,12 @@ public class PowerDistributionDriveOptimization {
             } else if (resultList.size() == 1) {
                 topBest.add(resultList.get(0));
             }
-            // base 方案必须加入最后返回的 top
+            // base 方案必须加入最后返回的 top,去重后保证 base 在结果中
             Map<String, Object> baseScheme = buildBaseSchemeMap(originalResult, loopInfos, appPositions, jsonToMap);
             if (baseScheme != null) {
                 topBest.add(baseScheme);
             }
-            // 按 成本+用电器可变位置 去重
-            topBest = dedupByCostAndPositions(topBest);
+            topBest = ensureBaseAndDedup(topBest, baseScheme);
             System.out.println("枚举总耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
             // 最终输出前：为 top 方案补齐完整整车计算结果
             List<Map<String, Object>> enriched = new ArrayList<>();
@@ -773,13 +772,12 @@ public class PowerDistributionDriveOptimization {
             origMap.put("成本", parseOriginalCost(originalResult, jsonToMap));
             currentTopBest.add(origMap);
         }
-        // base 方案必须加入最后返回的 top
+        // base 方案必须加入最后返回的 top,去重后保证 base 在结果中
         Map<String, Object> baseSchemeFinal = buildBaseSchemeMap(originalResult, loopInfos, appPositions, jsonToMap);
         if (baseSchemeFinal != null) {
             currentTopBest.add(baseSchemeFinal);
         }
-        // 按 成本+用电器可变位置 去重
-        currentTopBest = dedupByCostAndPositions(currentTopBest);
+        currentTopBest = ensureBaseAndDedup(currentTopBest, baseSchemeFinal);
 
         List<Map<String, Object>> enrichedTopBest = new ArrayList<>();
         for (Map<String, Object> slim : currentTopBest) {
@@ -2018,6 +2016,59 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
+     * 去重后保证 base 方案在最终返回结果中,并按是否有更优方案决定返回策略。
+     * - 没有比 base 更优的方案: 只返回 base 方案
+     * - 有更优方案: 确保 base 在结果中(被去重去掉则加回),并取 top TopNumber
+     *
+     * @param schemes    去重前的方案列表(已包含 base 方案)
+     * @param baseScheme base 方案(可能为 null)
+     * @return 最终方案列表
+     */
+    private List<Map<String, Object>> ensureBaseAndDedup(List<Map<String, Object>> schemes,
+            Map<String, Object> baseScheme) {
+        if (baseScheme == null) {
+            return dedupByCostAndPositions(schemes);
+        }
+        // 先按 成本+位置 去重
+        List<Map<String, Object>> deduped = dedupByCostAndPositions(schemes);
+        String baseKey = buildCostAndPositionKey(baseScheme);
+        Object baseCostObj = ((Map<String, Object>) baseScheme.get("成本")).get("总成本");
+        double baseCost = Double.parseDouble(baseCostObj.toString());
+        // 检查 base 是否在去重结果中,以及是否存在比 base 更优的方案
+        boolean baseInResult = false;
+        boolean hasBetter = false;
+        for (Map<String, Object> scheme : deduped) {
+            if (buildCostAndPositionKey(scheme).equals(baseKey)) {
+                baseInResult = true;
+                continue;
+            }
+            Object costObj = scheme.get("成本");
+            if (costObj instanceof Map) {
+                Object v = ((Map<String, Object>) costObj).get("总成本");
+                if (v != null && Double.parseDouble(v.toString()) < baseCost) {
+                    hasBetter = true;
+                }
+            }
+        }
+        if (!hasBetter) {
+            // 没有比 base 更优的方案,只返回 base
+            System.out.println("[兜底] 没有比 base 更优的方案,只返回 base 方案");
+            List<Map<String, Object>> onlyBase = new ArrayList<>();
+            onlyBase.add(baseScheme);
+            return onlyBase;
+        }
+        // 有更优方案:确保 base 在结果中(去重可能去掉了与 base 等价的方案)
+        if (!baseInResult) {
+            deduped.add(baseScheme);
+        }
+        // 取 top TopNumber
+        if (deduped.size() > TopNumber) {
+            deduped = new FindBest().findBest(deduped, "成本", TopNumber);
+        }
+        return deduped;
+    }
+
+    /**
      * 构造成本+可变位置的指纹 key
      */
     private String buildCostAndPositionKey(Map<String, Object> scheme) {
@@ -2143,36 +2194,44 @@ public class PowerDistributionDriveOptimization {
         boolean updateController = "5".equals(optimizeType);
         for (String node : bfsOrder) {
             String nodeType = appTypeMap.get(node);
-            List<Object[]> children = treeChildren.get(node);
-            if (children == null || children.isEmpty()) {
+            // 按回路获取子回路: 从邻接表排除到parent的回路
+            // (用电器可能连接多个配电单元,都应纳入各自的上游选型计算)
+            List<Object[]> allNeighbors = adjacency.get(node);
+            if (allNeighbors == null || allNeighbors.isEmpty()) {
+                continue;
+            }
+            Map<String, String> parentLoopForNode = parentLoopMap.get(node);
+            String parentLoopId = (parentLoopForNode != null) ? parentLoopForNode.get("id") : null;
+            List<Object[]> children = new ArrayList<>();
+            for (Object[] edge : allNeighbors) {
+                Map<String, String> loop = (Map<String, String>) edge[1];
+                String loopId = loop.get("id");
+                if (parentLoopId != null && parentLoopId.equals(loopId)) {
+                    continue;
+                }
+                // 子回路必须是配电回路或驱动回路才参与累加
+                if (!isValidLoopAttr(loop)) {
+                    continue;
+                }
+                children.add(edge);
+            }
+            if (children.isEmpty()) {
                 continue;
             }
             // 类型5: 更新 配电单元->控制器 回路
             if (updateController && "控制器".equals(nodeType)) {
-                double sum = 0;
-                for (Object[] child : children) {
-                    Map<String, String> loop = (Map<String, String>) child[1];
-                    sum += extractWireGauge(loop.get("loopWireway"));
-                }
-                double calculated = applyWireCoefficient(sum);
-                String newWireType = findClosestWireType(calculated);
-                if (newWireType != null) {
-                    Map<String, String> parentLoop = parentLoopMap.get(node);
-                    if (parentLoop != null) {
-                        parentLoop.put("loopWireway", newWireType);
-                        updatedGauges.put(parentLoop.get("id"), calculated);
-                    }
-                }
-            }
-            // 类型3和5: 更新 配电单元->配电单元 回路
-            if ("配电单元".equals(nodeType)) {
                 String parent = parentMap.get(node);
                 if (parent == null) {
                     continue;
                 }
                 String parentType = appTypeMap.get(parent);
-                // 父节点必须是配电单元才更新(不更新 发电/储电->配电单元)
-                if (!"配电单元".equals(parentType)) {
+                // 源头(发电/储电)连接的回路不更新
+                if ("发电单元".equals(parentType) || "储电单元".equals(parentType)) {
+                    continue;
+                }
+                Map<String, String> parentLoop = parentLoopMap.get(node);
+                // 要更新的回路属性必须是配电回路或驱动回路
+                if (parentLoop == null || !isValidLoopAttr(parentLoop)) {
                     continue;
                 }
                 double sum = 0;
@@ -2188,14 +2247,55 @@ public class PowerDistributionDriveOptimization {
                 double calculated = applyWireCoefficient(sum);
                 String newWireType = findClosestWireType(calculated);
                 if (newWireType != null) {
-                    Map<String, String> parentLoop = parentLoopMap.get(node);
-                    if (parentLoop != null) {
-                        parentLoop.put("loopWireway", newWireType);
-                        updatedGauges.put(parentLoop.get("id"), calculated);
+                    parentLoop.put("loopWireway", newWireType);
+                    updatedGauges.put(parentLoop.get("id"), calculated);
+                }
+            }
+            // 类型3和5: 更新 配电单元->配电单元 回路
+            if ("配电单元".equals(nodeType)) {
+                String parent = parentMap.get(node);
+                if (parent == null) {
+                    continue;
+                }
+                String parentType = appTypeMap.get(parent);
+                // 父节点必须是配电单元才更新(不更新 发电/储电->配电单元)
+                if (!"配电单元".equals(parentType)) {
+                    continue;
+                }
+                Map<String, String> parentLoop = parentLoopMap.get(node);
+                // 要更新的回路属性必须是配电回路或驱动回路
+                if (parentLoop == null || !isValidLoopAttr(parentLoop)) {
+                    continue;
+                }
+                double sum = 0;
+                for (Object[] child : children) {
+                    Map<String, String> loop = (Map<String, String>) child[1];
+                    String loopId = loop.get("id");
+                    if (loopId != null && updatedGauges.containsKey(loopId)) {
+                        sum += updatedGauges.get(loopId);
+                    } else {
+                        sum += extractWireGauge(loop.get("loopWireway"));
                     }
+                }
+                double calculated = applyWireCoefficient(sum);
+                String newWireType = findClosestWireType(calculated);
+                if (newWireType != null) {
+                    parentLoop.put("loopWireway", newWireType);
+                    updatedGauges.put(parentLoop.get("id"), calculated);
                 }
             }
         }
+    }
+
+    /**
+     * 判断回路属性是否为配电回路或驱动回路(只有这两种属性参与累加和更新)
+     */
+    private boolean isValidLoopAttr(Map<String, String> loop) {
+        if (loop == null) {
+            return false;
+        }
+        String attr = loop.get("loopAttr");
+        return "配电回路".equals(attr) || "驱动回路".equals(attr);
     }
 
     /**
@@ -2365,8 +2465,9 @@ public class PowerDistributionDriveOptimization {
                     objectMapper.writeValueAsString(jsonMapCopy));
         } catch (Exception ex) {
             // 拓扑/数据异常：典型场景是用电器位置没绑 / 回路 id 找不到 / 位置点不在图上
-            System.out.println("[computeFullCost] 调用 projectCircuitInfoOutput 抛异常: " + ex.getClass().getSimpleName()
-                    + "  msg=" + ex.getMessage());
+            // System.out.println("[computeFullCost] 调用 projectCircuitInfoOutput 抛异常: " +
+            // ex.getClass().getSimpleName()
+            // + " msg=" + ex.getMessage());
             return null;
         }
         if (result == null || result.isEmpty()) {
@@ -3367,8 +3468,9 @@ public class PowerDistributionDriveOptimization {
                 0, varKeys, currentAssignment, usedEndApps,
                 total, overflow, loopInfos, loopById, elecChangeablePosition);
 
-        long totalCombinations = overflow[0] ? caseNumber + 1L : total[0];
-        System.out.println("可行方案总数（含约束）: " + totalCombinations);
+        long totalCombinations = total[0];
+        System.out.println("可行方案总数（含约束）: " + totalCombinations
+                + (overflow[0] ? " (已超过 caseNumber=" + caseNumber : ""));
         System.out.println("方案数计算耗时: " + (System.currentTimeMillis() - calcStart) + "ms");
         return totalCombinations;
     }

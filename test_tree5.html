@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>配电驱动优化树状结构</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Microsoft YaHei','SimHei',sans-serif; background:#fafafa; overflow:hidden; }
+  #toolbar { position:fixed; top:10px; left:10px; z-index:10; background:rgba(255,255,255,0.95);
+              padding:8px 12px; border-radius:6px; box-shadow:0 1px 4px rgba(0,0,0,0.15); }
+  #toolbar button { margin-right:6px; padding:4px 10px; cursor:pointer; border:1px solid #bdc3c7;
+                     background:#fff; border-radius:4px; font-size:12px; }
+  #toolbar button:hover { background:#ecf0f1; }
+  #legend { position:fixed; top:10px; right:10px; z-index:10; background:rgba(255,255,255,0.95);
+             padding:10px 14px; border-radius:6px; box-shadow:0 1px 4px rgba(0,0,0,0.15); font-size:12px; }
+  #legend .item { display:flex; align-items:center; margin:3px 0; }
+  #legend .swatch { width:14px; height:14px; border-radius:3px; margin-right:6px; border:1px solid #2c3e50; }
+  #title { position:fixed; bottom:10px; left:50%; transform:translateX(-50%); z-index:10;
+            background:rgba(255,255,255,0.95); padding:6px 16px; border-radius:6px;
+            box-shadow:0 1px 4px rgba(0,0,0,0.15); font-size:13px; font-weight:bold; }
+  svg { display:block; cursor:grab; width:100vw; height:100vh; }
+  svg:active { cursor:grabbing; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button onclick="zoomFit()">适应窗口</button>
+  <button onclick="zoomIn()">放大</button>
+  <button onclick="zoomOut()">缩小</button>
+  <span style="margin-left:8px;color:#7f8c8d;font-size:11px;">滚轮缩放 / 拖拽平移</span>
+</div>
+<div id="legend">
+  <div class="item"><span class="swatch" style="background:#2ecc71"></span>发电单元</div>
+  <div class="item"><span class="swatch" style="background:#3498db"></span>储电单元</div>
+  <div class="item"><span class="swatch" style="background:#e67e22"></span>配电单元</div>
+  <div class="item"><span class="swatch" style="background:#9b59b6"></span>控制器</div>
+  <div class="item"><span class="swatch" style="background:#95a5a6"></span>用电器</div>
+  <div class="item"><span class="swatch" style="background:#e74c3c"></span>导线选型已更新</div>
+</div>
+<div id="title">配电驱动优化树状结构 (类型5) - 节点间标注回路导线选型 | 2 个父回路选型被更新(红色)</div>
+<svg id="treeSvg" viewBox="0 0 19140.0 760.0">
+  <g id="treeGroup">
+  <path d="M 9570.0,80.0 C 9570.0,80.0 9570.0,200.0 9570.0,200.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="9535.8" y="132.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="9570.0" y="144.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 9570.0,200.0 C 7360.0,200.0 7360.0,320.0 5150.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="7328.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="7360.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 8.0</text>
+  <path d="M 9570.0,200.0 C 11065.0,200.0 11065.0,320.0 12560.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="11033.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="11065.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 2.5</text>
+  <path d="M 9570.0,200.0 C 12235.0,200.0 12235.0,320.0 14900.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12203.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12235.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 1.0</text>
+  <path d="M 9570.0,200.0 C 12365.0,200.0 12365.0,320.0 15160.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12333.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12365.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 9570.0,200.0 C 12495.0,200.0 12495.0,320.0 15420.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12463.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12495.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 9570.0,200.0 C 12625.0,200.0 12625.0,320.0 15680.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12593.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12625.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 9570.0,200.0 C 12755.0,200.0 12755.0,320.0 15940.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12723.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12755.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 9570.0,200.0 C 12885.0,200.0 12885.0,320.0 16200.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12853.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12885.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 9570.0,200.0 C 13015.0,200.0 13015.0,320.0 16460.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12983.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13015.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 9570.0,200.0 C 13145.0,200.0 13145.0,320.0 16720.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13113.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13145.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 9570.0,200.0 C 13275.0,200.0 13275.0,320.0 16980.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13243.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13275.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 9570.0,200.0 C 13405.0,200.0 13405.0,320.0 17240.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13373.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13405.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 9570.0,200.0 C 13535.0,200.0 13535.0,320.0 17500.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13503.5" y="252.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13535.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 9570.0,200.0 C 13665.0,200.0 13665.0,320.0 17760.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13630.8" y="252.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13665.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 9570.0,200.0 C 13795.0,200.0 13795.0,320.0 18020.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13760.8" y="252.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13795.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 9570.0,200.0 C 13925.0,200.0 13925.0,320.0 18280.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13890.8" y="252.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13925.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 9570.0,200.0 C 14055.0,200.0 14055.0,320.0 18540.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="14020.8" y="252.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="14055.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 9570.0,200.0 C 14185.0,200.0 14185.0,320.0 18800.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="14150.8" y="252.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="14185.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 9570.0,200.0 C 14315.0,200.0 14315.0,320.0 19060.0,320.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="14280.8" y="252.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="14315.0" y="264.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 5150.0,320.0 C 3720.0,320.0 3720.0,440.0 2290.0,440.0" stroke="#e74c3c" stroke-width="2.5" fill="none"/>
+  <rect x="3661.0" y="372.0" width="118.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="3720.0" y="384.0" text-anchor="middle" font-size="10" fill="#e74c3c" font-weight="bold">FLRY-B 8.0 (建议:7.17)</text>
+  <path d="M 5150.0,320.0 C 6190.0,320.0 6190.0,440.0 7230.0,440.0" stroke="#e74c3c" stroke-width="2.5" fill="none"/>
+  <rect x="6133.8" y="372.0" width="112.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="6190.0" y="384.0" text-anchor="middle" font-size="10" fill="#e74c3c" font-weight="bold">FLRY-B 10 (建议:5.98)</text>
+  <path d="M 5150.0,320.0 C 7555.0,320.0 7555.0,440.0 9960.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="7523.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="7555.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 6.0</text>
+  <path d="M 5150.0,320.0 C 7685.0,320.0 7685.0,440.0 10220.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="7653.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="7685.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 6.0</text>
+  <path d="M 12560.0,320.0 C 11520.0,320.0 11520.0,440.0 10480.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="11488.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="11520.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 8.0</text>
+  <path d="M 12560.0,320.0 C 11650.0,320.0 11650.0,440.0 10740.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="11618.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="11650.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 6.0</text>
+  <path d="M 12560.0,320.0 C 11780.0,320.0 11780.0,440.0 11000.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="11748.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="11780.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 6.0</text>
+  <path d="M 12560.0,320.0 C 11910.0,320.0 11910.0,440.0 11260.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="11878.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="11910.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 4.0</text>
+  <path d="M 12560.0,320.0 C 12040.0,320.0 12040.0,440.0 11520.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12008.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12040.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 4.0</text>
+  <path d="M 12560.0,320.0 C 12170.0,320.0 12170.0,440.0 11780.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12138.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12170.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 2.0</text>
+  <path d="M 12560.0,320.0 C 12300.0,320.0 12300.0,440.0 12040.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12271.2" y="372.0" width="57.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12300.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 10</text>
+  <path d="M 12560.0,320.0 C 12430.0,320.0 12430.0,440.0 12300.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12398.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12430.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 1.0</text>
+  <path d="M 12560.0,320.0 C 12560.0,320.0 12560.0,440.0 12560.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12528.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12560.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 1.0</text>
+  <path d="M 12560.0,320.0 C 12690.0,320.0 12690.0,440.0 12820.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12655.8" y="372.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12690.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.75</text>
+  <path d="M 12560.0,320.0 C 12820.0,320.0 12820.0,440.0 13080.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12788.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12820.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 12560.0,320.0 C 12950.0,320.0 12950.0,440.0 13340.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="12918.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="12950.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 12560.0,320.0 C 13080.0,320.0 13080.0,440.0 13600.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13048.5" y="372.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13080.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 12560.0,320.0 C 13210.0,320.0 13210.0,440.0 13860.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13175.8" y="372.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13210.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 12560.0,320.0 C 13340.0,320.0 13340.0,440.0 14120.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13305.8" y="372.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13340.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 12560.0,320.0 C 13470.0,320.0 13470.0,440.0 14380.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13435.8" y="372.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13470.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 12560.0,320.0 C 13600.0,320.0 13600.0,440.0 14640.0,440.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="13565.8" y="372.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="13600.0" y="384.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 2290.0,440.0 C 1315.0,440.0 1315.0,560.0 340.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="1283.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="1315.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 2.5</text>
+  <path d="M 2290.0,440.0 C 1575.0,440.0 1575.0,560.0 860.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="1543.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="1575.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 1.0</text>
+  <path d="M 2290.0,440.0 C 1705.0,440.0 1705.0,560.0 1120.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="1673.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="1705.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 1.0</text>
+  <path d="M 2290.0,440.0 C 1835.0,440.0 1835.0,560.0 1380.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="1803.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="1835.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 2290.0,440.0 C 1965.0,440.0 1965.0,560.0 1640.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="1933.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="1965.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 2290.0,440.0 C 2095.0,440.0 2095.0,560.0 1900.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="2063.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="2095.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 2290.0,440.0 C 2225.0,440.0 2225.0,560.0 2160.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="2193.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="2225.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 2290.0,440.0 C 2355.0,440.0 2355.0,560.0 2420.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="2323.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="2355.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 2290.0,440.0 C 2485.0,440.0 2485.0,560.0 2680.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="2453.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="2485.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 2290.0,440.0 C 2615.0,440.0 2615.0,560.0 2940.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="2583.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="2615.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 2290.0,440.0 C 2745.0,440.0 2745.0,560.0 3200.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="2713.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="2745.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 2290.0,440.0 C 2875.0,440.0 2875.0,560.0 3460.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="2840.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="2875.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 2290.0,440.0 C 3005.0,440.0 3005.0,560.0 3720.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="2970.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="3005.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 2290.0,440.0 C 3135.0,440.0 3135.0,560.0 3980.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="3100.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="3135.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 2290.0,440.0 C 3265.0,440.0 3265.0,560.0 4240.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="3230.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="3265.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 2290.0,440.0 C 3395.0,440.0 3395.0,560.0 4500.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="3360.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="3395.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 5995.0,440.0 5995.0,560.0 4760.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="5963.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="5995.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 1.0</text>
+  <path d="M 7230.0,440.0 C 6125.0,440.0 6125.0,560.0 5020.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="6093.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="6125.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 7230.0,440.0 C 6255.0,440.0 6255.0,560.0 5280.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="6223.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="6255.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 7230.0,440.0 C 6385.0,440.0 6385.0,560.0 5540.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="6353.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="6385.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 7230.0,440.0 C 6515.0,440.0 6515.0,560.0 5800.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="6483.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="6515.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 7230.0,440.0 C 6645.0,440.0 6645.0,560.0 6060.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="6613.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="6645.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 7230.0,440.0 C 6775.0,440.0 6775.0,560.0 6320.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="6743.5" y="492.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="6775.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.5</text>
+  <path d="M 7230.0,440.0 C 6905.0,440.0 6905.0,560.0 6580.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="6870.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="6905.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 7035.0,440.0 7035.0,560.0 6840.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="7000.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="7035.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 7165.0,440.0 7165.0,560.0 7100.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="7130.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="7165.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 7295.0,440.0 7295.0,560.0 7360.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="7260.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="7295.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 7425.0,440.0 7425.0,560.0 7620.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="7390.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="7425.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 7555.0,440.0 7555.0,560.0 7880.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="7520.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="7555.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 7685.0,440.0 7685.0,560.0 8140.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="7650.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="7685.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 7815.0,440.0 7815.0,560.0 8400.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="7780.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="7815.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 7945.0,440.0 7945.0,560.0 8660.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="7910.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="7945.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 8075.0,440.0 8075.0,560.0 8920.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="8040.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="8075.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 8205.0,440.0 8205.0,560.0 9180.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="8170.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="8205.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 8335.0,440.0 8335.0,560.0 9440.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="8300.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="8335.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 7230.0,440.0 C 8465.0,440.0 8465.0,560.0 9700.0,560.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="8430.8" y="492.0" width="68.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="8465.0" y="504.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 0.35</text>
+  <path d="M 340.0,560.0 C 210.0,560.0 210.0,680.0 80.0,680.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="178.5" y="612.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="210.0" y="624.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 4.0</text>
+  <path d="M 340.0,560.0 C 340.0,560.0 340.0,680.0 340.0,680.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="308.5" y="612.0" width="63.0" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="340.0" y="624.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 4.0</text>
+  <path d="M 340.0,560.0 C 470.0,560.0 470.0,680.0 600.0,680.0" stroke="#95a5a6" stroke-width="1.5" fill="none"/>
+  <rect x="441.2" y="612.0" width="57.5" height="16" fill="white" opacity="0.88" rx="3"/>
+  <text x="470.0" y="624.0" text-anchor="middle" font-size="10" fill="#95a5a6" font-weight="normal">FLRY-B 10</text>
+  <rect x="9525.0" y="63.0" width="90.0" height="34" rx="6" fill="#2ecc71" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="9570.0" y="77.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">CCU</text>
+  <text x="9570.0" y="90.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">发电单元</text>
+  <rect x="9525.0" y="183.0" width="90.0" height="34" rx="6" fill="#9b59b6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="9570.0" y="197.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RZCU</text>
+  <text x="9570.0" y="210.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">控制器</text>
+  <rect x="5105.0" y="303.0" width="90.0" height="34" rx="6" fill="#e67e22" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="5150.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">BEC</text>
+  <text x="5150.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">配电单元</text>
+  <rect x="2245.0" y="423.0" width="90.0" height="34" rx="6" fill="#9b59b6" stroke="#e74c3c" stroke-width="2.5"/>
+  <text x="2290.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RHZCU</text>
+  <text x="2290.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">控制器</text>
+  <rect x="295.0" y="543.0" width="90.0" height="34" rx="6" fill="#e67e22" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="340.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">AEC</text>
+  <text x="340.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">配电单元</text>
+  <rect x="35.0" y="663.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="80.0" y="677.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">FLEMB</text>
+  <text x="80.0" y="690.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="295.0" y="663.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="340.0" y="677.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RREMB</text>
+  <text x="340.0" y="690.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="555.0" y="663.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="600.0" y="677.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">FWAS</text>
+  <text x="600.0" y="690.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="814.0" y="543.0" width="92.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="860.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">PwrSkt_F</text>
+  <text x="860.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="1075.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="1120.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">CF</text>
+  <text x="1120.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="1335.0" y="543.0" width="90.0" height="34" rx="6" fill="#9b59b6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="1380.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">SDM</text>
+  <text x="1380.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">控制器</text>
+  <rect x="1595.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="1640.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">FRSLMM</text>
+  <text x="1640.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="1813.5" y="543.0" width="173.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="1900.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">SeatBkVntngMot_FR</text>
+  <text x="1900.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="2115.0" y="543.0" width="90.0" height="34" rx="6" fill="#9b59b6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="2160.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">IPD</text>
+  <text x="2160.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">控制器</text>
+  <rect x="2375.0" y="543.0" width="90.0" height="34" rx="6" fill="#9b59b6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="2420.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DSSAD</text>
+  <text x="2420.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">控制器</text>
+  <rect x="2635.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="2680.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">4D FDR</text>
+  <text x="2680.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="2895.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="2940.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">FLIDAR</text>
+  <text x="2940.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="3155.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="3200.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">IOT设备3</text>
+  <text x="3200.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="3382.5" y="543.0" width="155.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="3460.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DoorAmbtLamp_FR</text>
+  <text x="3460.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="3629.0" y="543.0" width="182.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="3720.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DoorSfcAmbtLamp_FR</text>
+  <text x="3720.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="3902.5" y="543.0" width="155.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="3980.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DoorAmbtLamp_RR</text>
+  <text x="3980.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="4149.0" y="543.0" width="182.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="4240.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DoorSfcAmbtLamp_RR</text>
+  <text x="4240.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="4431.5" y="543.0" width="137.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="4500.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">IPAmbtLamp_RH</text>
+  <text x="4500.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="7185.0" y="423.0" width="90.0" height="34" rx="6" fill="#9b59b6" stroke="#e74c3c" stroke-width="2.5"/>
+  <text x="7230.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">LHZCU</text>
+  <text x="7230.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">控制器</text>
+  <rect x="4715.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="4760.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">USBHub</text>
+  <text x="4760.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="4965.0" y="543.0" width="110.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="5020.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">CnsoUSB1_R</text>
+  <text x="5020.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="5235.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="5280.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">ETCM</text>
+  <text x="5280.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="5495.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="5540.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">FMPWC</text>
+  <text x="5540.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="5755.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="5800.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">FLSLMM</text>
+  <text x="5800.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="5973.5" y="543.0" width="173.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="6060.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">SeatBkVntngMot_FL</text>
+  <text x="6060.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="6275.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="6320.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DMC</text>
+  <text x="6320.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="6502.5" y="543.0" width="155.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="6580.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DoorAmbtLamp_FL</text>
+  <text x="6580.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="6749.0" y="543.0" width="182.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="6840.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DoorSfcAmbtLamp_FL</text>
+  <text x="6840.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="7022.5" y="543.0" width="155.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="7100.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DoorAmbtLamp_RL</text>
+  <text x="7100.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="7269.0" y="543.0" width="182.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="7360.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DoorSfcAmbtLamp_RL</text>
+  <text x="7360.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="7551.5" y="543.0" width="137.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="7620.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">IPAmbtLamp_LH</text>
+  <text x="7620.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="7835.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="7880.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RLSS</text>
+  <text x="7880.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="8095.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="8140.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">ClkSprg</text>
+  <text x="8140.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="8355.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="8400.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">BrkSw</text>
+  <text x="8400.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="8615.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="8660.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">NFCAM</text>
+  <text x="8660.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="8875.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="8920.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">FCD</text>
+  <text x="8920.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="9135.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="9180.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">IPKD</text>
+  <text x="9180.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="9395.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="9440.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">PHUD1</text>
+  <text x="9440.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="9655.0" y="543.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="9700.0" y="557.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">PHUD2</text>
+  <text x="9700.0" y="570.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="9915.0" y="423.0" width="90.0" height="34" rx="6" fill="#e67e22" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="9960.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">可选配电单元1</text>
+  <text x="9960.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">配电单元</text>
+  <rect x="10175.0" y="423.0" width="90.0" height="34" rx="6" fill="#e67e22" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="10220.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">可选配电单元2</text>
+  <text x="10220.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">配电单元</text>
+  <rect x="12515.0" y="303.0" width="90.0" height="34" rx="6" fill="#e67e22" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="12560.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">UEC</text>
+  <text x="12560.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">配电单元</text>
+  <rect x="10416.0" y="423.0" width="128.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="10480.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">PWMCoolngFan</text>
+  <text x="10480.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="10695.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="10740.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">SCM</text>
+  <text x="10740.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="10955.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="11000.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">SFA</text>
+  <text x="11000.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="11215.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="11260.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">FREMB</text>
+  <text x="11260.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="11475.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="11520.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RLEMB</text>
+  <text x="11520.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="11735.0" y="423.0" width="90.0" height="34" rx="6" fill="#9b59b6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="11780.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">AMP</text>
+  <text x="11780.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">控制器</text>
+  <rect x="11995.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="12040.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">FWA</text>
+  <text x="12040.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="12255.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="12300.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">LHA</text>
+  <text x="12300.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="12515.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="12560.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RHA</text>
+  <text x="12560.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="12775.0" y="423.0" width="90.0" height="34" rx="6" fill="#9b59b6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="12820.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">PICU</text>
+  <text x="12820.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">控制器</text>
+  <rect x="13035.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="13080.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">PEU</text>
+  <text x="13080.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="13295.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="13340.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">AGS1</text>
+  <text x="13340.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="13555.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="13600.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">AGS2</text>
+  <text x="13600.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="13815.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="13860.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">EAC</text>
+  <text x="13860.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="14075.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="14120.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DLC</text>
+  <text x="14120.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="14335.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="14380.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">FLUWBA</text>
+  <text x="14380.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="14595.0" y="423.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="14640.0" y="437.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">FRUWBA</text>
+  <text x="14640.0" y="450.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="14854.0" y="303.0" width="92.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="14900.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">PwrSkt_R</text>
+  <text x="14900.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="15115.0" y="303.0" width="90.0" height="34" rx="6" fill="#9b59b6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="15160.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">ESS</text>
+  <text x="15160.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">控制器</text>
+  <rect x="15333.5" y="303.0" width="173.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="15420.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">LVManuSrvcDscnctr</text>
+  <text x="15420.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="15635.0" y="303.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="15680.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">TC</text>
+  <text x="15680.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="15822.0" y="303.0" width="236.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="15940.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">SecRowSeatCshVntngMot_LH</text>
+  <text x="15940.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="16082.0" y="303.0" width="236.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="16200.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">SecRowSeatCshVntngMot_RH</text>
+  <text x="16200.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="16415.0" y="303.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="16460.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RLSLMM</text>
+  <text x="16460.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="16675.0" y="303.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="16720.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RRSLMM</text>
+  <text x="16720.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="16889.0" y="303.0" width="182.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="16980.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DoorPnlSeatFnSw_RL</text>
+  <text x="16980.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="17149.0" y="303.0" width="182.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="17240.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">DoorPnlSeatFnSw_RR</text>
+  <text x="17240.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="17454.0" y="303.0" width="92.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="17500.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">KickSnsr</text>
+  <text x="17500.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="17715.0" y="303.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="17760.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">TPMS</text>
+  <text x="17760.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="17975.0" y="303.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="18020.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">LHRDA</text>
+  <text x="18020.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="18235.0" y="303.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="18280.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RHRDA</text>
+  <text x="18280.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="18495.0" y="303.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="18540.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RLUWBA</text>
+  <text x="18540.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="18755.0" y="303.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="18800.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RRUWBA</text>
+  <text x="18800.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  <rect x="19015.0" y="303.0" width="90.0" height="34" rx="6" fill="#95a5a6" stroke="#2c3e50" stroke-width="1.5"/>
+  <text x="19060.0" y="317.0" text-anchor="middle" font-size="11" fill="white" font-weight="bold">RUWBA</text>
+  <text x="19060.0" y="330.0" text-anchor="middle" font-size="9" fill="white" opacity="0.85">用电器</text>
+  </g>
+</svg>
+<script>
+// 通过修改 SVG viewBox 实现缩放和平移,不依赖任何外部库
+const initialVB = { x:0, y:0, w:19140.0, h:760.0 };
+let vb = { ...initialVB };
+const svgEl = document.getElementById('treeSvg');
+
+function updateVB() {
+  svgEl.setAttribute('viewBox', vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h);
+}
+function zoomAt(cx, cy, factor) {
+  vb.w *= factor; vb.h *= factor;
+  vb.x = cx - (cx - vb.x) * factor;
+  vb.y = cy - (cy - vb.y) * factor;
+  updateVB();
+}
+function zoomFit() { vb = { ...initialVB }; updateVB(); }
+function zoomIn() { zoomAt(vb.x + vb.w/2, vb.y + vb.h/2, 0.8); }
+function zoomOut() { zoomAt(vb.x + vb.w/2, vb.y + vb.h/2, 1.25); }
+
+// 滚轮缩放(以鼠标位置为中心)
+svgEl.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  // 将屏幕坐标转为 SVG 坐标
+  const rect = svgEl.getBoundingClientRect();
+  const sx = (e.clientX - rect.left) / rect.width * vb.w + vb.x;
+  const sy = (e.clientY - rect.top) / rect.height * vb.h + vb.y;
+  const factor = e.deltaY > 0 ? 1.15 : 0.87;
+  zoomAt(sx, sy, factor);
+});
+
+// 拖拽平移
+let dragging = false, sx = 0, sy = 0, startVB = null;
+svgEl.addEventListener('mousedown', function(e) {
+  dragging = true; sx = e.clientX; sy = e.clientY; startVB = { ...vb };
+});
+window.addEventListener('mousemove', function(e) {
+  if (!dragging) return;
+  const rect = svgEl.getBoundingClientRect();
+  vb.x = startVB.x - (e.clientX - sx) * vb.w / rect.width;
+  vb.y = startVB.y - (e.clientY - sy) * vb.h / rect.height;
+  updateVB();
+});
+window.addEventListener('mouseup', function() { dragging = false; });
+
+updateVB();
+</script>
+</body>
+</html>
