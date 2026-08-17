@@ -115,24 +115,24 @@ public class main {
         //
         // 整车信息计算
 //                 File file1 = new
-//                 File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\回路属性检查.txt");
+//                 File("F:\office\idearProjects\project20251009\src\main\resources\BS4EM项目json优化设置.txt");
 //                 String jsonContent1 = new
 //                 String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
 //                 CircuitErrorOutput circuitErrorOutput=new CircuitErrorOutput();
 //                 circuitErrorOutput.circuitErrorOutput(jsonContent1);
 //        File file1 = new
-//                File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\入参.json");
+//                File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM项目json优化设置.txt");
 //        String jsonContent1 = new
 //                String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
 //        PowerTopoOptimizeErrorOutput circuitErrorOutput=new PowerTopoOptimizeErrorOutput();
 //        circuitErrorOutput.powerTopoOptimizeErrorOutput(jsonContent1);
         //配电驱动检测测试
-        File file1 = new
-                File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\入参.json");
-        String jsonContent1 = new
-                String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
-        PowerDistributionDriveErrorOuput circuitErrorOutput = new PowerDistributionDriveErrorOuput();
-        circuitErrorOutput.powerDistributionDriveErrorOuput(jsonContent1);
+//        File file1 = new
+//                File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\入参.json");
+//        String jsonContent1 = new
+//                String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
+//        PowerDistributionDriveErrorOuput circuitErrorOutput = new PowerDistributionDriveErrorOuput();
+//        circuitErrorOutput.powerDistributionDriveErrorOuput(jsonContent1);
         // File file2 = new File("data/DataCoopWithEB/123.txt");
         // File file2 = new File("data/DataCoopWithEB/用电器位置.txt");
         // String jsonContent2 = new

@@ -89,7 +89,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\驱动分配优化日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\电源分配优化日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -2061,9 +2061,14 @@ public class PowerDistributionDriveOptimization {
         if (!baseInResult) {
             deduped.add(baseScheme);
         }
-        // 取 top TopNumber
+        // 取 top TopNumber: 先移除 base,取 top (TopNumber-1),再加回 base
+        // 避免 findBest 按成本排序时把成本最高的 base 淘汰
         if (deduped.size() > TopNumber) {
-            deduped = new FindBest().findBest(deduped, "成本", TopNumber);
+            deduped.remove(baseScheme);
+            int topN = Math.max(1, TopNumber - 1);
+            List<Map<String, Object>> topBest = new FindBest().findBest(deduped, "成本", topN);
+            topBest.add(baseScheme);
+            deduped = topBest;
         }
         return deduped;
     }
@@ -2141,18 +2146,96 @@ public class PowerDistributionDriveOptimization {
             adjacency.computeIfAbsent(startApp, k -> new ArrayList<>()).add(new Object[] { endApp, loop });
             adjacency.computeIfAbsent(endApp, k -> new ArrayList<>()).add(new Object[] { startApp, loop });
         }
-        // 查找根节点: 优先发电单元，无发电单元才用储电单元
-        String root = null;
+        // 识别隔离模块: 把图按隔离模块分割成多个子图(逻辑断开,非物理断开)
+        Set<String> isolatorSet = new HashSet<>();
         for (Map.Entry<String, String> entry : appTypeMap.entrySet()) {
-            if ("发电单元".equals(entry.getValue())) {
-                root = entry.getKey();
+            if ("隔离模块".equals(entry.getValue())) {
+                isolatorSet.add(entry.getKey());
+            }
+        }
+        // 构建过滤后的邻接表: 去掉涉及隔离模块的回路
+        Map<String, List<Object[]>> filteredAdjacency = new HashMap<>();
+        for (Map.Entry<String, List<Object[]>> entry : adjacency.entrySet()) {
+            String node = entry.getKey();
+            if (isolatorSet.contains(node)) {
+                continue;
+            }
+            for (Object[] edge : entry.getValue()) {
+                String neighbor = (String) edge[0];
+                if (isolatorSet.contains(neighbor)) {
+                    continue;
+                }
+                filteredAdjacency.computeIfAbsent(node, k -> new ArrayList<>()).add(edge);
+            }
+        }
+        // 连通分量分析: 把过滤后的图分成多个子图
+        Set<String> allNodes = new HashSet<>(filteredAdjacency.keySet());
+        for (List<Object[]> edges : filteredAdjacency.values()) {
+            for (Object[] edge : edges) {
+                allNodes.add((String) edge[0]);
+            }
+        }
+        Set<String> globalVisited = new HashSet<>();
+        for (String node : allNodes) {
+            if (globalVisited.contains(node)) {
+                continue;
+            }
+            // BFS 找连通分量
+            Set<String> component = new LinkedHashSet<>();
+            LinkedList<String> queue = new LinkedList<>();
+            queue.add(node);
+            component.add(node);
+            while (!queue.isEmpty()) {
+                String cur = queue.poll();
+                List<Object[]> neighbors = filteredAdjacency.get(cur);
+                if (neighbors == null) {
+                    continue;
+                }
+                for (Object[] edge : neighbors) {
+                    String neighbor = (String) edge[0];
+                    if (!component.contains(neighbor)) {
+                        component.add(neighbor);
+                        queue.add(neighbor);
+                    }
+                }
+            }
+            globalVisited.addAll(component);
+            // 检查该子图是否含发电/储电单元
+            String root = null;
+            for (String n : component) {
+                String t = appTypeMap.get(n);
+                if ("发电单元".equals(t) || "储电单元".equals(t)) {
+                    root = n;
+                    break;
+                }
+            }
+            if (root == null) {
+                continue;
+            }
+            // 对该含发/储的子图更新导线选型
+            updateWireSelectionForSubgraph(component, filteredAdjacency, appTypeMap, optimizeType);
+        }
+    }
+
+    /**
+     * 对单个子图更新导线选型
+     * 在子图内找根节点(发电/储电单元), BFS建树, 反向BFS更新回路导线选型
+     * 只处理含发电/储电单元的子图,无发/储的子图不调用此方法
+     */
+    private void updateWireSelectionForSubgraph(Set<String> subgraphNodes,
+            Map<String, List<Object[]>> adjacency, Map<String, String> appTypeMap, String optimizeType) {
+        // 在子图内查找根节点: 优先发电单元, 无则储电单元
+        String root = null;
+        for (String node : subgraphNodes) {
+            if ("发电单元".equals(appTypeMap.get(node))) {
+                root = node;
                 break;
             }
         }
         if (root == null) {
-            for (Map.Entry<String, String> entry : appTypeMap.entrySet()) {
-                if ("储电单元".equals(entry.getValue())) {
-                    root = entry.getKey();
+            for (String node : subgraphNodes) {
+                if ("储电单元".equals(appTypeMap.get(node))) {
+                    root = node;
                     break;
                 }
             }
@@ -2161,7 +2244,6 @@ public class PowerDistributionDriveOptimization {
             return;
         }
         // BFS构建有向树: parent -> [(child, loop)]
-        Map<String, List<Object[]>> treeChildren = new HashMap<>();
         Map<String, String> parentMap = new HashMap<>();
         Map<String, Map<String, String>> parentLoopMap = new HashMap<>();
         Set<String> visited = new LinkedHashSet<>();
@@ -2179,7 +2261,6 @@ public class PowerDistributionDriveOptimization {
                 Map<String, String> loop = (Map<String, String>) edge[1];
                 if (!visited.contains(neighbor)) {
                     visited.add(neighbor);
-                    treeChildren.computeIfAbsent(node, k -> new ArrayList<>()).add(new Object[] { neighbor, loop });
                     parentMap.put(neighbor, node);
                     parentLoopMap.put(neighbor, loop);
                     queue.add(neighbor);
@@ -2195,7 +2276,6 @@ public class PowerDistributionDriveOptimization {
         for (String node : bfsOrder) {
             String nodeType = appTypeMap.get(node);
             // 按回路获取子回路: 从邻接表排除到parent的回路
-            // (用电器可能连接多个配电单元,都应纳入各自的上游选型计算)
             List<Object[]> allNeighbors = adjacency.get(node);
             if (allNeighbors == null || allNeighbors.isEmpty()) {
                 continue;
@@ -2209,7 +2289,6 @@ public class PowerDistributionDriveOptimization {
                 if (parentLoopId != null && parentLoopId.equals(loopId)) {
                     continue;
                 }
-                // 子回路必须是配电回路或驱动回路才参与累加
                 if (!isValidLoopAttr(loop)) {
                     continue;
                 }
@@ -2218,19 +2297,18 @@ public class PowerDistributionDriveOptimization {
             if (children.isEmpty()) {
                 continue;
             }
-            // 类型5: 更新 配电单元->控制器 回路
+            // 自底向上更新父回路导线选型: node 到 parent 的回路
+            // 类型5: 控制器节点,更新其到父节点(配电单元)的父回路
             if (updateController && "控制器".equals(nodeType)) {
                 String parent = parentMap.get(node);
                 if (parent == null) {
                     continue;
                 }
                 String parentType = appTypeMap.get(parent);
-                // 源头(发电/储电)连接的回路不更新
                 if ("发电单元".equals(parentType) || "储电单元".equals(parentType)) {
                     continue;
                 }
                 Map<String, String> parentLoop = parentLoopMap.get(node);
-                // 要更新的回路属性必须是配电回路或驱动回路
                 if (parentLoop == null || !isValidLoopAttr(parentLoop)) {
                     continue;
                 }
@@ -2251,19 +2329,17 @@ public class PowerDistributionDriveOptimization {
                     updatedGauges.put(parentLoop.get("id"), calculated);
                 }
             }
-            // 类型3和5: 更新 配电单元->配电单元 回路
+            // 类型3和5: 配电单元节点,更新其到父节点(配电单元)的父回路
             if ("配电单元".equals(nodeType)) {
                 String parent = parentMap.get(node);
                 if (parent == null) {
                     continue;
                 }
                 String parentType = appTypeMap.get(parent);
-                // 父节点必须是配电单元才更新(不更新 发电/储电->配电单元)
                 if (!"配电单元".equals(parentType)) {
                     continue;
                 }
                 Map<String, String> parentLoop = parentLoopMap.get(node);
-                // 要更新的回路属性必须是配电回路或驱动回路
                 if (parentLoop == null || !isValidLoopAttr(parentLoop)) {
                     continue;
                 }
@@ -2335,7 +2411,8 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 从所有导线选型中找线径最贴近计算值的导线选型
+     * 从导线选型库中找线径最贴近计算值的导线选型
+     * 只在 FLRY-B 开头的导线选型中查找
      */
     private String findClosestWireType(double calculatedValue) {
         Map<String, Map<String, String>> library = ProjectCircuitInfoOutput.elecFixedLocationLibrary;
@@ -2345,6 +2422,10 @@ public class PowerDistributionDriveOptimization {
         String bestType = null;
         double bestDiff = Double.MAX_VALUE;
         for (String wireType : library.keySet()) {
+            // 只考虑 FLRY-B 开头的导线选型
+            if (wireType == null || !wireType.startsWith("FLRY-B")) {
+                continue;
+            }
             double gauge = extractWireGauge(wireType);
             if (gauge <= 0) {
                 continue;
@@ -2576,8 +2657,8 @@ public class PowerDistributionDriveOptimization {
         map2.put("initializationScheme", isInitial);
         // 用户设置过变种的用电器信息
         map2.put("variantAppPositions", buildVariantAppList(apps));
-        // 移除内部使用的精简字段，不暴露给调用方
-        map2.remove("loopInfos");
+        // 保留 loopInfos(含已更新的导线选型)用于结果可视化对比
+        map2.put("loopInfos", loops);
         map2.remove("appPositions");
         return map2;
     }

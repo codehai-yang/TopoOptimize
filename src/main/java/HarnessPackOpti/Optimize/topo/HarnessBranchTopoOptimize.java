@@ -103,7 +103,7 @@ public class HarnessBranchTopoOptimize {
     public static List<List<String>> WareHouseTop = new ArrayList<>();
 
     // 是否启用AI
-    public static boolean whetherAI = false;
+    public static boolean whetherAI = true;
 
     // 当前方案的id
     private static String CaseId = null;
@@ -116,7 +116,7 @@ public class HarnessBranchTopoOptimize {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\入参.json");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志_2026_08_05.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         HarnessBranchTopoOptimize newHarnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
         long startTime = System.currentTimeMillis();
@@ -185,7 +185,8 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, String>> loopInfos = (List<Map<String, String>>) jsonMap.get("loopInfos");
         List<Map<String, String>> points = (List<Map<String, String>>) jsonMap.get("points");
         CaseId = caseInfo.get("id").toString();
-        optimizeRecordId = optimizeRecord.get("id").toString();
+//        optimizeRecordId = optimizeRecord.get("id").toString();
+        optimizeRecordId = "123";
         optimizeStopStatusStore.setKey(optimizeRecordId);
 
         // 整车信息计算
@@ -272,17 +273,9 @@ public class HarnessBranchTopoOptimize {
             // 实际也能 C↔B 转换(当前 C 可改 B)
             // ★ 第 5 段:镜像——前端只设 statusC="C" 不设 statusB,但 topologyStatusCode=B,
             // 实际也能 B↔C 转换(当前 B 可改 C)
-            String sT = edge.get("topologyStatusCode") != null ? edge.get("topologyStatusCode").toString() : "";
             if ((edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")) ||
                     (edge.get("statusC").toString().equals("C") && edge.get("statusB").toString().equals("B")) ||
-                    (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")
-                            && edge.get("statusC").toString().equals("C"))
-                    ||
-                    (edge.get("statusB").toString().equals("B") && edge.get("statusC").toString().isEmpty()
-                            && sT.equals("C"))
-                    ||
-                    (edge.get("statusC").toString().equals("C") && edge.get("statusB").toString().isEmpty()
-                            && sT.equals("B"))) {
+                    (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S") && edge.get("statusC").toString().equals("C"))) {
                 conformList.add(edge.get("id").toString());
             }
 
