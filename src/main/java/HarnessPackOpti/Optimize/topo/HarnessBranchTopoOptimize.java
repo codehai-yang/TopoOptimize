@@ -93,8 +93,8 @@ public class HarnessBranchTopoOptimize {
     // 长度权重
     public static Double lengthWeight = 0.01;
 
-    // 线程池
-    public static ThreadPool threadPool = null;
+    // 每次调用 new 一个本地线程池,生命周期=本次调用,避免不同调用相互干扰
+    private ThreadPool threadPool = null;
 
     // 全局种子计数器，用于生成不碰撞的Random种子
     private static final AtomicLong seedCounter = new AtomicLong(System.nanoTime());
@@ -103,7 +103,7 @@ public class HarnessBranchTopoOptimize {
     public static List<List<String>> WareHouseTop = new ArrayList<>();
 
     // 是否启用AI
-    public static boolean whetherAI = true;
+    public static String whetherAI = "0";
 
     // 当前方案的id
     private static String CaseId = null;
@@ -116,7 +116,7 @@ public class HarnessBranchTopoOptimize {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\能量流json日志_2026_08_05.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\线束拓扑优化TXT.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         HarnessBranchTopoOptimize newHarnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
         long startTime = System.currentTimeMillis();
@@ -138,7 +138,9 @@ public class HarnessBranchTopoOptimize {
         ReadProjectInfo readProjectInfo = new ReadProjectInfo();
         Map<String, Object> projectInfo = readProjectInfo.getProjectInfo(jsonMap);
         // 不启用AI则用老的方法
-        if (!whetherAI) {
+        System.out.println("whetherAI = " + whetherAI);
+        if ("0".equals(whetherAI)) {
+            System.out.println("jin ru jiu de yi chuan suan fa");
             OldHarnessBranchTopoOptimize harnessBranchTopoOptimize = new OldHarnessBranchTopoOptimize();
             String s = harnessBranchTopoOptimize.topoOptimize(jsonContent);
             return s;
@@ -147,16 +149,19 @@ public class HarnessBranchTopoOptimize {
         try {
             return runWithAI(jsonContent, jsonMap);
         } catch (Exception e) {
-            System.err.println("[HarnessBranchTopoOptimize] AI 流程异常 : " + e.getMessage());
+            System.err.println("[HarnessBranchTopoOptimize] AI liucheng yi chang  : " + e.getMessage());
             e.printStackTrace();
             // 异常时对原始base方案进行整车计算,按算法返回格式返回
             try {
                 return buildBaseSchemeResult(jsonContent, jsonMap);
             } catch (Exception ex) {
-                System.err.println("[HarnessBranchTopoOptimize] base方案整车计算失败 : " + ex.getMessage());
+                System.err.println("[HarnessBranchTopoOptimize] base ji suan shi bai : " + ex.getMessage());
                 ex.printStackTrace();
                 return null;
             }
+        } finally {
+            // 不管正常返回还是异常,都关闭本次调用的本地线程池
+            shutdownLocalThreadPool();
         }
     }
 
@@ -165,7 +170,8 @@ public class HarnessBranchTopoOptimize {
      * 包含:线程池初始化 → 整车信息计算 → 分支分类 → 遗传迭代 → TOP100 → 绕线优化。
      */
     private String runWithAI(String jsonContent, Map<String, Object> jsonMap) throws Exception {
-        threadPool = ThreadPool.shared(Threads, QueueCapacity);
+        // 每次调用 new 一个本地线程池,避免与 SHARED 共享导致并发干扰
+        threadPool = new ThreadPool(Threads, QueueCapacity);
         // 每次优化前清理仓库，避免跨case累积
         WAREHOUSE_KEYS.clear();
         WareHouseTop.clear();
@@ -185,8 +191,7 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, String>> loopInfos = (List<Map<String, String>>) jsonMap.get("loopInfos");
         List<Map<String, String>> points = (List<Map<String, String>>) jsonMap.get("points");
         CaseId = caseInfo.get("id").toString();
-//        optimizeRecordId = optimizeRecord.get("id").toString();
-        optimizeRecordId = "123";
+        optimizeRecordId = optimizeRecord.get("id").toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
 
         // 整车信息计算
@@ -275,7 +280,8 @@ public class HarnessBranchTopoOptimize {
             // 实际也能 B↔C 转换(当前 B 可改 C)
             if ((edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")) ||
                     (edge.get("statusC").toString().equals("C") && edge.get("statusB").toString().equals("B")) ||
-                    (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S") && edge.get("statusC").toString().equals("C"))) {
+                    (edge.get("statusB").toString().equals("B") && edge.get("statusS").toString().equals("S")
+                            && edge.get("statusC").toString().equals("C"))) {
                 conformList.add(edge.get("id").toString());
             }
 
@@ -673,10 +679,10 @@ public class HarnessBranchTopoOptimize {
         long hybridizationTime = System.currentTimeMillis();
         // 遗传算法
         while (true) {
-            System.out.println("第" + hybridizationNumber + "代迭代开始");
+            System.out.println("the" + hybridizationNumber + "start");
             // 用户中断检查
             if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
-                System.out.println("优化被用户中断");
+                System.out.println("optimize break");
                 break;
             }
 
@@ -769,10 +775,10 @@ public class HarnessBranchTopoOptimize {
                 canChangeS,
                 wearId,
                 jsonMap,
+                jsonContent,
                 objectMapper,
                 projectCircuitInfoOutput,
                 jsonToMap, mutexMap, chooseOneList, togetherBCList, singleBSCList, eleclection, conformList);
-        threadPool.shutdown();
         long windingDuration = System.currentTimeMillis() - time;
         System.out.println("绕线优化耗时：" + windingDuration);
 
@@ -794,47 +800,110 @@ public class HarnessBranchTopoOptimize {
     }
 
     /**
+     * 关闭本次调用的本地线程池
+     */
+    private void shutdownLocalThreadPool() {
+        if (threadPool != null) {
+            try {
+                threadPool.shutdown();
+            } catch (Exception e) {
+                System.err.println("[HarnessBranchTopoOptimize] 关闭线程池异常: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
      * 构造原始base方案的返回结果(格式与runWithAI返回一致)。
      * 用于AI流程异常时降级:对原始入参做整车计算,按算法输出格式包装返回。
      */
     private String buildBaseSchemeResult(String jsonContent, Map<String, Object> jsonMap) throws Exception {
-        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
-        JsonToMap jsonToMap = new JsonToMap();
-        ObjectMapper objectMapper = new ObjectMapper();
-        // 整车计算
-        String circuitResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
-        Map<String, Object> resultMap = jsonToMap.TransJsonToMap(circuitResult);
-        Map<String, Object> circuitInfoMap = (Map<String, Object>) resultMap.get("projectCircuitInfo");
-        // 提取成本字段,与processSingleSchemeForWinding返回格式对齐
-        Map<String, Double> cost = new HashMap<>();
-        cost.put("总成本", Double.parseDouble(circuitInfoMap.get("总成本").toString()));
-        cost.put("总重量", Double.parseDouble(circuitInfoMap.get("回路总重量").toString()));
-        cost.put("总长度", Double.parseDouble(circuitInfoMap.get("回路总长度").toString()));
-        // 构造topoOptimizeResult和serviceableStatue(原始base方案,分支状态不变)
-        List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
-        Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
-        Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
-        List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
-        List<String> serviceableStatue = new ArrayList<>();
-        for (Map<String, Object> edge : edges) {
-            Map<String, String> r = new HashMap<>();
-            r.put("edgeId", edge.get("id").toString());
-            r.put("statue", edge.get("topologyStatusCode").toString());
-            topoOptimizeResult.add(r);
-            serviceableStatue.add(edge.get("topologyStatusCode").toString());
+        Map<String, Object> baseScheme = buildBaseSchemeMap(jsonContent, jsonMap,
+                new ObjectMapper(), new ProjectCircuitInfoOutput(), new JsonToMap());
+        if (baseScheme == null) {
+            return null;
         }
-        // 包装返回字段,与算法返回格式一致
-        resultMap.put("成本", cost);
-        resultMap.put("topoId", topoInfoMap.get("id").toString());
-        resultMap.put("caseId", caseInfo.get("id").toString());
-        resultMap.put("topoOptimizeResult", topoOptimizeResult);
-        resultMap.put("finishStatue", "normal");
-        resultMap.put("initializationScheme", true);
-        resultMap.put("serviceableStatue", serviceableStatue);
-        resultMap.put("serviceableEdges", edges);
         List<Map<String, Object>> maps = new ArrayList<>();
-        maps.add(resultMap);
-        return objectMapper.writeValueAsString(maps);
+        maps.add(baseScheme);
+        return new ObjectMapper().writeValueAsString(maps);
+    }
+
+    /**
+     * 构造 base 方案 Map（原始方案的完整结构）。
+     * 用入参 jsonContent 做一次整车计算，提取成本字段，
+     * 构造与 processSingleSchemeForWinding 返回结构一致的 Map，
+     * 用于在 windingOptimize 最后返回时与优化方案一起排序。
+     *
+     * @param jsonContent              原始入参 JSON
+     * @param jsonMap                  原始入参 Map
+     * @param mapper                   ObjectMapper
+     * @param projectCircuitInfoOutput 整车计算器
+     * @param jsonToMap                JsonToMap
+     * @return base 方案 Map，失败返回 null
+     */
+    private Map<String, Object> buildBaseSchemeMap(String jsonContent,
+            Map<String, Object> jsonMap,
+            ObjectMapper mapper,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
+            JsonToMap jsonToMap) {
+        try {
+            // 整车计算
+            String circuitResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
+            if (circuitResult == null || circuitResult.isEmpty()) {
+                System.err.println("[base] 整车计算返回空");
+                return null;
+            }
+            Map<String, Object> resultMap = jsonToMap.TransJsonToMap(circuitResult);
+            Map<String, Object> circuitInfoMap = (Map<String, Object>) resultMap.get("projectCircuitInfo");
+            if (circuitInfoMap == null) {
+                System.err.println("[base] 整车计算结果缺少 projectCircuitInfo");
+                return null;
+            }
+            // 提取成本字段,与 processSingleSchemeForWinding 返回格式对齐
+            Object tcObj = circuitInfoMap.get("总成本");
+            Object twObj = circuitInfoMap.get("回路总重量");
+            Object tlObj = circuitInfoMap.get("回路总长度");
+            if (!(tcObj instanceof Number) || !(twObj instanceof Number) || !(tlObj instanceof Number)) {
+                System.err.println("[base] 整车计算结果中成本字段类型不匹配");
+                return null;
+            }
+            Map<String, Double> cost = new HashMap<>();
+            cost.put("总成本", ((Number) tcObj).doubleValue());
+            cost.put("总重量", ((Number) twObj).doubleValue());
+            cost.put("总长度", ((Number) tlObj).doubleValue());
+
+            // 构造 topoOptimizeResult 和 serviceableStatue（原始 base 方案,分支状态不变）
+            List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
+            Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
+            Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
+            Map<String, Object> projectInfo = (Map<String, Object>) jsonMap.get("projectInfo");
+            List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
+            List<String> serviceableStatue = new ArrayList<>();
+            for (Map<String, Object> edge : edges) {
+                Map<String, String> r = new HashMap<>();
+                r.put("edgeId", edge.get("id").toString());
+                String statusCode = edge.get("topologyStatusCode") == null
+                        ? "B"
+                        : edge.get("topologyStatusCode").toString();
+                r.put("statue", statusCode);
+                topoOptimizeResult.add(r);
+                serviceableStatue.add(statusCode);
+            }
+            // 包装返回字段,与算法返回格式一致
+            resultMap.put("成本", cost);
+            resultMap.put("topoId", topoInfoMap.get("id").toString());
+            resultMap.put("caseId", (projectInfo != null && projectInfo.get("caseId") != null)
+                    ? projectInfo.get("caseId").toString()
+                    : (caseInfo != null ? caseInfo.get("id").toString() : ""));
+            resultMap.put("topoOptimizeResult", topoOptimizeResult);
+            resultMap.put("finishStatue", "normal");
+            resultMap.put("initializationScheme", true);
+            resultMap.put("serviceableStatue", serviceableStatue);
+            resultMap.put("serviceableEdges", edges);
+            return resultMap;
+        } catch (Exception e) {
+            System.err.println("[base] 构造 base 方案异常: " + e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -850,6 +919,7 @@ public class HarnessBranchTopoOptimize {
             List<String> canChangeS,
             List<String> wearId,
             Map<String, Object> jsonMap,
+            String jsonContent,
             ObjectMapper mapper,
             ProjectCircuitInfoOutput projectCircuitInfoOutput,
             JsonToMap jsonToMap, Map<String, Map<String, List<String>>> mutexMap,
@@ -908,10 +978,100 @@ public class HarnessBranchTopoOptimize {
         System.out.println("[windingOptimize] 处理完成:通过 " + optimized.size()
                 + " / " + mapList.size() + " (淘汰 " + scrapCount + ")");
 
-        if (optimized.isEmpty()) {
-            return findBest.findBest(mapList, "成本", resultNumber);
+        // 候选方案池: 优先用绕线后方案,绕线全军覆没时回退到绕线前 mapList
+        List<Map<String, Object>> candidatePool = optimized.isEmpty() ? mapList : optimized;
+
+        // 加入 base 方案(原始入参整车计算结果),与 processSingleSchemeForWinding 返回字段对齐
+        Map<String, Object> baseScheme = buildBaseSchemeMap(jsonContent, jsonMap,
+                mapper, projectCircuitInfoOutput, jsonToMap);
+        if (baseScheme != null) {
+            candidatePool.add(baseScheme);
+            System.out.println("[windingOptimize] 已加入 base 方案, 成本="
+                    + ((Map<String, Object>) baseScheme.get("成本")).get("总成本"));
+        } else {
+            System.err.println("[windingOptimize] base 方案构造失败,仅返回优化方案");
         }
-        return findBest.findBest(optimized, "成本", resultNumber);
+
+        // 按 score 排序取 top,但保底确保 base 在结果中:
+        // - 没有比 base 更优的方案: 只返回 base
+        // - 有更优方案: 取 top (resultNumber-1), 再追加 base (避免 base 被 findBest 挤出)
+        return ensureBaseInTop(candidatePool, baseScheme, findBest, resultNumber);
+    }
+
+    /**
+     * 取 top resultNumber,但保证 base 方案一定在结果中。
+     * - 没有比 base 更优的方案: 只返回 base
+     * - 有更优方案: 取 top (resultNumber-1),再追加 base
+     * - base 为 null: 直接 findBest
+     */
+    private List<Map<String, Object>> ensureBaseInTop(List<Map<String, Object>> candidatePool,
+            Map<String, Object> baseScheme,
+            FindBest findBest,
+            int resultNumber) {
+        if (baseScheme == null) {
+            return findBest.findBest(candidatePool, "成本", resultNumber);
+        }
+        // 计算 base 成本
+        Object baseCostObj = ((Map<String, Object>) baseScheme.get("成本")).get("总成本");
+        double baseCost = Double.parseDouble(baseCostObj.toString());
+        // 检查是否存在比 base 更优的方案(总成本低于 base)
+        boolean hasBetter = false;
+        String baseKey = buildSchemeCostKey(baseScheme);
+        for (Map<String, Object> scheme : candidatePool) {
+            if (buildSchemeCostKey(scheme).equals(baseKey)) {
+                continue; // base 本身在池中,跳过
+            }
+            Object costObj = scheme.get("成本");
+            if (costObj instanceof Map) {
+                Object v = ((Map<String, Object>) costObj).get("总成本");
+                if (v != null && Double.parseDouble(v.toString()) < baseCost) {
+                    hasBetter = true;
+                    break;
+                }
+            }
+        }
+        if (!hasBetter) {
+            // 没有比 base 更优的方案,只返回 base
+            System.out.println("[windingOptimize] 没有比 base 更优的方案,只返回 base 方案");
+            List<Map<String, Object>> onlyBase = new ArrayList<>();
+            onlyBase.add(baseScheme);
+            return onlyBase;
+        }
+        // 有更优方案: 取 top (resultNumber-1),再追加 base
+        // 注意: candidatePool 已包含 base,findBest 会按 score 排序取 top,
+        // 这里先把 base 移出 candidatePool,findBest 取 top (resultNumber-1),再加回 base
+        List<Map<String, Object>> poolWithoutBase = new ArrayList<>();
+        for (Map<String, Object> scheme : candidatePool) {
+            if (!buildSchemeCostKey(scheme).equals(baseKey)) {
+                poolWithoutBase.add(scheme);
+            }
+        }
+        int topN = Math.max(1, resultNumber - 1);
+        List<Map<String, Object>> top = findBest.findBest(poolWithoutBase, "成本", topN);
+        top.add(baseScheme);
+        System.out.println("[windingOptimize] 返回 top " + top.size() + " 个方案(含 base 兜底)");
+        return top;
+    }
+
+    /**
+     * 构造方案的成本+状态指纹,用于识别 base 方案。
+     * 用 总成本+总重量+总长度+serviceableStatue 作为 key
+     */
+    private String buildSchemeCostKey(Map<String, Object> scheme) {
+        StringBuilder sb = new StringBuilder();
+        Object costObj = scheme.get("成本");
+        if (costObj instanceof Map) {
+            Map<String, Object> cost = (Map<String, Object>) costObj;
+            sb.append("C:").append(cost.getOrDefault("总成本", ""))
+                    .append(",").append(cost.getOrDefault("总重量", ""))
+                    .append(",").append(cost.getOrDefault("总长度", ""));
+        }
+        sb.append("|S:");
+        Object statueObj = scheme.get("serviceableStatue");
+        if (statueObj instanceof List) {
+            sb.append(String.join(",", (List<String>) statueObj));
+        }
+        return sb.toString();
     }
 
     /**
@@ -1409,15 +1569,6 @@ public class HarnessBranchTopoOptimize {
             map2.put("initializationScheme", false);
             map2.put("serviceableStatue", origStatueCopy);
             map2.put("serviceableEdges", origEdges);
-            // ★追踪:写入绕线→绕线后的入口索引和状态;继承 500→100 入口字段。
-            map2.put("_windingInputIndex", windingInputIndex);
-            map2.put("_windingInputServiceableStatue", windingInputStatueSnapshot);
-            if (inheritedInputIndex != null) {
-                map2.put("_inputIndex", inheritedInputIndex);
-            }
-            if (inheritedInputStatue != null) {
-                map2.put("_inputServiceableStatue", inheritedInputStatue);
-            }
             return map2;
         }
 
@@ -1509,15 +1660,6 @@ public class HarnessBranchTopoOptimize {
         map2.put("initializationScheme", false);
         map2.put("serviceableStatue", statue);
         map2.put("serviceableEdges", finalEdgeresult);
-        // ★追踪:写入绕线→绕线后的入口索引和状态;继承 500→100 入口字段。
-        map2.put("_windingInputIndex", windingInputIndex);
-        map2.put("_windingInputServiceableStatue", windingInputStatueSnapshot);
-        if (inheritedInputIndex != null) {
-            map2.put("_inputIndex", inheritedInputIndex);
-        }
-        if (inheritedInputStatue != null) {
-            map2.put("_inputServiceableStatue", inheritedInputStatue);
-        }
         return map2;
     }
 
@@ -4159,6 +4301,7 @@ public class HarnessBranchTopoOptimize {
                     }
                 }
                 float predict = gine.predict(x, edgeIndex, edgeAttr);
+
                 // 构建返回结果：仅保留 serviceableStatue 和成本，不携带 serviceableEdges
                 // serviceableEdges（所有边的深拷贝）约 100KB/方案，10000 方案 ≈ 1GB，下游不需要
                 Map<String, Object> costResultData = new HashMap<>();

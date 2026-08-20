@@ -1,24 +1,30 @@
 package HarnessPackOpti.Optimize.elec;
 
+import java.text.DecimalFormat;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
+import org.apache.commons.collections4.map.LinkedMap;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import HarnessPackOpti.JsonToMap;
 import HarnessPackOpti.Algorithm.FindElecLocation;
 import HarnessPackOpti.Algorithm.SplitCircuitByInterDirectConn;
 import HarnessPackOpti.CircuitInfoCalculate.CalculateCircuitInfo;
 import HarnessPackOpti.InfoRead.ReadProjectInfo;
-import HarnessPackOpti.JsonToMap;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.apache.commons.collections4.map.LinkedMap;
-
-import java.text.DecimalFormat;
-import java.util.*;
 
 public class ElecProjectCircuitInfoOutput {
 
     public String projectCircuitInfoOutput(String fileStringFormat,
-                                           Map<String, Object> filtration,
-                                           Map<String, Map<String, String>> elecFixedLocationLibrary,
-                                           Map<String, Double> elecBusinessPrice) throws Exception {
+            Map<String, Object> filtration,
+            Map<String, Map<String, String>> elecFixedLocationLibrary,
+            Map<String, Double> elecBusinessPrice) throws Exception {
         JsonToMap jsonToMap = new JsonToMap();
         Map<String, Object> mapFile = jsonToMap.TransJsonToMap(fileStringFormat);
         ReadProjectInfo readProjectInfo = new ReadProjectInfo();
@@ -26,30 +32,37 @@ public class ElecProjectCircuitInfoOutput {
         List<Map<String, Object>> points = (List<Map<String, Object>>) projectInfo.get("所有端点信息");
         List<Map<String, String>> loopInfos = (List<Map<String, String>>) projectInfo.get("回路用电器信息");
         Map<String, Object> caseInfo = (Map<String, Object>) projectInfo.get("方案信息");
-        Boolean whetherToChange = caseInfo.get("直连接口是否发生变化") == null || caseInfo.get("直连接口是否发生变化").toString().equals("false") ? false : true;
+        Boolean whetherToChange = caseInfo.get("直连接口是否发生变化") == null
+                || caseInfo.get("直连接口是否发生变化").toString().equals("false") ? false : true;
 
-//       在points 找出所有可能发生变化点   并且将同一组的放在一起
+        // 在points 找出所有可能发生变化点 并且将同一组的放在一起
         Map<String, List<String>> interfaceCodegroup = new HashMap<>();
         Set<String> pointNameSet = new HashSet<>();
         if (whetherToChange) {
             for (Map<String, Object> point : points) {
-                if (point.get("端点接口直连编号") != null) {
-                    String interfaceCode = point.get("端点接口直连编号").toString();
-                    String pointName = point.get("端点名称").toString();
-                    interfaceCode = interfaceCode.substring(0, interfaceCode.length() - 1);
-                    if (interfaceCodegroup.containsKey(interfaceCode)) {
-                        interfaceCodegroup.get(interfaceCode).add(pointName);
-                    } else {
-                        List<String> pointNames = new ArrayList<>();
-                        pointNames.add(pointName);
-                        interfaceCodegroup.put(interfaceCode, pointNames);
-                    }
-                    pointNameSet.add(pointName);
+                Object codeObj = point.get("端点接口直连编号");
+                if (codeObj == null)
+                    continue;
+                String interfaceCode = codeObj.toString().trim();
+                if (interfaceCode.isEmpty())
+                    continue;
+                Object nameObj = point.get("端点名称");
+                if (nameObj == null)
+                    continue;
+                String pointName = nameObj.toString();
+                interfaceCode = interfaceCode.substring(0, interfaceCode.length() - 1);
+                if (interfaceCodegroup.containsKey(interfaceCode)) {
+                    interfaceCodegroup.get(interfaceCode).add(pointName);
+                } else {
+                    List<String> pointNames = new ArrayList<>();
+                    pointNames.add(pointName);
+                    interfaceCodegroup.put(interfaceCode, pointNames);
                 }
+                pointNameSet.add(pointName);
             }
         }
 
-//        找出所有在这些点的用电器
+        // 找出所有在这些点的用电器
         Set<String> functionPointSet = new HashSet<>();
         for (Map<String, String> loopInfo : loopInfos) {
             if (loopInfo.get("回路起点用电器").startsWith("[") || loopInfo.get("回路终点用电器").startsWith("[")) {
@@ -61,11 +74,11 @@ public class ElecProjectCircuitInfoOutput {
                 }
             }
         }
-//        找出用电器存在可变点的集合
+        // 找出用电器存在可变点的集合
         List<String> electricalSet = new ArrayList<>();
         FindElecLocation findElecLocation = new FindElecLocation();
         List<Map<String, String>> mapList = findElecLocation.getEleclection(projectInfo);
-//        用电器对应的可变位置点 {BCM:[位置1、位置2、位置3],CPM:[位置四、位置5]}
+        // 用电器对应的可变位置点 {BCM:[位置1、位置2、位置3],CPM:[位置四、位置5]}
         Map<String, List<String>> eleclectionAddress = new HashMap<>();
         for (Map<String, String> map : mapList) {
             if (map.get("value") != null && pointNameSet.contains(map.get("value").toString())) {
@@ -84,35 +97,39 @@ public class ElecProjectCircuitInfoOutput {
 
         List<Map<String, Object>> fixedLoops = (List<Map<String, Object>>) group.get("fixedLoops");
         List<List<Map<String, Object>>> grouplists = (List<List<Map<String, Object>>>) group.get("groupLoops");
-        List<Map<String, Object>> nonfixedNotGroupLoops = (List<Map<String, Object>>) group.get("nonfixedNotGroupLoops");
+        List<Map<String, Object>> nonfixedNotGroupLoops = (List<Map<String, Object>>) group
+                .get("nonfixedNotGroupLoops");
 
-//       接下来就是对所有的回路进行一个计算并且返回回路的最终计算结果
+        // 接下来就是对所有的回路进行一个计算并且返回回路的最终计算结果
         Map<String, Object> loopdetails = new HashMap<>();
-//        对已经固定的回路进行计算
+        // 对已经固定的回路进行计算
         Map<String, Object> fixclassifyCircuit = new HashMap<>();
         fixclassifyCircuit.put("回路用电器信息", fixedLoops);
-//        1、对这些回路进行一个分类 ：两点的    焊点的
+        // 1、对这些回路进行一个分类 ：两点的 焊点的
         List<Map<String, String>> fixTwoPoints = loopInfos;
 
-//        进行计算  并且将最终的结果添加到 loopdetails里面
-//        对固定两点的进行计算
+        // 进行计算 并且将最终的结果添加到 loopdetails里面
+        // 对固定两点的进行计算
         for (Map<String, String> list : fixTwoPoints) {
-            Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, elecFixedLocationLibrary, true, null, electricalSet, elecBusinessPrice, filtration);
+            Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, elecFixedLocationLibrary, true, null,
+                    electricalSet, elecBusinessPrice, filtration);
             loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
         }
 
         List<Map<String, Object>> finallyBestLoop = new ArrayList<>();
-//        对可变的回路进行计算  并且将最优结果添加到loopdetails里面  对grouplist每一组进行计算
+        // 对可变的回路进行计算 并且将最优结果添加到loopdetails里面 对grouplist每一组进行计算
         for (List<Map<String, Object>> grouplist : grouplists) {
-//            找出回路中的所有的可变用电器 将接口添加数组中去 并且找出所有的可变点
+            // 找出回路中的所有的可变用电器 将接口添加数组中去 并且找出所有的可变点
             List<String> nonFixElectrical = new ArrayList<>();
             Map<String, Set<String>> electricalInterFace = new HashMap<>();
             for (Map<String, Object> map : grouplist) {
-                if (electricalSet.contains(map.get("回路起点用电器").toString()) || electricalSet.contains(map.get("回路终点用电器").toString())) {
+                if (electricalSet.contains(map.get("回路起点用电器").toString())
+                        || electricalSet.contains(map.get("回路终点用电器").toString())) {
                     if (electricalSet.contains(map.get("回路起点用电器").toString())) {
                         if (map.get("回路起点用电器接口编号") != null) {
                             if (electricalInterFace.containsKey(map.get("回路起点用电器").toString())) {
-                                electricalInterFace.get(map.get("回路起点用电器").toString()).add(map.get("回路起点用电器接口编号").toString());
+                                electricalInterFace.get(map.get("回路起点用电器").toString())
+                                        .add(map.get("回路起点用电器接口编号").toString());
                             } else {
                                 Set<String> list = new HashSet<>();
                                 list.add(map.get("回路起点用电器接口编号").toString());
@@ -131,7 +148,8 @@ public class ElecProjectCircuitInfoOutput {
                     if (electricalSet.contains(map.get("回路终点用电器").toString())) {
                         if (map.get("回路终点用电器接口编号") != null) {
                             if (electricalInterFace.containsKey(map.get("回路终点用电器").toString())) {
-                                electricalInterFace.get(map.get("回路终点用电器").toString()).add(map.get("回路终点用电器接口编号").toString());
+                                electricalInterFace.get(map.get("回路终点用电器").toString())
+                                        .add(map.get("回路终点用电器接口编号").toString());
                             } else {
                                 Set<String> list = new HashSet<>();
                                 list.add(map.get("回路终点用电器接口编号").toString());
@@ -149,13 +167,13 @@ public class ElecProjectCircuitInfoOutput {
                     }
                 }
             }
-//            对可能存在的情况进行一个排列组合
+            // 对可能存在的情况进行一个排列组合
             List<Map<String, Object>> allpossibility = new ArrayList<>();
             for (String elec : electricalInterFace.keySet()) {
                 List<Map<String, Object>> currentpossibility = new ArrayList<>(allpossibility);
-//            用电器对应的接口
+                // 用电器对应的接口
                 Set<String> list = electricalInterFace.get(elec);
-//            用电器对应的位置
+                // 用电器对应的位置
                 List<String> addressList = eleclectionAddress.get(elec);
 
                 for (String s : list) {
@@ -188,19 +206,20 @@ public class ElecProjectCircuitInfoOutput {
                     allpossibility = currentpossibility;
                 }
             }
-//            将当前的grouplist进行一个分组   两点直连的   存在焊点的
+            // 将当前的grouplist进行一个分组 两点直连的 存在焊点的
             Map<String, Object> nonfixclassifyCircuit = new HashMap<>();
             nonfixclassifyCircuit.put("回路用电器信息", grouplist);
             List<Map<String, String>> nonfixTwoPoints = loopInfos;
-//            存储当组里面所有的每种可能性对应的回路信息
+            // 存储当组里面所有的每种可能性对应的回路信息
             List<Map<String, Object>> allpossibilityLoopInfoList = new ArrayList<>();
-//            对所有的情况都进行一个计算
+            // 对所有的情况都进行一个计算
             for (Map<String, Object> objectMap : allpossibility) {
                 List<Map<String, Object>> currentloopdetails = new ArrayList<>();
-//            对两点直连的 进行计算 并将最优的结果添加到loopdetails里面
-                Boolean flag = true;//该方案是否可行
+                // 对两点直连的 进行计算 并将最优的结果添加到loopdetails里面
+                Boolean flag = true;// 该方案是否可行
                 for (Map<String, String> list : nonfixTwoPoints) {
-                    Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, elecFixedLocationLibrary, false, objectMap, electricalSet, elecBusinessPrice, filtration);
+                    Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, elecFixedLocationLibrary,
+                            false, objectMap, electricalSet, elecBusinessPrice, filtration);
                     if (twoPointInfo == null) {
                         flag = false;
                         break;
@@ -218,7 +237,7 @@ public class ElecProjectCircuitInfoOutput {
                 currentSchemeMap.put("可变方案", objectMap);
                 allpossibilityLoopInfoList.add(currentSchemeMap);
             }
-//            在allpossibilityLoopInfoList 找出最优的一个方案
+            // 在allpossibilityLoopInfoList 找出最优的一个方案
             if (allpossibilityLoopInfoList.size() > 1) {
                 Map<String, Object> bestPossibility = findBestPossibility(allpossibilityLoopInfoList);
                 List<Map<String, Object>> mapList1 = (List<Map<String, Object>>) bestPossibility.get("回路信息");
@@ -230,7 +249,7 @@ public class ElecProjectCircuitInfoOutput {
             }
         }
 
-//        将finallyBestLoop 进行一个提取 1、回路添加到loopdetails里面   接口位置点进行一个整合
+        // 将finallyBestLoop 进行一个提取 1、回路添加到loopdetails里面 接口位置点进行一个整合
         Map<String, Object> bestInterFaceInfo = new HashMap<>();
         for (Map<String, Object> map : finallyBestLoop) {
             List<Map<String, Object>> mapList1 = (List<Map<String, Object>>) map.get("回路信息");
@@ -248,13 +267,14 @@ public class ElecProjectCircuitInfoOutput {
                 }
             }
         }
-//        接下来就是对 剔除部分的回路进行计算
+        // 接下来就是对 剔除部分的回路进行计算
         Map<String, Object> nonfixedNotGroupLoopsMap = new HashMap<>();
         nonfixedNotGroupLoopsMap.put("回路用电器信息", nonfixedNotGroupLoops);
         List<Map<String, String>> nonfixedNotGroupLoopsTwo = loopInfos;
-//            对两点直连的 进行计算 并将最优的结果添加到loopdetails里面
+        // 对两点直连的 进行计算 并将最优的结果添加到loopdetails里面
         for (Map<String, String> list : nonfixedNotGroupLoopsTwo) {
-            Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, elecFixedLocationLibrary, false, bestInterFaceInfo, electricalSet, elecBusinessPrice, filtration);
+            Map<String, Object> twoPointInfo = findTwoPointInfo(list, projectInfo, elecFixedLocationLibrary, false,
+                    bestInterFaceInfo, electricalSet, elecBusinessPrice, filtration);
             loopdetails.put(twoPointInfo.get("回路id").toString(), twoPointInfo);
         }
         Map<String, Object> projectCircuitInfo = circuitProjectInfo(loopdetails);
@@ -266,36 +286,43 @@ public class ElecProjectCircuitInfoOutput {
     }
 
     public Map<String, Object> group(Map<String, Object> projectInfo, List<String> electricalSet,
-                                     Map<String, Map<String, String>> elecFixedLocationLibrary,
-                                     Set<String> functionPointSet) throws JsonProcessingException {
+            Map<String, Map<String, String>> elecFixedLocationLibrary,
+            Set<String> functionPointSet) throws JsonProcessingException {
         List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) projectInfo.get("回路用电器信息");
         Map<String, Object> resultMap = new HashMap<>();
-        //        对集合里面的回路进行一个分类 一类是可变的  一类是不可变的
-//        不固定回路参与分组
+        // 对集合里面的回路进行一个分类 一类是可变的 一类是不可变的
+        // 不固定回路参与分组
         List<Map<String, Object>> nonfixedLoops = new ArrayList<>();
-//        不固定回路不参与分组
+        // 不固定回路不参与分组
         List<Map<String, Object>> nonfixedNotGroupLoops = new ArrayList<>();
-//        固定回路
+        // 固定回路
         List<Map<String, Object>> fixedLoops = new ArrayList<>();
         List<Map<String, Object>> twoPointMaps = loopInfos;
-//        所有不固定回路
+        // 所有不固定回路
         List<Map<String, Object>> allNonfixedLoops = new ArrayList<>();
-//
+        //
         Map<String, Object> circuitProjectInfo = new HashMap<>();
-//        筛选出当中需要进行分组分的回路 1、起点用电器和终点电器 以及接口编号都一样的 的所有回路  单位价格总和大于三块   2、焊点的单条回路单位价格大于三块  也进行保留
+        // 筛选出当中需要进行分组分的回路 1、起点用电器和终点电器 以及接口编号都一样的 的所有回路 单位价格总和大于三块 2、焊点的单条回路单位价格大于三块
+        // 也进行保留
         for (Map<String, Object> objectMap : twoPointMaps) {
-            if (electricalSet.contains(objectMap.get("回路起点用电器").toString()) || electricalSet.contains(objectMap.get("回路终点用电器").toString())) {
+            if (electricalSet.contains(objectMap.get("回路起点用电器").toString())
+                    || electricalSet.contains(objectMap.get("回路终点用电器").toString())) {
                 allNonfixedLoops.add(objectMap);
-                if (electricalSet.contains(objectMap.get("回路起点用电器").toString()) && electricalSet.contains(objectMap.get("回路终点用电器").toString())) {
+                if (electricalSet.contains(objectMap.get("回路起点用电器").toString())
+                        && electricalSet.contains(objectMap.get("回路终点用电器").toString())) {
                     String startApp = objectMap.get("回路起点用电器").toString();
                     String endApp = objectMap.get("回路终点用电器").toString();
-                    String startAppPort = objectMap.get("回路起点用电器接口编号") == null ? "" : objectMap.get("回路起点用电器接口编号").toString();
-                    String endAppPort = objectMap.get("回路终点用电器接口编号") == null ? "" : objectMap.get("回路终点用电器接口编号").toString();
+                    String startAppPort = objectMap.get("回路起点用电器接口编号") == null ? ""
+                            : objectMap.get("回路起点用电器接口编号").toString();
+                    String endAppPort = objectMap.get("回路终点用电器接口编号") == null ? ""
+                            : objectMap.get("回路终点用电器接口编号").toString();
                     if (circuitProjectInfo.containsKey(startApp + startAppPort + "-" + endApp + endAppPort)) {
-                        List<Map<String, Object>> mapList1 = (List<Map<String, Object>>) circuitProjectInfo.get(startApp + startAppPort + "-" + endApp + endAppPort);
+                        List<Map<String, Object>> mapList1 = (List<Map<String, Object>>) circuitProjectInfo
+                                .get(startApp + startAppPort + "-" + endApp + endAppPort);
                         mapList1.add(objectMap);
                     } else if (circuitProjectInfo.containsKey(endApp + endAppPort + "-" + startApp + startAppPort)) {
-                        List<Map<String, Object>> mapList1 = (List<Map<String, Object>>) circuitProjectInfo.get(endApp + endAppPort + "-" + startApp + startAppPort);
+                        List<Map<String, Object>> mapList1 = (List<Map<String, Object>>) circuitProjectInfo
+                                .get(endApp + endAppPort + "-" + startApp + startAppPort);
                         mapList1.add(objectMap);
                     } else {
                         String key = startApp + startAppPort + "-" + endApp + endAppPort;
@@ -308,7 +335,7 @@ public class ElecProjectCircuitInfoOutput {
                 fixedLoops.add(objectMap);
             }
         }
-//            对回路两端都是可变用电器的回路单位成本进行检查
+        // 对回路两端都是可变用电器的回路单位成本进行检查
         List<String> withoutRegardIDList = new ArrayList<>();
         for (String s : circuitProjectInfo.keySet()) {
             List<Map<String, Object>> circuitProjectInfoList = (List<Map<String, Object>>) circuitProjectInfo.get(s);
@@ -324,7 +351,7 @@ public class ElecProjectCircuitInfoOutput {
                 withoutRegardIDList.addAll(idList);
             }
         }
-//     将符合要求的分支添加里面进行分组
+        // 将符合要求的分支添加里面进行分组
         for (Map<String, Object> allNonfixedLoop : allNonfixedLoops) {
             if (withoutRegardIDList.contains(allNonfixedLoop.get("回路id").toString())) {
                 nonfixedNotGroupLoops.add(allNonfixedLoop);
@@ -336,7 +363,8 @@ public class ElecProjectCircuitInfoOutput {
         Set<String> allElecSet = new HashSet<>();
         allElecSet.addAll(functionPointSet);
         allElecSet.addAll(electricalSet);
-        List<List<Map<String, Object>>> grouplists = splitCircuitByInterDirectConn.groupLoops(nonfixedLoops, new ArrayList<>(allElecSet));
+        List<List<Map<String, Object>>> grouplists = splitCircuitByInterDirectConn.groupLoops(nonfixedLoops,
+                new ArrayList<>(allElecSet));
 
         resultMap.put("groupLoops", grouplists);
         resultMap.put("fixedLoops", fixedLoops);
@@ -344,14 +372,14 @@ public class ElecProjectCircuitInfoOutput {
         return resultMap;
     }
 
-
     /**
      * @Description 根据分支id获取回路信息
      * @input pointList 需要计算的处理后分支信息
-     * @Return 当前分支下面的回路信息 包括：总成本、回路湿区成本总加成、回路打断总成本、回路两端端子总成本、回路导线总成本、回路总重量、总理论直径、回路总长度
+     * @Return 当前分支下面的回路信息
+     *         包括：总成本、回路湿区成本总加成、回路打断总成本、回路两端端子总成本、回路导线总成本、回路总重量、总理论直径、回路总长度
      */
     public Map<String, Object> circuitProjectInfo(Map<String, Object> pointList) {
-//        总成本
+        // 总成本
         Map<String, Object> totalCost = new HashMap<>();
         totalCost.put("总成本", 0.0);
         totalCost.put("回路总重量", 0.0);
@@ -361,15 +389,17 @@ public class ElecProjectCircuitInfoOutput {
         Set multiLoopInfosSet = pointList.keySet();
         for (Object o : multiLoopInfosSet) {
             Map<String, Object> objectMap = (Map<String, Object>) pointList.get(o);
-            totalCost.put("总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("总成本").toString()) + Double.parseDouble(objectMap.get("回路总成本").toString()))));
-            totalCost.put("回路总重量", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) + Double.parseDouble(objectMap.get("回路重量").toString()))));
-            totalCost.put("回路总长度", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString()) + Double.parseDouble(objectMap.get("回路长度").toString()))));
+            totalCost.put("总成本", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("总成本").toString())
+                    + Double.parseDouble(objectMap.get("回路总成本").toString()))));
+            totalCost.put("回路总重量", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总重量").toString())
+                    + Double.parseDouble(objectMap.get("回路重量").toString()))));
+            totalCost.put("回路总长度", Double.parseDouble(df.format(Double.parseDouble(totalCost.get("回路总长度").toString())
+                    + Double.parseDouble(objectMap.get("回路长度").toString()))));
         }
         return totalCost;
     }
 
-
-    //    在所有的方案中找出最优的一个方案
+    // 在所有的方案中找出最优的一个方案
     public Map<String, Object> findBestPossibility(List<Map<String, Object>> allpossibilityLoopInfoList) {
         Map<String, Object> bestPossibility = new HashMap<>();
         Map<String, Object> minCostMap = null;
@@ -402,7 +432,6 @@ public class ElecProjectCircuitInfoOutput {
 
         }
 
-
         Map<String, Object> finallyCostMap = null;
         double finallyScore = Double.MAX_VALUE;
 
@@ -417,8 +446,7 @@ public class ElecProjectCircuitInfoOutput {
         return finallyCostMap;
     }
 
-
-    //    根据给定的回路信息  计算当前list的总成本、总长度、总重量
+    // 根据给定的回路信息 计算当前list的总成本、总长度、总重量
     public Map<String, Double> calculateLoppListCost(List<Map<String, Object>> loopList) {
         Map<String, Double> resultCost = new HashMap<>();
         resultCost.put("总成本", 0.0);
@@ -436,7 +464,6 @@ public class ElecProjectCircuitInfoOutput {
 
     }
 
-
     /**
      * @Description: 单条路径的方法
      * @input: twoMap 分类完成的单个回路信息
@@ -444,25 +471,46 @@ public class ElecProjectCircuitInfoOutput {
      * @input: adjacencyMatrixGraph 构建的邻接矩阵
      * @input: elecFixedLocationLibrary excel表中的线径信息
      * @Return: 回路信息 当前回路中最优的一条信息
-     * {起点用电器名称=BMS, 起点用电id=ee8600dc-1ab6-4fa2-a043-1e0a0cb1c6d7, 起点位置名称=前围板外中点, 起点位置id=f753b6fe-39bd-4602-8cb3-b663c79af003, 终点用电器名称=LVManuSrvcDscnctr, 终点用电id=2955c804-a8bd-463f-baff-ce063f0f5695, 终点位置名称=车身线左后inline点, 终点位置id=b9e1aee2-7e19-4bf0-9618-5b16de00aa84, 回路属性=null, 导线选型=FLRY-B 0.5, 回路编号=5349, 方案号=85342e86-dd12-498d-b6a4-a45a3bd96fce, 所属系统=系统Others, 回路起点用电器接口编号=, 回路终点用电器接口编号=, 回路信号名=BMS-KL30.2, 湿区两端连接器成本补偿=0.0, 湿区两端防水塞成本补偿=0.0, 焊点名称=null, 回路id=017874d0-de96-4a88-b253-0d4f42b2849f, 焊点位置名称=null, 焊点位置id=null, 回路途径分支点=[前围板外中点, 前围板外左点, 前舱左纵梁后点, 前舱线左后inline点, 车身线左前inline点, 左门槛中点, 左门槛后点, 左后轮包顶点, 后围板内左点, 车身线左后inline点], 回路总成本=43.365026, 回路湿区成本加成=0.0, inline湿区连接器成本补偿=0.0, inline湿区防水塞成本补偿=0.0, 回路打断成本=0.2, 回路导线成本=42.765026, 回路总重量=3.7390186666666665, 回路总长度=7.01066, 回路打断分支=[d89d0217-8ef0-41f2-835c-49ca8f7e069c], 回路打断次数=1, 回路所有分支=[199eecf0-3320-4b2a-86e6-036442fdc317, a6300929-2419-4a1f-b257-7c68d9a3e3c1, 8a464b8f-d481-465a-a7ce-f320d548d83e, d89d0217-8ef0-41f2-835c-49ca8f7e069c, 1710d6e7-d788-4bdb-adb8-10cfc0160f26, 263afced-fd0d-4ddc-9bfe-355643f80812, 674c6947-31a3-4879-9f73-5db9f7b7b43e, 027dc9a1-bb19-425f-aa16-55a6c26bdb62, 0577f318-7a61-4e13-82fb-4ddd7bbf8167], 回路所有分支数量=9, 回路直径=2.1}
+     *          {起点用电器名称=BMS, 起点用电id=ee8600dc-1ab6-4fa2-a043-1e0a0cb1c6d7,
+     *          起点位置名称=前围板外中点, 起点位置id=f753b6fe-39bd-4602-8cb3-b663c79af003,
+     *          终点用电器名称=LVManuSrvcDscnctr,
+     *          终点用电id=2955c804-a8bd-463f-baff-ce063f0f5695, 终点位置名称=车身线左后inline点,
+     *          终点位置id=b9e1aee2-7e19-4bf0-9618-5b16de00aa84, 回路属性=null, 导线选型=FLRY-B
+     *          0.5, 回路编号=5349, 方案号=85342e86-dd12-498d-b6a4-a45a3bd96fce,
+     *          所属系统=系统Others, 回路起点用电器接口编号=, 回路终点用电器接口编号=, 回路信号名=BMS-KL30.2,
+     *          湿区两端连接器成本补偿=0.0, 湿区两端防水塞成本补偿=0.0, 焊点名称=null,
+     *          回路id=017874d0-de96-4a88-b253-0d4f42b2849f, 焊点位置名称=null, 焊点位置id=null,
+     *          回路途径分支点=[前围板外中点, 前围板外左点, 前舱左纵梁后点, 前舱线左后inline点, 车身线左前inline点, 左门槛中点,
+     *          左门槛后点, 左后轮包顶点, 后围板内左点, 车身线左后inline点], 回路总成本=43.365026, 回路湿区成本加成=0.0,
+     *          inline湿区连接器成本补偿=0.0, inline湿区防水塞成本补偿=0.0, 回路打断成本=0.2,
+     *          回路导线成本=42.765026, 回路总重量=3.7390186666666665, 回路总长度=7.01066,
+     *          回路打断分支=[d89d0217-8ef0-41f2-835c-49ca8f7e069c], 回路打断次数=1,
+     *          回路所有分支=[199eecf0-3320-4b2a-86e6-036442fdc317,
+     *          a6300929-2419-4a1f-b257-7c68d9a3e3c1,
+     *          8a464b8f-d481-465a-a7ce-f320d548d83e,
+     *          d89d0217-8ef0-41f2-835c-49ca8f7e069c,
+     *          1710d6e7-d788-4bdb-adb8-10cfc0160f26,
+     *          263afced-fd0d-4ddc-9bfe-355643f80812,
+     *          674c6947-31a3-4879-9f73-5db9f7b7b43e,
+     *          027dc9a1-bb19-425f-aa16-55a6c26bdb62,
+     *          0577f318-7a61-4e13-82fb-4ddd7bbf8167], 回路所有分支数量=9, 回路直径=2.1}
      */
     public Map<String, Object> findTwoPointInfo(Map<String, String> twoMap, Map<String, Object> projectInfo,
-                                                Map<String, Map<String, String>> elecFixedLocationLibrary,
-                                                Boolean whetherFix,
-                                                Map<String, Object> objectMap,
-                                                List<String> electricalSet,
-                                                Map<String, Double> elecBusinessPrice,
-                                                Map<String, Object> filtration) {
+            Map<String, Map<String, String>> elecFixedLocationLibrary,
+            Boolean whetherFix,
+            Map<String, Object> objectMap,
+            List<String> electricalSet,
+            Map<String, Double> elecBusinessPrice,
+            Map<String, Object> filtration) {
         List<Map<String, String>> appPositions = (List<Map<String, String>>) projectInfo.get("用电器信息");
         List<Map<String, String>> pointList = (List<Map<String, String>>) projectInfo.get("所有端点信息");
-
 
         String start = twoMap.get("回路起点用电器");
         String end = twoMap.get("回路终点用电器");
         String materials = twoMap.get("回路导线选型");
         String circuitId = twoMap.get("回路id");
 
-//        根据导线选型选择对应的信息
+        // 根据导线选型选择对应的信息
         Map<String, String> materialsMsg = elecFixedLocationLibrary.get(materials);
         String startName = "";
         String endName = "";
@@ -532,35 +580,40 @@ public class ElecProjectCircuitInfoOutput {
                 Map<String, Object> sinaglePath = new LinkedMap<>();
                 CalculateCircuitInfo acceptLoopInfo = new CalculateCircuitInfo();
 
-
-                Double lengthCocst=length * Double.parseDouble(materialsMsg.get("导线单位商务价（元/米）"));
+                Double lengthCocst = length * Double.parseDouble(materialsMsg.get("导线单位商务价（元/米）"));
                 if (elecBusinessPrice.containsKey(start) || elecBusinessPrice.containsKey(end)) {
                     if (elecBusinessPrice.containsKey(start)) {
-                        lengthCocst=lengthCocst + elecBusinessPrice.get(start);
+                        lengthCocst = lengthCocst + elecBusinessPrice.get(start);
                     } else {
-                        lengthCocst=lengthCocst + elecBusinessPrice.get(end);
+                        lengthCocst = lengthCocst + elecBusinessPrice.get(end);
                     }
                 }
-                sinaglePath.put("回路总成本", Double.parseDouble(df.format(Double.parseDouble(materialsMsg.get("湿区成本补偿——连接器塑壳（元/端）")) * count +
-                        Double.parseDouble(materialsMsg.get("湿区成本补偿——防水赛（元/个）")) * count +
-                        Double.parseDouble(materialsMsg.get("导线打断成本（元/次）")) * breakNumber
-                        + Double.parseDouble(materialsMsg.get("端子成本（元/端）")) * 2 +
-                        +lengthCocst)));
+                sinaglePath.put("回路总成本",
+                        Double.parseDouble(
+                                df.format(Double.parseDouble(materialsMsg.get("湿区成本补偿——连接器塑壳（元/端）")) * count +
+                                        Double.parseDouble(materialsMsg.get("湿区成本补偿——防水赛（元/个）")) * count +
+                                        Double.parseDouble(materialsMsg.get("导线打断成本（元/次）")) * breakNumber
+                                        + Double.parseDouble(materialsMsg.get("端子成本（元/端）")) * 2 +
+                                        +lengthCocst)));
                 sinaglePath.put("回路id", circuitId);
                 sinaglePath.put("回路长度", Double.parseDouble(df.format(length)));
                 sinaglePath.put("回路长度", Double.parseDouble(df.format(length)));
-                sinaglePath.put("回路重量", Double.parseDouble(df.format(length* Double.parseDouble(materialsMsg.get("导线单位重量（单位g/m）").toString()))));
+                sinaglePath.put("回路重量", Double.parseDouble(
+                        df.format(length * Double.parseDouble(materialsMsg.get("导线单位重量（单位g/m）").toString()))));
                 pathList.add(sinaglePath);
             }
         } else {
             return null;
         }
-        //        对当前的路径取最优的一种情况
+        // 对当前的路径取最优的一种情况
         Map<String, Object> bestMap = pathSelectBetweenPoint(pathList);
         return bestMap;
     }
+
     /**
-     * @Description 获取最优的一条路径（首先找出这些回路中的 回路总成本、回路总量、回路长度的最大值和最小值 然后按照 （总成本-总成本最小值）/（总成本最大值-总成本最大值）+（回路长度-回路长度最小值）/（回路长度最大值-回路长度最大值）+（回路重量-回路重量最小值）/（回路重量最大值-回路重量最大值） 其值最小的一条回路 ）
+     * @Description 获取最优的一条路径（首先找出这些回路中的 回路总成本、回路总量、回路长度的最大值和最小值 然后按照
+     *              （总成本-总成本最小值）/（总成本最大值-总成本最大值）+（回路长度-回路长度最小值）/（回路长度最大值-回路长度最大值）+（回路重量-回路重量最小值）/（回路重量最大值-回路重量最大值）
+     *              其值最小的一条回路 ）
      * @input maps:所有路径信息
      * @Return 最优的一条路径
      */
@@ -581,10 +634,11 @@ public class ElecProjectCircuitInfoOutput {
 
             Map<String, Object> compareMap = new HashMap<>();
             Double compareScore = null;
-//        接下来就是对这个这些回路进行一个打分
+            // 接下来就是对这个这些回路进行一个打分
             for (Map<String, Object> map : maps) {
                 if ((Double) map.get("回路总成本") != minCost) {
-                    Double score = ((Double) map.get("回路重量") - (Double) minMap.get("回路重量")) / ((Double) map.get("回路总成本") - minCost + 0.001);
+                    Double score = ((Double) map.get("回路重量") - (Double) minMap.get("回路重量"))
+                            / ((Double) map.get("回路总成本") - minCost + 0.001);
                     if (compareScore == null) {
                         compareScore = score;
                         compareMap = map;

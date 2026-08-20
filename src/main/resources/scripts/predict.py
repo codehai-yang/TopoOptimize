@@ -235,24 +235,24 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 # ============================================================
 def main():
     parser = argparse.ArgumentParser(description='GINE 模型推理 TCP 服务器')
-    parser.add_argument('--port', type=int, default=15000, help='监听端口（默认 15000）')
+    parser.add_argument('--port', type=int, default=16000, help='监听端口（默认 16000）')
     parser.add_argument('--host', default='127.0.0.1', help='绑定地址（默认 127.0.0.1）')
     args = parser.parse_args()
 
     # 预加载模型和归一化参数
-    print(f"[predict] 加载模型... device={_device}")
+    print(f"predict load model... device={_device}")
     get_model()
     _get_norm_params()
-    print(f"[predict] 模型就绪")
+    print(f"Model ready")
 
     server = ThreadedTCPServer((args.host, args.port), PredictHandler)
     print(f"[predict] 监听 {args.host}:{args.port}")
 
     def shutdown(sig, frame):
-        print("\n[predict] 收到退出信号，正在关闭...")
+        print("\n[predict]mo xing zhun bei tui chu ...")
         server.shutdown()
         server.server_close()
-        print("[predict] 已关闭")
+        print("[predict] yi guan bi")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, shutdown)

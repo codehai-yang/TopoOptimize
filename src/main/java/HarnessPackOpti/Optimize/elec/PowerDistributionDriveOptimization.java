@@ -74,8 +74,8 @@ public class PowerDistributionDriveOptimization {
     public static Double range45to90A = 0.6;
     public static Double rangeAbove90A = 0.5;
 
-    // 线程池
-    private static ThreadPool threadPool = null;
+    // 每次调用 new 一个本地线程池,生命周期=本次调用,避免不同调用相互干扰
+    private ThreadPool threadPool = null;
 
     // 定义一个仓库，遗传每次生成的方案存储，防止重复
     // ConcurrentHashMap 的 putIfAbsent 本身原子，无需外部 synchronized
@@ -89,7 +89,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\电源分配优化日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\驱动分配优化日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -99,290 +99,397 @@ public class PowerDistributionDriveOptimization {
     }
 
     public String powerDriverOptimize(String jsonContent) throws Exception {
-        // ========== 修复3：重置静态状态，避免多任务干扰 ==========
-        WareHouse.clear();
-        BestRepetitionNumber = 0;
-        BestCost.clear();
-        enumeratedSchemes.clear();
-
-        long categoryTime = System.currentTimeMillis();
-        ObjectMapper objectMapper = new ObjectMapper();
-        ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
-        JsonToMap jsonToMap = new JsonToMap();
-        Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
-        ReadPowerPropertiesInfo readProjectInfo = new ReadPowerPropertiesInfo();
-        Map<String, Object> readProject = readProjectInfo.getProjectInfo(jsonMap);
-        threadPool = ThreadPool.shared(HarnessBranchTopoOptimize.Threads, HarnessBranchTopoOptimize.QueueCapacity);
-        List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
-        List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
-        // 记录原始方案指纹，用于判断遗传结果中是否包含原始方案
-        final String originalFingerprint = generateSchemeFingerprint(
-                (List<Map<String, String>>) jsonMap.get("loopInfos"), appPositions);
-        Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
-        Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
-        Map<String, Object> optimizeRecord = (Map<String, Object>) jsonMap.get("optimizeRecord");
-        List<Map<String, String>> loopInfos = (List<Map<String, String>>) jsonMap.get("loopInfos");
-        List<Map<String, Object>> points = (List<Map<String, Object>>) jsonMap.get("points");
-        Map<String, String> projectInfo = (Map<String, String>) jsonMap.get("projectInfo");
-        CaseId = caseInfo.get("id").toString();
-        optimizeRecordId = optimizeRecord.get("id").toString();
-        optimizeStopStatusStore.setKey(optimizeRecordId);
-
-        // 检查是否有 changeType=2 但位置未设置的用电器（前端未选择具体位置，跳过 base 成本计算）
-        boolean hasUnsetFullRangeApp = false;
-        if (appPositions != null) {
-            for (Map<String, String> app : appPositions) {
-                if ("2".equals(app.get("changeType"))
-                        && isBlank(app.get("regularPointId"))
-                        && isBlank(app.get("regularPointName"))
-                        && isBlank(app.get("unregularPointId"))
-                        && isBlank(app.get("unregularPointName"))) {
-                    hasUnsetFullRangeApp = true;
-                    break;
-                }
-            }
-        }
-
-        // 整车信息计算(初始方案)
-        String originalResult;
-        if (hasUnsetFullRangeApp) {
-            originalResult = null;
-            System.out.println("存在 changeType=2 但位置未设置的用电器，跳过 base 方案整车计算");
-        } else {
-            originalResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
-        }
-
-        // 判断是哪种类型优化（新格式：优化类型取自 optimizeRecord.type）
-        // 4=驱动回路，3=配电回路，5=配电回路+主供电回路+驱动回路（包括硬线/高速线缆/接地回路）
-        String optimizeType = optimizeRecord.get("type") != null ? optimizeRecord.get("type").toString() : "5";
-        currentOptimizeType = optimizeType;
-        String[] split = optimizeType.split(",");
-        List<String> typeList = Arrays.asList(split);
-        Random random = new Random();
-        // 是否开启直连接口（新格式：开关取自 caseInfo.connect，"true"/"false"）
-        boolean whetherToChange = caseInfo.get("connect") != null
-                && caseInfo.get("connect").toString().equals("true");
-
-        // 主供电回路和配电回路
-        List<Map<String, String>> elecLoopList = new ArrayList<>();
-        // 驱动回路
-        List<Map<String, String>> driveLoopList = new ArrayList<>();
-        // 资源数量读取（新格式）：用电器 -> 8 类可连接资源数量限制，限制为 null 表示不限
-        Map<String, AppResourceLimit> resourceNum = new HashMap<>();
-        // 组团一起变：groupId → [loopId, ...]
-        Map<String, List<String>> togetherGroup = new HashMap<>();
-        // 互斥组：mutualId → [loopId, ...]
-        Map<String, List<String>> mutualGroup = new HashMap<>();
-        // 用电器 appId → appName
-        Map<String, String> elecNameId = new HashMap<>();
-        // 位置点名称-id
-        Map<String, String> pointNameId = new HashMap<>();
-        // 回路id-可连接的用电器列表,关于终点的
-        Map<String, Set<String>> loopElecById = new HashMap<>();
-        // 回路id-可连接的用电器列表,关于起始点的
-        Map<String, Set<String>> loopElecByIdStart = new HashMap<>();
-        FindBest findBest = new FindBest();
-
-        List<String> strPointName = new ArrayList<>();
-        List<String> endPointName = new ArrayList<>();
-        List<List<String>> branchBreakList = new ArrayList<>();
-        for (Map<String, Object> edge : edges) {
-            strPointName.add(edge.get("startPointName").toString());
-            endPointName.add(edge.get("endPointName").toString());
-            pointNameId.put(edge.get("startPointName").toString(), edge.get("startPointId").toString());
-            pointNameId.put(edge.get("endPointName").toString(), edge.get("endPointId").toString());
-            if (edge.get("topologyStatusCode").equals("B")) {
-                List<String> interruptedEdgelist = new ArrayList<>();
-                interruptedEdgelist.add(edge.get("startPointName").toString());
-                interruptedEdgelist.add(edge.get("endPointName").toString());
-                branchBreakList.add(interruptedEdgelist);
-            }
-        }
-
-        GenerateTopoMatrix adjacencyMatrixGraph = new GenerateTopoMatrix(strPointName, endPointName, branchBreakList);
-        adjacencyMatrixGraph.adjacencyMatrix();
-        adjacencyMatrixGraph.addEdge();
-        adjacencyMatrixGraph.getAdj();
-        List<String> allPoint = adjacencyMatrixGraph.getAllPoint();
-
-        // 查找用电器自身位置点
-        Map<String, String> eleclection = getEleclection(appPositions);
-
-        // 先收集直连接口分组（需要在构建 elecChangeablePosition 之前）
-        // 新格式：接口码位于 edges 的 startInterfaceCode / endInterfaceCode，分别约束起点/终点位置点
-        Map<String, List<String>> interfaceCodegroup = new HashMap<>();
-        Set<String> pointNameSet = new HashSet<>();
-        if (whetherToChange) {
-            for (Map<String, Object> edge : edges) {
-                Object startIc = edge.get("startInterfaceCode");
-                if (startIc != null && !startIc.toString().trim().isEmpty()) {
-                    String startPointName = edge.get("startPointName").toString();
-                    interfaceCodegroup.computeIfAbsent(startIc.toString(), k -> new ArrayList<>()).add(startPointName);
-                    pointNameSet.add(startPointName);
-                }
-                Object endIc = edge.get("endInterfaceCode");
-                if (endIc != null && !endIc.toString().trim().isEmpty()) {
-                    String endPointNameIc = edge.get("endPointName").toString();
-                    interfaceCodegroup.computeIfAbsent(endIc.toString(), k -> new ArrayList<>()).add(endPointNameIc);
-                    pointNameSet.add(endPointNameIc);
-                }
-            }
-        }
-
-        Map<String, List<String>> elecChangeablePosition = new HashMap<>();
-        for (Map<String, String> appPosition : appPositions) {
-            String appName = appPosition.get("appName");
-            // 读取该用电器的 8 类资源限制（dist/drive 的大/中/小电流 + hardWire + highSpeedWire）
-            // 新格式：字段值为数值或 null；任一非 null 才登记限制，否则视为无限制
-            if (resourceNum.get(appName) == null) {
-                AppResourceLimit limit = parseAppResourceLimit(appPosition);
-                if (limit != null) {
-                    resourceNum.put(appName, limit);
-                }
-            }
-            if ("1".equals(appPosition.get("changeType"))) {
-                List<String> list = new ArrayList<>();
-                String sp = appPosition.get("specifyPoints");
-                if (sp != null && !sp.isEmpty()) {
-                    for (String part : sp.split(",")) {
-                        String pointName = findNameById(part, points);
-                        list.add(pointName);
-
-                        // 如果该位置点是直连接口，将整个接口组的位置都加入
-                        // if (whetherToChange && pointNameSet.contains(pointName)) {
-                        // // 查找该位置点属于哪个接口组
-                        // for (List<String> interfacePoints : interfaceCodegroup.values()) {
-                        // if (interfacePoints.contains(pointName)) {
-                        // // 将整个接口组的位置都加入可变列表
-                        // for (String interfacePoint : interfacePoints) {
-                        // if (!list.contains(interfacePoint) && allPoint.contains(interfacePoint)) {
-                        // list.add(interfacePoint);
-                        // }
-                        // }
-                        // break;
-                        // }
-                        // }
-                        // }
-                    }
-                }
-                list.retainAll(allPoint);
-                list.add(eleclection.get(appName)); // 把自身位置加进去
-                elecChangeablePosition.put(appName, list);
-            } else if ("2".equals(appPosition.get("changeType"))) {
-                // 全量位置可变：若 allPoint 为空则无法枚举位置，给出明确告警避免静默 0 方案
-                if (allPoint == null || allPoint.isEmpty()) {
-                    System.out.println("警告: 用电器[" + appName + "] changeType=2 但可用位置 allPoint 为空，"
-                            + "该用电器位置将不会被枚举，请检查拓扑/位置点数据。");
-                }
-                elecChangeablePosition.put(appName, new ArrayList<>(allPoint));
-            }
-            elecNameId.put(appPosition.get("id"), appName);
-        }
-
-        // 统计约束list集合，方便后面判断回路是否有约束
-        List<String> togetherList = new ArrayList<>();
-        List<String> mutualList = new ArrayList<>();
-        for (Map<String, String> loopInfo : loopInfos) {
-            // 按 loopAttr 对回路分类：配电回路/主供电回路 -> 配电类；驱动回路 -> 驱动类
-            // 硬线信号回路/接地回路/高速线缆回路 不进入配电/驱动优化目标（type3 时由 combinedList 天然排除）
-            if ("主供电回路".equals(loopInfo.get("loopAttr"))
-                    || "配电回路".equals(loopInfo.get("loopAttr"))) {
-                elecLoopList.add(loopInfo);
-            } else if ("驱动回路".equals(loopInfo.get("loopAttr"))) {
-                driveLoopList.add(loopInfo);
-            }
-            // 回路可连接的终点用电器（startConnEndApps 传的是用电器名称，逗号分隔）
-            String s = loopInfo.get("startConnEndApps");
-            if (s != null && !s.isEmpty()) {
-                for (String name : s.split(",")) {
-                    String trim = name.trim();
-                    if (!trim.isEmpty())
-                        loopElecById.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(trim);
-                }
-            }
-            // 回路可连接的起点用电器（selectedEndApp 传的是用电器名称，逗号分隔，与终点同一约定）
-            String start = loopInfo.get("selectedEndApp");
-            if (start != null && !start.trim().isEmpty()) {
-                for (String name : start.split(",")) {
-                    String trim = name.trim();
-                    if (!trim.isEmpty())
-                        loopElecByIdStart.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(trim);
-                }
-            }
-            // 组团一起变归组（新字段 teamConnRel）
-            String ct = loopInfo.get("teamConnRel");
-            if (ct != null && !ct.isEmpty()) {
-                togetherGroup.computeIfAbsent(ct, k -> new ArrayList<>()).add(loopInfo.get("id"));
-                togetherList.add(loopInfo.get("id"));
-            }
-            // 互斥归组（新字段 exclusiveConnRel，按字母前缀分组：A-1/A-2 → 同组 A，组内 endApp 必须不同）
-            String me = loopInfo.get("exclusiveConnRel");
-            if (me != null && !me.isEmpty()) {
-                String groupKey = me.contains("-") ? me.substring(0, me.lastIndexOf('-')) : me;
-                mutualGroup.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(loopInfo.get("id"));
-                mutualList.add(loopInfo.get("id"));
-            }
-        }
-        System.out.println("回路分类耗时:" + (System.currentTimeMillis() - categoryTime));
-
-        // 枚举模式：计算带约束的方案总数
-        // 优化类型 1：控制器回路
-        long combinationsTime = System.currentTimeMillis();
-        long combinations = 0;
-
-        // 同时优化配电回路和驱动器回路
-        List<Map<String, String>> combinedList = new ArrayList<>(elecLoopList);
-        combinedList.addAll(driveLoopList);
-        if (typeList.contains("3") && typeList.contains("4")) {
-            combinations = calculateOptimizationCombinations(combinedList, elecChangeablePosition, togetherGroup,
-                    loopElecById, loopElecByIdStart);
-        }
-
-        // 优化驱动回路
-        if ("4".equals(optimizeType)) {
-            combinations = calculateOptimizationCombinations(driveLoopList, elecChangeablePosition, togetherGroup,
-                    loopElecById, loopElecByIdStart);
-        }
-
-        // 优化类型 2：配电器回路
-        if ("3".equals(optimizeType)) {
-            combinations = calculateOptimizationCombinations(elecLoopList, elecChangeablePosition, togetherGroup,
-                    loopElecById, loopElecByIdStart);
-        }
-
-        // 优化类型 3：配电回路+主供电回路+驱动回路（combinedList 已天然排除硬线/高速线缆/接地回路）
-        if ("5".equals(optimizeType)) {
-            combinations = calculateOptimizationCombinations(combinedList, elecChangeablePosition, togetherGroup,
-                    loopElecById, loopElecByIdStart);
-        }
-
-        System.out.println("枚举模式耗时:" + (System.currentTimeMillis() - combinationsTime));
-        System.out.println("总方案数: " + combinations);
-
-        // 总方案数 ≤ 1，没有优化空间，直接返回原始方案
-        if (combinations <= 1) {
-            System.out.println("方案数 ≤ 1，无需优化，直接返回原始方案");
-            List<Map<String, Object>> result = new ArrayList<>();
-            Map<String, Object> origMap = new HashMap<>();
-            origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
-            origMap.put("appPositions", deepCopyAppPositions(appPositions));
-            origMap.put("成本", parseOriginalCost(originalResult, jsonToMap));
-            try {
-                result.add(enrichToFullScheme(origMap, jsonMap, objectMapper,
-                        projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, true));
-            } catch (Exception e) {
-                System.err.println("原始方案还原失败: " + e.getMessage());
-                result.add(origMap);
-            }
-            return objectMapper.writeValueAsString(result);
-        }
-
-        // 如果方案数在限制内，进行枚举生成方案列表
-        if (combinations <= caseNumber) {
-            long enumerateTime = System.currentTimeMillis();
+        try {
+            // ========== 修复3：重置静态状态，避免多任务干扰 ==========
+            WareHouse.clear();
+            BestRepetitionNumber = 0;
+            BestCost.clear();
             enumeratedSchemes.clear();
 
-            // 根据优化类型选择目标回路并枚举
+            long categoryTime = System.currentTimeMillis();
+            ObjectMapper objectMapper = new ObjectMapper();
+            ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
+            JsonToMap jsonToMap = new JsonToMap();
+            Map<String, Object> jsonMap = jsonToMap.TransJsonToMap(jsonContent);
+            ReadPowerPropertiesInfo readProjectInfo = new ReadPowerPropertiesInfo();
+            Map<String, Object> readProject = readProjectInfo.getProjectInfo(jsonMap);
+            threadPool = new ThreadPool(HarnessBranchTopoOptimize.Threads, HarnessBranchTopoOptimize.QueueCapacity);
+            List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
+            List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
+            // 记录原始方案指纹，用于判断遗传结果中是否包含原始方案
+            final String originalFingerprint = generateSchemeFingerprint(
+                    (List<Map<String, String>>) jsonMap.get("loopInfos"), appPositions);
+            Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
+            Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
+            Map<String, Object> optimizeRecord = (Map<String, Object>) jsonMap.get("optimizeRecord");
+            List<Map<String, String>> loopInfos = (List<Map<String, String>>) jsonMap.get("loopInfos");
+            List<Map<String, Object>> points = (List<Map<String, Object>>) jsonMap.get("points");
+            Map<String, String> projectInfo = (Map<String, String>) jsonMap.get("projectInfo");
+            CaseId = caseInfo.get("id").toString();
+            optimizeRecordId = optimizeRecord.get("id").toString();
+            optimizeStopStatusStore.setKey(optimizeRecordId);
+
+            // 检查是否有 changeType=2 但位置未设置的用电器（前端未选择具体位置，跳过 base 成本计算）
+            boolean hasUnsetFullRangeApp = false;
+            if (appPositions != null) {
+                for (Map<String, String> app : appPositions) {
+                    if ("2".equals(app.get("changeType"))
+                            && isBlank(app.get("regularPointId"))
+                            && isBlank(app.get("regularPointName"))
+                            && isBlank(app.get("unregularPointId"))
+                            && isBlank(app.get("unregularPointName"))) {
+                        hasUnsetFullRangeApp = true;
+                        break;
+                    }
+                }
+            }
+
+            // 整车信息计算(初始方案)
+            String originalResult;
+            if (hasUnsetFullRangeApp) {
+                originalResult = null;
+                System.out.println("存在 changeType=2 但位置未设置的用电器，跳过 base 方案整车计算");
+            } else {
+                originalResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
+            }
+
+            // 判断是哪种类型优化（新格式：优化类型取自 optimizeRecord.type）
+            // 4=驱动回路，3=配电回路，5=配电回路+主供电回路+驱动回路（包括硬线/高速线缆/接地回路）
+            String optimizeType = optimizeRecord.get("type") != null ? optimizeRecord.get("type").toString() : "5";
+            currentOptimizeType = optimizeType;
+            String[] split = optimizeType.split(",");
+            List<String> typeList = Arrays.asList(split);
+            Random random = new Random();
+            // 是否开启直连接口（新格式：开关取自 caseInfo.connect，"true"/"false"）
+            boolean whetherToChange = caseInfo.get("connect") != null
+                    && caseInfo.get("connect").toString().equals("true");
+
+            // 主供电回路和配电回路
+            List<Map<String, String>> elecLoopList = new ArrayList<>();
+            // 驱动回路
+            List<Map<String, String>> driveLoopList = new ArrayList<>();
+            // 资源数量读取（新格式）：用电器 -> 8 类可连接资源数量限制，限制为 null 表示不限
+            Map<String, AppResourceLimit> resourceNum = new HashMap<>();
+            // 组团一起变：groupId → [loopId, ...]
+            Map<String, List<String>> togetherGroup = new HashMap<>();
+            // 互斥组：mutualId → [loopId, ...]
+            Map<String, List<String>> mutualGroup = new HashMap<>();
+            // 用电器 appId → appName
+            Map<String, String> elecNameId = new HashMap<>();
+            // 位置点名称-id
+            Map<String, String> pointNameId = new HashMap<>();
+            // 回路id-可连接的用电器列表,关于终点的
+            Map<String, Set<String>> loopElecById = new HashMap<>();
+            // 回路id-可连接的用电器列表,关于起始点的
+            Map<String, Set<String>> loopElecByIdStart = new HashMap<>();
+            FindBest findBest = new FindBest();
+
+            List<String> strPointName = new ArrayList<>();
+            List<String> endPointName = new ArrayList<>();
+            List<List<String>> branchBreakList = new ArrayList<>();
+            for (Map<String, Object> edge : edges) {
+                strPointName.add(edge.get("startPointName").toString());
+                endPointName.add(edge.get("endPointName").toString());
+                pointNameId.put(edge.get("startPointName").toString(), edge.get("startPointId").toString());
+                pointNameId.put(edge.get("endPointName").toString(), edge.get("endPointId").toString());
+                if (edge.get("topologyStatusCode").equals("B")) {
+                    List<String> interruptedEdgelist = new ArrayList<>();
+                    interruptedEdgelist.add(edge.get("startPointName").toString());
+                    interruptedEdgelist.add(edge.get("endPointName").toString());
+                    branchBreakList.add(interruptedEdgelist);
+                }
+            }
+
+            GenerateTopoMatrix adjacencyMatrixGraph = new GenerateTopoMatrix(strPointName, endPointName,
+                    branchBreakList);
+            adjacencyMatrixGraph.adjacencyMatrix();
+            adjacencyMatrixGraph.addEdge();
+            adjacencyMatrixGraph.getAdj();
+            List<String> allPoint = adjacencyMatrixGraph.getAllPoint();
+
+            // 查找用电器自身位置点
+            Map<String, String> eleclection = getEleclection(appPositions);
+
+            // 先收集直连接口分组（需要在构建 elecChangeablePosition 之前）
+            // 新格式：接口码位于 edges 的 startInterfaceCode / endInterfaceCode，分别约束起点/终点位置点
+            Map<String, List<String>> interfaceCodegroup = new HashMap<>();
+            Set<String> pointNameSet = new HashSet<>();
+            if (whetherToChange) {
+                for (Map<String, Object> edge : edges) {
+                    Object startIc = edge.get("startInterfaceCode");
+                    if (startIc != null && !startIc.toString().trim().isEmpty()) {
+                        String startPointName = edge.get("startPointName").toString();
+                        interfaceCodegroup.computeIfAbsent(startIc.toString(), k -> new ArrayList<>())
+                                .add(startPointName);
+                        pointNameSet.add(startPointName);
+                    }
+                    Object endIc = edge.get("endInterfaceCode");
+                    if (endIc != null && !endIc.toString().trim().isEmpty()) {
+                        String endPointNameIc = edge.get("endPointName").toString();
+                        interfaceCodegroup.computeIfAbsent(endIc.toString(), k -> new ArrayList<>())
+                                .add(endPointNameIc);
+                        pointNameSet.add(endPointNameIc);
+                    }
+                }
+            }
+
+            Map<String, List<String>> elecChangeablePosition = new HashMap<>();
+            for (Map<String, String> appPosition : appPositions) {
+                String appName = appPosition.get("appName");
+                // 读取该用电器的 8 类资源限制（dist/drive 的大/中/小电流 + hardWire + highSpeedWire）
+                // 新格式：字段值为数值或 null；任一非 null 才登记限制，否则视为无限制
+                if (resourceNum.get(appName) == null) {
+                    AppResourceLimit limit = parseAppResourceLimit(appPosition);
+                    if (limit != null) {
+                        resourceNum.put(appName, limit);
+                    }
+                }
+                if ("1".equals(appPosition.get("changeType"))) {
+                    List<String> list = new ArrayList<>();
+                    String sp = appPosition.get("specifyPoints");
+                    if (sp != null && !sp.isEmpty()) {
+                        for (String part : sp.split(",")) {
+                            String pointName = findNameById(part, points);
+                            list.add(pointName);
+                        }
+                    }
+                    list.retainAll(allPoint);
+                    list.add(eleclection.get(appName)); // 把自身位置加进去
+                    elecChangeablePosition.put(appName, list);
+                } else if ("2".equals(appPosition.get("changeType"))) {
+                    // 全量位置可变：若 allPoint 为空则无法枚举位置，给出明确告警避免静默 0 方案
+                    if (allPoint == null || allPoint.isEmpty()) {
+                        System.out.println("警告: 用电器[" + appName + "] changeType=2 但可用位置 allPoint 为空，"
+                                + "该用电器位置将不会被枚举，请检查拓扑/位置点数据。");
+                    }
+                    elecChangeablePosition.put(appName, new ArrayList<>(allPoint));
+                }
+                elecNameId.put(appPosition.get("id"), appName);
+            }
+
+            // 统计约束list集合，方便后面判断回路是否有约束
+            List<String> togetherList = new ArrayList<>();
+            List<String> mutualList = new ArrayList<>();
+            for (Map<String, String> loopInfo : loopInfos) {
+                // 按 loopAttr 对回路分类：配电回路/主供电回路 -> 配电类；驱动回路 -> 驱动类
+                // 硬线信号回路/接地回路/高速线缆回路 不进入配电/驱动优化目标（type3 时由 combinedList 天然排除）
+                if ("主供电回路".equals(loopInfo.get("loopAttr"))
+                        || "配电回路".equals(loopInfo.get("loopAttr"))) {
+                    elecLoopList.add(loopInfo);
+                } else if ("驱动回路".equals(loopInfo.get("loopAttr"))) {
+                    driveLoopList.add(loopInfo);
+                }
+                // 回路可连接的终点用电器（startConnEndApps 传的是用电器名称，逗号分隔）
+                String s = loopInfo.get("startConnEndApps");
+                if (s != null && !s.isEmpty()) {
+                    for (String name : s.split(",")) {
+                        String trim = name.trim();
+                        if (!trim.isEmpty())
+                            loopElecById.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(trim);
+                    }
+                }
+                // 回路可连接的起点用电器（selectedEndApp 传的是用电器名称，逗号分隔，与终点同一约定）
+                String start = loopInfo.get("selectedEndApp");
+                if (start != null && !start.trim().isEmpty()) {
+                    for (String name : start.split(",")) {
+                        String trim = name.trim();
+                        if (!trim.isEmpty())
+                            loopElecByIdStart.computeIfAbsent(loopInfo.get("id"), k -> new HashSet<>()).add(trim);
+                    }
+                }
+                // 组团一起变归组（新字段 teamConnRel）
+                String ct = loopInfo.get("teamConnRel");
+                if (ct != null && !ct.isEmpty()) {
+                    togetherGroup.computeIfAbsent(ct, k -> new ArrayList<>()).add(loopInfo.get("id"));
+                    togetherList.add(loopInfo.get("id"));
+                }
+                // 互斥归组（新字段 exclusiveConnRel，按字母前缀分组：A-1/A-2 → 同组 A，组内 endApp 必须不同）
+                String me = loopInfo.get("exclusiveConnRel");
+                if (me != null && !me.isEmpty()) {
+                    String groupKey = me.contains("-") ? me.substring(0, me.lastIndexOf('-')) : me;
+                    mutualGroup.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(loopInfo.get("id"));
+                    mutualList.add(loopInfo.get("id"));
+                }
+            }
+            System.out.println("回路分类耗时:" + (System.currentTimeMillis() - categoryTime));
+
+            // 枚举模式：计算带约束的方案总数
+            // 优化类型 1：控制器回路
+            long combinationsTime = System.currentTimeMillis();
+            long combinations = 0;
+
+            // 同时优化配电回路和驱动器回路
+            List<Map<String, String>> combinedList = new ArrayList<>(elecLoopList);
+            combinedList.addAll(driveLoopList);
+            if (typeList.contains("3") && typeList.contains("4")) {
+                combinations = calculateOptimizationCombinations(combinedList, elecChangeablePosition, togetherGroup,
+                        loopElecById, loopElecByIdStart);
+            }
+
+            // 优化驱动回路
+            if ("4".equals(optimizeType)) {
+                combinations = calculateOptimizationCombinations(driveLoopList, elecChangeablePosition, togetherGroup,
+                        loopElecById, loopElecByIdStart);
+            }
+
+            // 优化类型 2：配电器回路
+            if ("3".equals(optimizeType)) {
+                combinations = calculateOptimizationCombinations(elecLoopList, elecChangeablePosition, togetherGroup,
+                        loopElecById, loopElecByIdStart);
+            }
+
+            // 优化类型 3：配电回路+主供电回路+驱动回路（combinedList 已天然排除硬线/高速线缆/接地回路）
+            if ("5".equals(optimizeType)) {
+                combinations = calculateOptimizationCombinations(combinedList, elecChangeablePosition, togetherGroup,
+                        loopElecById, loopElecByIdStart);
+            }
+
+            System.out.println("枚举模式耗时:" + (System.currentTimeMillis() - combinationsTime));
+            System.out.println("总方案数: " + combinations);
+
+            // 总方案数 ≤ 1，没有优化空间，直接返回原始方案
+            if (combinations <= 1) {
+                System.out.println("方案数 ≤ 1，无需优化，直接返回原始方案");
+                List<Map<String, Object>> result = new ArrayList<>();
+                Map<String, Object> origMap = new HashMap<>();
+                origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
+                origMap.put("appPositions", deepCopyAppPositions(appPositions));
+                origMap.put("成本", parseOriginalCost(originalResult, jsonToMap));
+                try {
+                    result.add(enrichToFullScheme(origMap, jsonMap, objectMapper,
+                            projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, true));
+                } catch (Exception e) {
+                    System.err.println("原始方案还原失败: " + e.getMessage());
+                    result.add(origMap);
+                }
+                return objectMapper.writeValueAsString(result);
+            }
+
+            // 如果方案数在限制内，进行枚举生成方案列表
+            if (combinations <= caseNumber) {
+                long enumerateTime = System.currentTimeMillis();
+                enumeratedSchemes.clear();
+
+                // 根据优化类型选择目标回路并枚举
+                List<Map<String, String>> targetLoops = null;
+                if (typeList.contains("3") && typeList.contains("4")) {
+                    targetLoops = combinedList;
+                } else if ("4".equals(optimizeType)) {
+                    targetLoops = driveLoopList;
+                } else if ("3".equals(optimizeType)) {
+                    targetLoops = elecLoopList;
+                } else if ("5".equals(optimizeType)) {
+                    targetLoops = combinedList;
+                }
+                List<Map<String, Object>> resultList = new ArrayList<>();
+                int duplicateCount = 0; // 统计重复方案数
+                int validSchemeCount = 0; // 统计有效方案数
+
+                if (targetLoops != null && !targetLoops.isEmpty()) {
+                    // 执行枚举
+                    enumerateAllSchemes(targetLoops, elecChangeablePosition, togetherGroup, mutualGroup, loopInfos,
+                            loopElecById, loopElecByIdStart);
+
+                    // 每个方案格式: Map<回路ID, "起点用电器|终点用电器|起点位置|终点位置">
+                    // 遍历所有方案
+                    for (int i = 0; i < enumeratedSchemes.size(); i++) {
+                        Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
+                        Map<String, String> scheme = enumeratedSchemes.get(i);
+
+                        List<Map<String, String>> loopInfoCopy = new ArrayList<>();
+                        for (Map<String, String> loop : loopInfos) {
+                            loopInfoCopy.add(new HashMap<>(loop));
+                        }
+                        List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(appPositions);
+
+                        // 遍历该方案中的所有回路，还原方案（抽出为 applyEnumeratedSchemeToLoops）
+                        applyEnumeratedSchemeToLoops(loopInfoCopy, appPositionsCopy, scheme, elecChangeablePosition,
+                                pointNameId);
+                        // 修复 +/- 同名用电器同控制器约束
+                        fixPlusMinusControllerConstraint(loopInfoCopy, appPositions);
+
+                        // 生成完整方案的指纹（包含所有回路和所有用电器位置）
+                        String fingerprint = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
+                        if (WareHouse.contains(fingerprint)) {
+                            duplicateCount++;
+                            continue;
+                        }
+                        // 资源数量检查
+                        Boolean aBoolean = elecResourceCheck(loopInfoCopy, resourceNum);
+                        if (!aBoolean) {
+                            continue;
+                        }
+
+                        WareHouse.add(fingerprint);
+                        validSchemeCount++;
+                        jsonMapCopy.put("loopInfos", loopInfoCopy);
+                        jsonMapCopy.put("appPositions", appPositionsCopy);
+                        // 导线选型更新（成本计算前）
+                        updateWireSelectionForScheme(loopInfoCopy, appPositionsCopy, currentOptimizeType);
+                        // ========== 修复1：计算成本时使用修改后的方案 ==========
+                        String modifiedJson = objectMapper.writeValueAsString(jsonMapCopy);
+                        String s = projectCircuitInfoOutput.projectCircuitInfoOutput(modifiedJson);
+                        if (s == null) {
+                            continue;
+                        }
+                        Map<String, Object> rawMap = jsonToMap.TransJsonToMap(s);
+                        Map<String, Object> projectCircuitInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
+                        Object totalCost = projectCircuitInfo.get("总成本");
+                        Object totalWeight = projectCircuitInfo.get("回路总重量");
+                        Object totalLength = projectCircuitInfo.get("回路总长度");
+                        if (!(totalCost instanceof Number) || !(totalWeight instanceof Number)
+                                || !(totalLength instanceof Number)) {
+                            System.err.println("枚举方案计算失败，跳过: 成本字段缺失");
+                            continue;
+                        }
+                        Map<String, Double> projectCost = new HashMap<>();
+                        projectCost.put("总成本", ((Number) totalCost).doubleValue());
+                        projectCost.put("总重量", ((Number) totalWeight).doubleValue());
+                        projectCost.put("总长度", ((Number) totalLength).doubleValue());
+
+                        // 精简方案 Map：仅保留 findBest/交叉/变异 真正需要的三个字段
+                        Map<String, Object> map = new HashMap<>();
+                        map.put("成本", projectCost);
+                        map.put("loopInfos", loopInfoCopy);
+                        map.put("appPositions", appPositionsCopy);
+                        resultList.add(map);
+                    }
+                }
+                System.out.println("重复方案数: " + duplicateCount);
+                System.out.println("有效方案数: " + validSchemeCount);
+                List<Map<String, Object>> topBest = new ArrayList<>();
+                if (resultList.size() > 1) {
+                    topBest = findBest.findBest(resultList, "成本", TopNumber);
+                } else if (resultList.size() == 1) {
+                    topBest.add(resultList.get(0));
+                }
+                // base 方案必须加入最后返回的 top,去重后保证 base 在结果中
+                Map<String, Object> baseScheme = buildBaseSchemeMap(originalResult, jsonContent,
+                        loopInfos, appPositions, jsonToMap, objectMapper, projectCircuitInfoOutput);
+                if (baseScheme != null) {
+                    topBest.add(baseScheme);
+                }
+                topBest = ensureBaseAndDedup(topBest, baseScheme);
+                System.out.println("枚举总耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
+                // 最终输出前：为 top 方案补齐完整整车计算结果
+                List<Map<String, Object>> enriched = new ArrayList<>();
+                for (Map<String, Object> slim : topBest) {
+                    try {
+                        List<Map<String, String>> sloopInfos = (List<Map<String, String>>) slim.get("loopInfos");
+                        List<Map<String, String>> sAppPositions = (List<Map<String, String>>) slim.get("appPositions");
+                        boolean isInitial = originalFingerprint != null
+                                && originalFingerprint.equals(generateSchemeFingerprint(sloopInfos, sAppPositions));
+                        enriched.add(enrichToFullScheme(slim, jsonMap, objectMapper,
+                                projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, isInitial));
+                    } catch (Exception e) {
+                        System.err.println("方案还原失败，使用精简版: " + e.getMessage());
+                        enriched.add(slim);
+                    }
+                }
+                return objectMapper.writeValueAsString(enriched);
+            }
+
+            // 开始生成初代样本
             List<Map<String, String>> targetLoops = null;
             if (typeList.contains("3") && typeList.contains("4")) {
                 targetLoops = combinedList;
@@ -393,242 +500,11 @@ public class PowerDistributionDriveOptimization {
             } else if ("5".equals(optimizeType)) {
                 targetLoops = combinedList;
             }
-            List<Map<String, Object>> resultList = new ArrayList<>();
-            int duplicateCount = 0; // 统计重复方案数
-            int validSchemeCount = 0; // 统计有效方案数
-
-            if (targetLoops != null && !targetLoops.isEmpty()) {
-                // 执行枚举
-                enumerateAllSchemes(targetLoops, elecChangeablePosition, togetherGroup, mutualGroup, loopInfos,
-                        loopElecById, loopElecByIdStart);
-
-                // 每个方案格式: Map<回路ID, "起点用电器|终点用电器|起点位置|终点位置">
-                // 遍历所有方案
-                for (int i = 0; i < enumeratedSchemes.size(); i++) {
-                    Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
-                    Map<String, String> scheme = enumeratedSchemes.get(i);
-
-                    List<Map<String, String>> loopInfoCopy = new ArrayList<>();
-                    for (Map<String, String> loop : loopInfos) {
-                        loopInfoCopy.add(new HashMap<>(loop));
-                    }
-                    List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(appPositions);
-
-                    // 遍历该方案中的所有回路，还原方案（抽出为 applyEnumeratedSchemeToLoops）
-                    applyEnumeratedSchemeToLoops(loopInfoCopy, appPositionsCopy, scheme, elecChangeablePosition,
-                            pointNameId);
-                    // 修复 +/- 同名用电器同控制器约束
-                    fixPlusMinusControllerConstraint(loopInfoCopy, appPositions);
-
-                    // 生成完整方案的指纹（包含所有回路和所有用电器位置）
-                    String fingerprint = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
-                    if (WareHouse.contains(fingerprint)) {
-                        duplicateCount++;
-                        continue;
-                    }
-                    // 资源数量检查
-                    Boolean aBoolean = elecResourceCheck(loopInfoCopy, resourceNum);
-                    if (!aBoolean) {
-                        continue;
-                    }
-
-                    WareHouse.add(fingerprint);
-                    validSchemeCount++;
-                    jsonMapCopy.put("loopInfos", loopInfoCopy);
-                    jsonMapCopy.put("appPositions", appPositionsCopy);
-                    // 导线选型更新（成本计算前）
-                    updateWireSelectionForScheme(loopInfoCopy, appPositionsCopy, currentOptimizeType);
-                    // ========== 修复1：计算成本时使用修改后的方案 ==========
-                    String modifiedJson = objectMapper.writeValueAsString(jsonMapCopy);
-                    String s = projectCircuitInfoOutput.projectCircuitInfoOutput(modifiedJson);
-                    if (s == null) {
-                        continue;
-                    }
-                    Map<String, Object> rawMap = jsonToMap.TransJsonToMap(s);
-                    Map<String, Object> projectCircuitInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
-                    Object totalCost = projectCircuitInfo.get("总成本");
-                    Object totalWeight = projectCircuitInfo.get("回路总重量");
-                    Object totalLength = projectCircuitInfo.get("回路总长度");
-                    if (!(totalCost instanceof Number) || !(totalWeight instanceof Number)
-                            || !(totalLength instanceof Number)) {
-                        System.err.println("枚举方案计算失败，跳过: 成本字段缺失");
-                        continue;
-                    }
-                    Map<String, Double> projectCost = new HashMap<>();
-                    projectCost.put("总成本", ((Number) totalCost).doubleValue());
-                    projectCost.put("总重量", ((Number) totalWeight).doubleValue());
-                    projectCost.put("总长度", ((Number) totalLength).doubleValue());
-
-                    // 精简方案 Map：仅保留 findBest/交叉/变异 真正需要的三个字段
-                    Map<String, Object> map = new HashMap<>();
-                    map.put("成本", projectCost);
-                    map.put("loopInfos", loopInfoCopy);
-                    map.put("appPositions", appPositionsCopy);
-                    resultList.add(map);
-                }
-            }
-            System.out.println("重复方案数: " + duplicateCount);
-            System.out.println("有效方案数: " + validSchemeCount);
+            long gaInitTime = System.currentTimeMillis();
             List<Map<String, Object>> topBest = new ArrayList<>();
-            if (resultList.size() > 1) {
-                topBest = findBest.findBest(resultList, "成本", TopNumber);
-            } else if (resultList.size() == 1) {
-                topBest.add(resultList.get(0));
-            }
-            // base 方案必须加入最后返回的 top,去重后保证 base 在结果中
-            Map<String, Object> baseScheme = buildBaseSchemeMap(originalResult, loopInfos, appPositions, jsonToMap);
-            if (baseScheme != null) {
-                topBest.add(baseScheme);
-            }
-            topBest = ensureBaseAndDedup(topBest, baseScheme);
-            System.out.println("枚举总耗时: " + (System.currentTimeMillis() - enumerateTime) + "ms");
-            // 最终输出前：为 top 方案补齐完整整车计算结果
-            List<Map<String, Object>> enriched = new ArrayList<>();
-            for (Map<String, Object> slim : topBest) {
-                try {
-                    List<Map<String, String>> sloopInfos = (List<Map<String, String>>) slim.get("loopInfos");
-                    List<Map<String, String>> sAppPositions = (List<Map<String, String>>) slim.get("appPositions");
-                    boolean isInitial = originalFingerprint != null
-                            && originalFingerprint.equals(generateSchemeFingerprint(sloopInfos, sAppPositions));
-                    enriched.add(enrichToFullScheme(slim, jsonMap, objectMapper,
-                            projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, isInitial));
-                } catch (Exception e) {
-                    System.err.println("方案还原失败，使用精简版: " + e.getMessage());
-                    enriched.add(slim);
-                }
-            }
-            return objectMapper.writeValueAsString(enriched);
-        }
-
-        // 开始生成初代样本
-        List<Map<String, String>> targetLoops = null;
-        if (typeList.contains("3") && typeList.contains("4")) {
-            targetLoops = combinedList;
-        } else if ("4".equals(optimizeType)) {
-            targetLoops = driveLoopList;
-        } else if ("3".equals(optimizeType)) {
-            targetLoops = elecLoopList;
-        } else if ("5".equals(optimizeType)) {
-            targetLoops = combinedList;
-        }
-        long gaInitTime = System.currentTimeMillis();
-        List<Map<String, Object>> topBest = new ArrayList<>();
-        if (targetLoops != null && !targetLoops.isEmpty()) {
-            List<Map<String, Object>> initialPopulation = generateInitialPopulation(
-                    LessRandomSamleNumber,
-                    targetLoops,
-                    loopInfos,
-                    appPositions,
-                    elecChangeablePosition,
-                    togetherGroup,
-                    mutualGroup,
-                    pointNameId,
-                    objectMapper,
-                    projectCircuitInfoOutput,
-                    jsonToMap,
-                    jsonMap,
-                    loopElecById,
-                    loopElecByIdStart,
-                    resourceNum);
-
-            System.out.println("初代样本生成耗时: " + (System.currentTimeMillis() - gaInitTime) + "ms");
-            System.out.println("有效初代样本数: " + initialPopulation.size());
-
-            if (!initialPopulation.isEmpty()) {
-                topBest = findBest.findBest(initialPopulation, "成本", TopNumber);
-                // base 方案加入初代 top 对比
-                Map<String, Object> baseScheme = buildBaseSchemeMap(originalResult, loopInfos, appPositions, jsonToMap);
-                if (baseScheme != null) {
-                    topBest.add(baseScheme);
-                }
-            }
-        }
-
-        // 遗传算法
-        int hybridizationNumber = 0;
-        int emptyGenCount = 0; // 连续无有效变异体的代数
-        List<Map<String, Object>> currentTopBest = topBest;
-
-        while (true) {
-            long iterStartMs = System.currentTimeMillis();
-            System.out.println((hybridizationNumber + 1) + "代迭代开始, 仓库方案数: " + WareHouse.size());
-
-            if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
-                System.out.println("优化被用户中断");
-                break;
-            }
-
-            List<Map<String, Object>> crossedSchemes = crossoverTopSchemes(
-                    currentTopBest,
-                    targetLoops,
-                    loopInfos,
-                    appPositions,
-                    elecChangeablePosition,
-                    togetherGroup,
-                    mutualGroup,
-                    pointNameId,
-                    objectMapper,
-                    projectCircuitInfoOutput,
-                    jsonToMap,
-                    topoInfoMap,
-                    projectInfo,
-                    loopElecById,
-                    random,
-                    resourceNum, jsonMap);
-
-            System.out.println("交叉生成 " + crossedSchemes.size() + " 个方案");
-
-            List<Map<String, Object>> allSchemesForMutation = new ArrayList<>(currentTopBest);
-            allSchemesForMutation.addAll(crossedSchemes);
-
-            // 变异上限 = 本代目标 - 已保留的方案，避免无限制生成
-            int mutationCap = Math.max(1, HybridizationLessRandomSamleNumber - currentTopBest.size());
-            List<Map<String, Object>> mutatedSchemes = mutateTopSchemes(
-                    allSchemesForMutation,
-                    mutationCap,
-                    targetLoops,
-                    loopInfos,
-                    appPositions,
-                    elecChangeablePosition,
-                    togetherGroup,
-                    mutualGroup,
-                    pointNameId,
-                    objectMapper,
-                    projectCircuitInfoOutput,
-                    jsonToMap,
-                    jsonMap,
-                    loopElecById,
-                    loopElecByIdStart,
-                    random,
-                    resourceNum);
-            System.out.println("变异生成 " + mutatedSchemes.size() + " 个方案");
-
-            boolean noProgress = mutatedSchemes.isEmpty() && crossedSchemes.isEmpty();
-            if (noProgress) {
-                emptyGenCount++;
-                System.out.println("第" + (hybridizationNumber + 1) + "代未生成有效方案（连续空代: "
-                        + emptyGenCount + "/" + MaxConsecutiveEmptyGenerations + "），继续下一轮");
-                if (emptyGenCount >= MaxConsecutiveEmptyGenerations) {
-                    System.out.println("连续 " + MaxConsecutiveEmptyGenerations
-                            + " 代无新有效方案，终止遗传迭代，返回当前最优方案");
-                    break;
-                }
-                hybridizationNumber++;
-                continue;
-            }
-            // 只要交叉或变异任一产生新方案都算有进展，但只在变异成功时清零（交叉只是配对不直接入代）
-            if (!mutatedSchemes.isEmpty())
-                emptyGenCount = 0;
-
-            List<Map<String, Object>> resuliList = new ArrayList<>(currentTopBest);
-            resuliList.addAll(crossedSchemes);
-            resuliList.addAll(mutatedSchemes);
-            int numb = 0;
-            while (resuliList.size() < HybridizationLessRandomSamleNumber) {
-                int need = HybridizationLessRandomSamleNumber - resuliList.size();
-                System.out.println("方案数量不足，需要补充 " + need + " 个方案");
-                List<Map<String, Object>> supplementedSchemes = generateInitialPopulation(
-                        need,
+            if (targetLoops != null && !targetLoops.isEmpty()) {
+                List<Map<String, Object>> initialPopulation = generateInitialPopulation(
+                        LessRandomSamleNumber,
                         targetLoops,
                         loopInfos,
                         appPositions,
@@ -643,157 +519,282 @@ public class PowerDistributionDriveOptimization {
                         loopElecById,
                         loopElecByIdStart,
                         resourceNum);
-                numb++;
-                if (numb > AutoCompleteNumber) {
+
+                System.out.println("初代样本生成耗时: " + (System.currentTimeMillis() - gaInitTime) + "ms");
+                System.out.println("有效初代样本数: " + initialPopulation.size());
+
+                if (!initialPopulation.isEmpty()) {
+                    topBest = findBest.findBest(initialPopulation, "成本", TopNumber);
+                    // base 方案加入初代 top 对比
+                    Map<String, Object> baseScheme = buildBaseSchemeMap(originalResult, jsonContent,
+                            loopInfos, appPositions, jsonToMap, objectMapper, projectCircuitInfoOutput);
+                    if (baseScheme != null) {
+                        topBest.add(baseScheme);
+                    }
+                }
+            }
+
+            // 遗传算法
+            int hybridizationNumber = 0;
+            int emptyGenCount = 0; // 连续无有效变异体的代数
+            List<Map<String, Object>> currentTopBest = topBest;
+
+            while (true) {
+                long iterStartMs = System.currentTimeMillis();
+                System.out.println((hybridizationNumber + 1) + "代迭代开始, 仓库方案数: " + WareHouse.size());
+
+                if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                    System.out.println("optimize break");
                     break;
                 }
-                resuliList.addAll(supplementedSchemes);
-            }
-            currentTopBest = findBest.findBest(resuliList, "成本", TopNumber);
-            long iterElapsed = System.currentTimeMillis() - iterStartMs;
-            System.out.println("第" + (hybridizationNumber + 1) + "代完成, 最优成本: " +
-                    currentTopBest.get(0).get("成本") + ", 本代耗时: " + iterElapsed + "ms");
 
-            if (hybridizationNumber == 0) {
-                double costTotal = Double
-                        .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总成本").toString());
-                double costLenth = Double
-                        .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总长度").toString());
-                double costWeight = Double
-                        .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总重量").toString());
-                BestCost.put("总成本", costTotal);
-                BestCost.put("总长度", costLenth);
-                BestCost.put("总重量", costWeight);
-            } else {
-                double costTotal = Double
-                        .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总成本").toString());
-                double costLenth = Double
-                        .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总长度").toString());
-                double costWeight = Double
-                        .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总重量").toString());
-                if (Math.abs(BestCost.get("总成本") - costTotal) < 0.000001
-                        && Math.abs(BestCost.get("总长度") - costLenth) < 0.000001
-                        && Math.abs(BestCost.get("总重量") - costWeight) < 0.000001) {
-                    BestRepetitionNumber = BestRepetitionNumber + 1;
-                } else {
-                    BestRepetitionNumber = 0;
+                List<Map<String, Object>> crossedSchemes = crossoverTopSchemes(
+                        currentTopBest,
+                        targetLoops,
+                        loopInfos,
+                        appPositions,
+                        elecChangeablePosition,
+                        togetherGroup,
+                        mutualGroup,
+                        pointNameId,
+                        objectMapper,
+                        projectCircuitInfoOutput,
+                        jsonToMap,
+                        topoInfoMap,
+                        projectInfo,
+                        loopElecById,
+                        random,
+                        resourceNum, jsonMap);
+
+                System.out.println("交叉生成 " + crossedSchemes.size() + " 个方案");
+
+                List<Map<String, Object>> allSchemesForMutation = new ArrayList<>(currentTopBest);
+                allSchemesForMutation.addAll(crossedSchemes);
+
+                // 变异上限 = 本代目标 - 已保留的方案，避免无限制生成
+                int mutationCap = Math.max(1, HybridizationLessRandomSamleNumber - currentTopBest.size());
+                List<Map<String, Object>> mutatedSchemes = mutateTopSchemes(
+                        allSchemesForMutation,
+                        mutationCap,
+                        targetLoops,
+                        loopInfos,
+                        appPositions,
+                        elecChangeablePosition,
+                        togetherGroup,
+                        mutualGroup,
+                        pointNameId,
+                        objectMapper,
+                        projectCircuitInfoOutput,
+                        jsonToMap,
+                        jsonMap,
+                        loopElecById,
+                        loopElecByIdStart,
+                        random,
+                        resourceNum);
+                System.out.println("变异生成 " + mutatedSchemes.size() + " 个方案");
+
+                boolean noProgress = mutatedSchemes.isEmpty() && crossedSchemes.isEmpty();
+                if (noProgress) {
+                    emptyGenCount++;
+                    System.out.println("第" + (hybridizationNumber + 1) + "代未生成有效方案（连续空代: "
+                            + emptyGenCount + "/" + MaxConsecutiveEmptyGenerations + "），继续下一轮");
+                    if (emptyGenCount >= MaxConsecutiveEmptyGenerations) {
+                        System.out.println("连续 " + MaxConsecutiveEmptyGenerations
+                                + " 代无新有效方案，终止遗传迭代，返回当前最优方案");
+                        break;
+                    }
+                    hybridizationNumber++;
+                    continue;
+                }
+                // 只要交叉或变异任一产生新方案都算有进展，但只在变异成功时清零（交叉只是配对不直接入代）
+                if (!mutatedSchemes.isEmpty())
+                    emptyGenCount = 0;
+
+                List<Map<String, Object>> resuliList = new ArrayList<>(currentTopBest);
+                resuliList.addAll(crossedSchemes);
+                resuliList.addAll(mutatedSchemes);
+                int numb = 0;
+                while (resuliList.size() < HybridizationLessRandomSamleNumber) {
+                    int need = HybridizationLessRandomSamleNumber - resuliList.size();
+                    System.out.println("方案数量不足，需要补充 " + need + " 个方案");
+                    List<Map<String, Object>> supplementedSchemes = generateInitialPopulation(
+                            need,
+                            targetLoops,
+                            loopInfos,
+                            appPositions,
+                            elecChangeablePosition,
+                            togetherGroup,
+                            mutualGroup,
+                            pointNameId,
+                            objectMapper,
+                            projectCircuitInfoOutput,
+                            jsonToMap,
+                            jsonMap,
+                            loopElecById,
+                            loopElecByIdStart,
+                            resourceNum);
+                    numb++;
+                    if (numb > AutoCompleteNumber) {
+                        break;
+                    }
+                    resuliList.addAll(supplementedSchemes);
+                }
+                currentTopBest = findBest.findBest(resuliList, "成本", TopNumber);
+                long iterElapsed = System.currentTimeMillis() - iterStartMs;
+                System.out.println("第" + (hybridizationNumber + 1) + "代完成, 最优成本: " +
+                        currentTopBest.get(0).get("成本") + ", 本代耗时: " + iterElapsed + "ms");
+
+                if (hybridizationNumber == 0) {
+                    double costTotal = Double
+                            .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总成本").toString());
+                    double costLenth = Double
+                            .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总长度").toString());
+                    double costWeight = Double
+                            .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总重量").toString());
                     BestCost.put("总成本", costTotal);
                     BestCost.put("总长度", costLenth);
                     BestCost.put("总重量", costWeight);
-                }
-            }
-            if (BestRepetitionNumber == IterationRestrictNumber) {
-                System.out.println("迭代次数达到限制，后续与上一代结果相同达到30次");
-                break;
-            }
-
-            hybridizationNumber++;
-        }
-
-        System.out.println("遗传算法完成，共迭代 " + hybridizationNumber + " 代");
-
-        // 兜底1：GA 一代有效方案都没出，且 combinations 规模小，直接走枚举
-        if (currentTopBest.isEmpty() && combinations > 1 && combinations <= caseNumber * 10
-                && (enumeratedSchemes == null || enumeratedSchemes.isEmpty())) {
-            System.out.println("[兜底] GA 未产出有效方案，尝试兜底枚举生成 topBest ...");
-            try {
-                List<Map<String, String>> fallbackTarget = null;
-                if (typeList.contains("3") && typeList.contains("4"))
-                    fallbackTarget = combinedList;
-                else if ("4".equals(optimizeType))
-                    fallbackTarget = driveLoopList;
-                else if ("3".equals(optimizeType))
-                    fallbackTarget = elecLoopList;
-                else if ("5".equals(optimizeType))
-                    fallbackTarget = combinedList;
-                if (fallbackTarget != null && !fallbackTarget.isEmpty()) {
-                    enumerateAllSchemes(fallbackTarget, elecChangeablePosition, togetherGroup, mutualGroup,
-                            loopInfos, loopElecById, loopElecByIdStart);
-                    // enumerateAllSchemes 内部会把方案塞到 enumeratedSchemes，这里再还原成 currentTopBest
-                    for (int i = 0; i < enumeratedSchemes.size(); i++) {
-                        Map<String, String> scheme = enumeratedSchemes.get(i);
-                        // 构造 loopInfoCopy + appPositionsCopy
-                        List<Map<String, String>> loopInfoCopy = new ArrayList<>();
-                        for (Map<String, String> loop : loopInfos)
-                            loopInfoCopy.add(new HashMap<>(loop));
-                        List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(appPositions);
-                        applyEnumeratedSchemeToLoops(loopInfoCopy, appPositionsCopy, scheme, elecChangeablePosition,
-                                pointNameId);
-                        // 修复 +/- 同名用电器同控制器约束
-                        fixPlusMinusControllerConstraint(loopInfoCopy, appPositions);
-                        Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
-                        jsonMapCopy.put("loopInfos", loopInfoCopy);
-                        jsonMapCopy.put("appPositions", appPositionsCopy);
-                        // 导线选型更新（成本计算前）
-                        updateWireSelectionForScheme(loopInfoCopy, appPositionsCopy, currentOptimizeType);
-                        String result = projectCircuitInfoOutput.projectCircuitInfoOutput(
-                                objectMapper.writeValueAsString(jsonMapCopy));
-                        if (result == null || result.isEmpty())
-                            continue;
-                        Map<String, Object> parsed = jsonToMap.TransJsonToMap(result);
-                        Map<String, Object> pcInfo = (Map<String, Object>) parsed.get("projectCircuitInfo");
-                        if (pcInfo == null)
-                            continue;
-                        Object tc = pcInfo.get("总成本");
-                        Object tw = pcInfo.get("回路总重量");
-                        Object tl = pcInfo.get("回路总长度");
-                        if (!(tc instanceof Number && tw instanceof Number && tl instanceof Number))
-                            continue;
-                        Map<String, Double> projectCost = new HashMap<>();
-                        projectCost.put("总成本", ((Number) tc).doubleValue());
-                        projectCost.put("总重量", ((Number) tw).doubleValue());
-                        projectCost.put("总长度", ((Number) tl).doubleValue());
-                        Map<String, Object> map = new HashMap<>();
-                        map.put("成本", projectCost);
-                        map.put("loopInfos", loopInfoCopy);
-                        map.put("appPositions", appPositionsCopy);
-                        String fp = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
-                        if (WareHouse.add(fp))
-                            currentTopBest.add(map);
-                        if (currentTopBest.size() >= TopNumber)
-                            break;
-                    }
-                    if (!currentTopBest.isEmpty()) {
-                        currentTopBest = findBest.findBest(currentTopBest, "成本", TopNumber);
-                        System.out.println("[兜底] 枚举兜底生成 " + currentTopBest.size() + " 个有效方案");
+                } else {
+                    double costTotal = Double
+                            .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总成本").toString());
+                    double costLenth = Double
+                            .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总长度").toString());
+                    double costWeight = Double
+                            .parseDouble(((Map<String, Object>) currentTopBest.get(0).get("成本")).get("总重量").toString());
+                    if (Math.abs(BestCost.get("总成本") - costTotal) < 0.000001
+                            && Math.abs(BestCost.get("总长度") - costLenth) < 0.000001
+                            && Math.abs(BestCost.get("总重量") - costWeight) < 0.000001) {
+                        BestRepetitionNumber = BestRepetitionNumber + 1;
+                    } else {
+                        BestRepetitionNumber = 0;
+                        BestCost.put("总成本", costTotal);
+                        BestCost.put("总长度", costLenth);
+                        BestCost.put("总重量", costWeight);
                     }
                 }
-            } catch (Exception ex) {
-                System.out.println("[兜底] 枚举兜底失败: " + ex.getMessage());
+                if (BestRepetitionNumber == IterationRestrictNumber) {
+                    System.out.println("迭代次数达到限制，后续与上一代结果相同达到30次");
+                    break;
+                }
+
+                hybridizationNumber++;
+            }
+
+            System.out.println("遗传算法完成，共迭代 " + hybridizationNumber + " 代");
+
+            // 兜底1：GA 一代有效方案都没出，且 combinations 规模小，直接走枚举
+            if (currentTopBest.isEmpty() && combinations > 1 && combinations <= caseNumber * 10
+                    && (enumeratedSchemes == null || enumeratedSchemes.isEmpty())) {
+                System.out.println("[兜底] GA 未产出有效方案，尝试兜底枚举生成 topBest ...");
+                try {
+                    List<Map<String, String>> fallbackTarget = null;
+                    if (typeList.contains("3") && typeList.contains("4"))
+                        fallbackTarget = combinedList;
+                    else if ("4".equals(optimizeType))
+                        fallbackTarget = driveLoopList;
+                    else if ("3".equals(optimizeType))
+                        fallbackTarget = elecLoopList;
+                    else if ("5".equals(optimizeType))
+                        fallbackTarget = combinedList;
+                    if (fallbackTarget != null && !fallbackTarget.isEmpty()) {
+                        enumerateAllSchemes(fallbackTarget, elecChangeablePosition, togetherGroup, mutualGroup,
+                                loopInfos, loopElecById, loopElecByIdStart);
+                        // enumerateAllSchemes 内部会把方案塞到 enumeratedSchemes，这里再还原成 currentTopBest
+                        for (int i = 0; i < enumeratedSchemes.size(); i++) {
+                            Map<String, String> scheme = enumeratedSchemes.get(i);
+                            // 构造 loopInfoCopy + appPositionsCopy
+                            List<Map<String, String>> loopInfoCopy = new ArrayList<>();
+                            for (Map<String, String> loop : loopInfos)
+                                loopInfoCopy.add(new HashMap<>(loop));
+                            List<Map<String, String>> appPositionsCopy = deepCopyAppPositions(appPositions);
+                            applyEnumeratedSchemeToLoops(loopInfoCopy, appPositionsCopy, scheme, elecChangeablePosition,
+                                    pointNameId);
+                            // 修复 +/- 同名用电器同控制器约束
+                            fixPlusMinusControllerConstraint(loopInfoCopy, appPositions);
+                            Map<String, Object> jsonMapCopy = new HashMap<>(jsonMap);
+                            jsonMapCopy.put("loopInfos", loopInfoCopy);
+                            jsonMapCopy.put("appPositions", appPositionsCopy);
+                            // 导线选型更新（成本计算前）
+                            updateWireSelectionForScheme(loopInfoCopy, appPositionsCopy, currentOptimizeType);
+                            String result = projectCircuitInfoOutput.projectCircuitInfoOutput(
+                                    objectMapper.writeValueAsString(jsonMapCopy));
+                            if (result == null || result.isEmpty())
+                                continue;
+                            Map<String, Object> parsed = jsonToMap.TransJsonToMap(result);
+                            Map<String, Object> pcInfo = (Map<String, Object>) parsed.get("projectCircuitInfo");
+                            if (pcInfo == null)
+                                continue;
+                            Object tc = pcInfo.get("总成本");
+                            Object tw = pcInfo.get("回路总重量");
+                            Object tl = pcInfo.get("回路总长度");
+                            if (!(tc instanceof Number && tw instanceof Number && tl instanceof Number))
+                                continue;
+                            Map<String, Double> projectCost = new HashMap<>();
+                            projectCost.put("总成本", ((Number) tc).doubleValue());
+                            projectCost.put("总重量", ((Number) tw).doubleValue());
+                            projectCost.put("总长度", ((Number) tl).doubleValue());
+                            Map<String, Object> map = new HashMap<>();
+                            map.put("成本", projectCost);
+                            map.put("loopInfos", loopInfoCopy);
+                            map.put("appPositions", appPositionsCopy);
+                            String fp = generateSchemeFingerprint(loopInfoCopy, appPositionsCopy);
+                            if (WareHouse.add(fp))
+                                currentTopBest.add(map);
+                            if (currentTopBest.size() >= TopNumber)
+                                break;
+                        }
+                        if (!currentTopBest.isEmpty()) {
+                            currentTopBest = findBest.findBest(currentTopBest, "成本", TopNumber);
+                            System.out.println("[兜底] 枚举兜底生成 " + currentTopBest.size() + " 个有效方案");
+                        }
+                    }
+                } catch (Exception ex) {
+                    System.out.println("[兜底] 枚举兜底失败: " + ex.getMessage());
+                }
+            }
+
+            // 兜底2：所有方案都没拿到，返回原始方案
+            if (currentTopBest.isEmpty()) {
+                System.out.println("[兜底] 全部失败，返回原始方案");
+                Map<String, Object> origMap = new HashMap<>();
+                origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
+                origMap.put("appPositions", deepCopyAppPositions(appPositions));
+                origMap.put("成本", parseOriginalCost(originalResult, jsonToMap));
+                currentTopBest.add(origMap);
+            }
+            // base 方案必须加入最后返回的 top,去重后保证 base 在结果中
+            Map<String, Object> baseSchemeFinal = buildBaseSchemeMap(originalResult, jsonContent,
+                    loopInfos, appPositions, jsonToMap, objectMapper, projectCircuitInfoOutput);
+            if (baseSchemeFinal != null) {
+                currentTopBest.add(baseSchemeFinal);
+            }
+            currentTopBest = ensureBaseAndDedup(currentTopBest, baseSchemeFinal);
+
+            List<Map<String, Object>> enrichedTopBest = new ArrayList<>();
+            for (Map<String, Object> slim : currentTopBest) {
+                try {
+                    List<Map<String, String>> sloopInfos = (List<Map<String, String>>) slim.get("loopInfos");
+                    List<Map<String, String>> sAppPositions = (List<Map<String, String>>) slim.get("appPositions");
+                    boolean isInitial = originalFingerprint != null
+                            && originalFingerprint.equals(generateSchemeFingerprint(sloopInfos, sAppPositions));
+                    enrichedTopBest.add(enrichToFullScheme(slim, jsonMap, objectMapper,
+                            projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, isInitial));
+                } catch (Exception e) {
+                    System.err.println("方案还原失败，使用精简版: " + e.getMessage());
+                    enrichedTopBest.add(slim);
+                }
+            }
+            return objectMapper.writeValueAsString(enrichedTopBest);
+        } finally {
+            // 不管正常返回还是异常,都关闭本次调用的本地线程池
+            if (threadPool != null) {
+                try {
+                    threadPool.shutdown();
+                } catch (Exception e) {
+                    System.err.println("[PowerDistributionDriveOptimization] 关闭线程池异常: " + e.getMessage());
+                }
             }
         }
-
-        // 兜底2：所有方案都没拿到，返回原始方案
-        if (currentTopBest.isEmpty()) {
-            System.out.println("[兜底] 全部失败，返回原始方案");
-            Map<String, Object> origMap = new HashMap<>();
-            origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
-            origMap.put("appPositions", deepCopyAppPositions(appPositions));
-            origMap.put("成本", parseOriginalCost(originalResult, jsonToMap));
-            currentTopBest.add(origMap);
-        }
-        // base 方案必须加入最后返回的 top,去重后保证 base 在结果中
-        Map<String, Object> baseSchemeFinal = buildBaseSchemeMap(originalResult, loopInfos, appPositions, jsonToMap);
-        if (baseSchemeFinal != null) {
-            currentTopBest.add(baseSchemeFinal);
-        }
-        currentTopBest = ensureBaseAndDedup(currentTopBest, baseSchemeFinal);
-
-        List<Map<String, Object>> enrichedTopBest = new ArrayList<>();
-        for (Map<String, Object> slim : currentTopBest) {
-            try {
-                List<Map<String, String>> sloopInfos = (List<Map<String, String>>) slim.get("loopInfos");
-                List<Map<String, String>> sAppPositions = (List<Map<String, String>>) slim.get("appPositions");
-                boolean isInitial = originalFingerprint != null
-                        && originalFingerprint.equals(generateSchemeFingerprint(sloopInfos, sAppPositions));
-                enrichedTopBest.add(enrichToFullScheme(slim, jsonMap, objectMapper,
-                        projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, isInitial));
-            } catch (Exception e) {
-                System.err.println("方案还原失败，使用精简版: " + e.getMessage());
-                enrichedTopBest.add(slim);
-            }
-        }
-        return objectMapper.writeValueAsString(enrichedTopBest);
     }
 
     /**
@@ -1013,8 +1014,6 @@ public class PowerDistributionDriveOptimization {
         }
 
         for (Map<String, Object>[] pair : pairs) {
-            if (optimizeStopStatusStore.get(optimizeRecordId) == false)
-                break;
             threadPool.execute(() -> {
                 Random rnd = new Random();
                 try {
@@ -1380,8 +1379,6 @@ public class PowerDistributionDriveOptimization {
         System.out.println("开始并行对 " + topSchemes.size() + " 个方案进行多分支变异...");
 
         for (int schemeIdx = 0; schemeIdx < topSchemes.size(); schemeIdx++) {
-            if (optimizeStopStatusStore.get(optimizeRecordId) == false)
-                break;
             final int idx = schemeIdx;
             final Map<String, Object> scheme = topSchemes.get(schemeIdx);
             threadPool.execute(() -> {
@@ -1964,34 +1961,56 @@ public class PowerDistributionDriveOptimization {
 
     /**
      * 构造 base 方案 Map（原始方案的精简表示）
-     * 从 originalResult 解析成本，搭配原始 loopInfos/appPositions 深拷贝
-     * 返回 null 表示 base 方案不可用
+     * 优先从 originalResult 解析成本；若 originalResult 为 null 或解析失败，
+     * 则直接用入参 jsonContent 强制做一次整车计算，确保 base 方案总是能加上。
      */
     private Map<String, Object> buildBaseSchemeMap(String originalResult,
+            String jsonContent,
             List<Map<String, String>> loopInfos,
             List<Map<String, String>> appPositions,
-            JsonToMap jsonToMap) {
-        if (originalResult == null) {
+            JsonToMap jsonToMap,
+            ObjectMapper objectMapper,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput) {
+        // 1. 优先用已计算好的 originalResult
+        String result = originalResult;
+        // 2. 若 originalResult 为空,强制用 jsonContent 重新做一次整车计算
+        if (result == null || result.isEmpty()) {
+            try {
+                System.out.println("[base] originalResult 为空,用入参 jsonContent 重新做整车计算");
+                result = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
+            } catch (Exception e) {
+                System.err.println("[base] 用 jsonContent 重算整车失败: " + e.getMessage());
+                return null;
+            }
+        }
+        if (result == null || result.isEmpty()) {
+            System.err.println("[base] 整车计算返回空,无法构造 base 方案");
             return null;
         }
         try {
             Map<String, Object> origMap = new HashMap<>();
             origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
             origMap.put("appPositions", deepCopyAppPositions(appPositions));
-            Map<String, Object> rawMap = jsonToMap.TransJsonToMap(originalResult);
+            Map<String, Object> rawMap = jsonToMap.TransJsonToMap(result);
             Map<String, Object> pcInfo = (Map<String, Object>) rawMap.get("projectCircuitInfo");
             if (pcInfo != null) {
-                Map<String, Double> projectCost = new HashMap<>();
-                projectCost.put("总成本", ((Number) pcInfo.get("总成本")).doubleValue());
-                projectCost.put("总重量", ((Number) pcInfo.get("回路总重量")).doubleValue());
-                projectCost.put("总长度", ((Number) pcInfo.get("回路总长度")).doubleValue());
-                origMap.put("成本", projectCost);
+                Object tc = pcInfo.get("总成本");
+                Object tw = pcInfo.get("回路总重量");
+                Object tl = pcInfo.get("回路总长度");
+                if (tc instanceof Number && tw instanceof Number && tl instanceof Number) {
+                    Map<String, Double> projectCost = new HashMap<>();
+                    projectCost.put("总成本", ((Number) tc).doubleValue());
+                    projectCost.put("总重量", ((Number) tw).doubleValue());
+                    projectCost.put("总长度", ((Number) tl).doubleValue());
+                    origMap.put("成本", projectCost);
+                }
             }
             if (origMap.containsKey("成本")) {
                 return origMap;
             }
+            System.err.println("[base] 整车计算结果中缺少 projectCircuitInfo 或成本字段");
         } catch (Exception e) {
-            System.err.println("构造 base 方案失败: " + e.getMessage());
+            System.err.println("[base] 构造 base 方案失败: " + e.getMessage());
         }
         return null;
     }
@@ -2298,13 +2317,16 @@ public class PowerDistributionDriveOptimization {
                 continue;
             }
             // 自底向上更新父回路导线选型: node 到 parent 的回路
-            // 类型5: 控制器节点,更新其到父节点(配电单元)的父回路
+            // 规则: 子回路按 loopAttr 累加(配电回路/驱动回路才参与),不看用电器类型
+            // 一层层往上更新;连接发/储单元的顶层回路不更新,其他回路都更新
+            // 类型5: 控制器节点,更新其到父节点的父回路
             if (updateController && "控制器".equals(nodeType)) {
                 String parent = parentMap.get(node);
                 if (parent == null) {
                     continue;
                 }
                 String parentType = appTypeMap.get(parent);
+                // 父为发电/储电单元 = 顶层回路,跳过不更新;其他都更新
                 if ("发电单元".equals(parentType) || "储电单元".equals(parentType)) {
                     continue;
                 }
@@ -2329,14 +2351,16 @@ public class PowerDistributionDriveOptimization {
                     updatedGauges.put(parentLoop.get("id"), calculated);
                 }
             }
-            // 类型3和5: 配电单元节点,更新其到父节点(配电单元)的父回路
+            // 类型3和5: 配电单元节点,更新其到父节点的父回路
+            // 注意: 连接发/储单元的顶层回路不更新
             if ("配电单元".equals(nodeType)) {
                 String parent = parentMap.get(node);
                 if (parent == null) {
                     continue;
                 }
                 String parentType = appTypeMap.get(parent);
-                if (!"配电单元".equals(parentType)) {
+                // 父为发电/储电单元 = 顶层回路,跳过不更新;其他都更新
+                if ("发电单元".equals(parentType) || "储电单元".equals(parentType)) {
                     continue;
                 }
                 Map<String, String> parentLoop = parentLoopMap.get(node);
@@ -2658,7 +2682,7 @@ public class PowerDistributionDriveOptimization {
         // 用户设置过变种的用电器信息
         map2.put("variantAppPositions", buildVariantAppList(apps));
         // 保留 loopInfos(含已更新的导线选型)用于结果可视化对比
-        map2.put("loopInfos", loops);
+        // map2.put("loopInfos", loops);
         map2.remove("appPositions");
         return map2;
     }
@@ -2726,8 +2750,7 @@ public class PowerDistributionDriveOptimization {
                     return;
                 Random random = new Random();
                 for (int retry = 0; retry < maxRetriesPerTask; retry++) {
-                    if (currentSize.get() >= populationSize
-                            || optimizeStopStatusStore.get(optimizeRecordId) == false) {
+                    if (currentSize.get() >= populationSize) {
                         currentSize.decrementAndGet(); // 释放抢占的名额
                         return;
                     }
@@ -3279,10 +3302,6 @@ public class PowerDistributionDriveOptimization {
             Map<String, Map<String, String>> loopById,
             Map<String, List<String>> elecChangeablePosition,
             Map<String, Set<String>> loopElecByIdStart) {
-        if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
-            System.out.println("优化被用户中断");
-            return;
-        }
         if (enumeratedSchemes.size() >= caseNumber) {
             System.out.println("枚举方案数已达到限制(" + caseNumber + ")，提前退出");
             return;
