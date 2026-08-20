@@ -730,7 +730,7 @@ public class HarnessBranchTopoOptimize {
                         && Math.abs(BestCost.get("总长度") - costLenth) < 0.000001
                         && Math.abs(BestCost.get("总重量") - costWeight) < 0.000001) {
                     BestRepetitionNumber = BestRepetitionNumber + 1; // 相同则计数器加1
-                    System.out.println("重复次数： " + BestRepetitionNumber);
+                    System.out.println("chong fu ci shu ： " + BestRepetitionNumber);
                 } else if (costTotal < BestCost.get("总成本")) {
                     // 找到更优解，更新并重置计数器
                     BestRepetitionNumber = 0;
@@ -2277,7 +2277,7 @@ public class HarnessBranchTopoOptimize {
                     }
                 }
 
-                System.out.println("changeAndFindBest: 闭环检测结束耗时 " + (System.currentTimeMillis() - startTime) + " ms");
+                System.out.println("changeAndFindBest: take time " + (System.currentTimeMillis() - startTime) + " ms");
                 return map;
             });
         }

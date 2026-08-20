@@ -85,10 +85,10 @@ public class GINEInferenceEngine {
         System.out.println("[GINE] pool.size     = " + POOL_SIZE);
         // 校验 Python 解释器与脚本文件存在
         if (!new File(PYTHON_EXE).isAbsolute() && !PYTHON_EXE.contains(File.separator)) {
-            System.out.println("[GINE] 提示: python.exe 未指定绝对路径，依赖 PATH 解析，线上可能找不到");
+            System.out.println("[GINE] python.exe not found");
         }
         if (!new File(PREDICT_SCRIPT).isFile()) {
-            throw new IOException("predict.py 不存在: " + PREDICT_SCRIPT
+            throw new IOException("predict.py not found: " + PREDICT_SCRIPT
                     + "，请用 -Dpredict.script.dir=<dir> 指定脚本目录");
         }
         // 校验模型/参数文件（仅当脚本目录是 -Dpredict.script.dir 指定时需要校验；
@@ -96,10 +96,10 @@ public class GINEInferenceEngine {
         File modelFile = new File(SCRIPT_DIR, "best_model.pt");
         File normFile = new File(SCRIPT_DIR, "normalization_params.json");
         if (!modelFile.isFile()) {
-            throw new IOException("best_model.pt 不存在: " + modelFile.getAbsolutePath());
+            throw new IOException("best_model.pt not found : " + modelFile.getAbsolutePath());
         }
         if (!normFile.isFile()) {
-            throw new IOException("normalization_params.json 不存在: " + normFile.getAbsolutePath());
+            throw new IOException("normalization_params.json not found : " + normFile.getAbsolutePath());
         }
 
         // 关键: 加 -u 让 Python stdout/stderr 无缓冲
