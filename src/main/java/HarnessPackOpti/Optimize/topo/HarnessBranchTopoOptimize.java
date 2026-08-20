@@ -4333,9 +4333,10 @@ public class HarnessBranchTopoOptimize {
                     resultList.add(result);
                 }
             } catch (Exception e) {
-                e.printStackTrace();
+                // Python 预测失败，抛出异常让 topoOptimize 走 base 方案兜底，不再继续遗传
+                throw new RuntimeException("Python predict failed, fallback to base scheme", e);
             }
-            futures.set(i, null); // 释放 Future 引用，允许 GC
+            futures.set(i, null);
         }
         futures.clear();
         // 按AI预测成本排序，取topN

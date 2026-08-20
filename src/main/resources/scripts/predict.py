@@ -20,6 +20,7 @@ import struct
 import argparse
 import socket
 import socketserver
+import traceback
 from typing import Optional, Tuple
 
 import warnings
@@ -200,7 +201,9 @@ class PredictHandler(socketserver.BaseRequestHandler):
     def handle(self):
         sock: socket.socket = self.request
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        sock.settimeout(30)  # 30s 读超时
+        sock.settimeout(300)  # 5min 读超时，与 Java 端 setSoTimeout(300000) 一致
+        conn_id = id(sock)
+        print(f"[predict] handle start, conn={conn_id}", flush=True)
 
         while True:
             try:
@@ -208,17 +211,24 @@ class PredictHandler(socketserver.BaseRequestHandler):
                 payload_len = struct.unpack('>i', header)[0]
 
                 if payload_len == 0:
+                    print(f"[predict] exit signal, conn={conn_id}", flush=True)
                     break  # 退出信号
 
                 raw = _recv_exact(sock, payload_len)
+                print(f"[predict] recv done, len={payload_len}, conn={conn_id}", flush=True)
 
                 # 推理（阻塞当前 handler 线程，但其他连接不受影响）
                 result_line = do_predict(raw)
+                print(f"[predict] predict done, conn={conn_id}, result={result_line[:80]}", flush=True)
                 sock.sendall((result_line + '\n').encode('utf-8'))
 
-            except (ConnectionError, socket.timeout, OSError):
+            except (ConnectionError, socket.timeout, OSError) as e:
+                print(f"[predict] connection error: {e}, conn={conn_id}", flush=True)
+                traceback.print_exc()
                 break
             except Exception as e:
+                print(f"[predict] inference error: {e}, conn={conn_id}", flush=True)
+                traceback.print_exc()
                 err = json.dumps({"error": str(e)})
                 try:
                     sock.sendall((err + '\n').encode('utf-8'))

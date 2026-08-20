@@ -2,14 +2,12 @@ package HarnessPackOpti.utils;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -103,13 +101,18 @@ public class GINEInferenceEngine {
         }
 
         // 关键: 加 -u 让 Python stdout/stderr 无缓冲
-        // 否则 Python 在 pipe 模式下是块缓冲(4KB)，Java 端看不到任何输出，Python 崩溃也看不到错误
         ProcessBuilder pb = new ProcessBuilder(PYTHON_EXE, "-u", PREDICT_SCRIPT, "--port", String.valueOf(PORT));
         pb.directory(new File(SCRIPT_DIR));
         pb.redirectErrorStream(true);
         // 双保险: 也设置环境变量
         pb.environment().put("PYTHONUNBUFFERED", "1");
         pb.environment().put("PYTHONIOENCODING", "utf-8");
+
+        // Python 日志输出到 JAR 同级目录的文件，不走 Java 控制台
+        String logDir = System.getProperty("user.dir");
+        File logFile = new File(logDir, "gine-python.log");
+        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile));
+
         final Process proc = pb.start();
 
         // JVM 退出时杀掉子进程，避免残留卡死
@@ -117,21 +120,6 @@ public class GINEInferenceEngine {
             if (proc.isAlive())
                 proc.destroyForcibly();
         }));
-
-        // 启动后台守护线程实时透传 Python stdout/stderr 到 Java 控制台
-        // 否则 Python 进程的输出会写满 pipe 缓冲区，导致 Python 阻塞卡死，端口起不来
-        Thread pump = new Thread(() -> {
-            try (BufferedReader r = new BufferedReader(
-                    new InputStreamReader(proc.getInputStream(), "UTF-8"))) {
-                String line;
-                while ((line = r.readLine()) != null) {
-                    System.out.println("[gine-py] " + line);
-                }
-            } catch (IOException ignored) {
-            }
-        }, "gine-python-stdout-pump");
-        pump.setDaemon(true);
-        pump.start();
 
         // 等待端口就绪（最长 120s，模型加载可能较慢）
         long deadline = System.currentTimeMillis() + 120_000;
@@ -231,24 +219,33 @@ public class GINEInferenceEngine {
         frame.putInt(payloadBytes);
         frame.put(payload.array());
 
-        // 借一条连接
-        SocketConnection conn = pool.take();
-        try {
-            return conn.predict(frame.array());
-        } catch (IOException e) {
-            conn.close();
-            throw e;
-        } finally {
-            if (conn.isConnected()) {
-                pool.offer(conn);
-            } else {
-                try {
-                    pool.offer(new SocketConnection("127.0.0.1", PORT));
-                } catch (IOException e) {
-                    System.err.println("python restart fail: " + e.getMessage());
+        // 借一条连接，失败重试最多3次
+        int maxRetries = 3;
+        IOException lastException = null;
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+            SocketConnection conn = pool.take();
+            try {
+                return conn.predict(frame.array());
+            } catch (IOException e) {
+                lastException = e;
+                conn.close();
+                System.err.println("[GINE] predict attempt " + (attempt + 1) + " failed: " + e.getMessage());
+            } finally {
+                if (conn.isConnected()) {
+                    pool.offer(conn);
+                } else {
+                    try {
+                        pool.offer(new SocketConnection("127.0.0.1", PORT));
+                    } catch (IOException ex) {
+                        System.err.println("[GINE] reconnect fail: " + ex.getMessage());
+                    }
                 }
             }
         }
+        // 重试全失败，重置initialized让下次调用自动重启Python
+        initialized = false;
+        pool.clear();
+        throw new IOException("predict failed after " + maxRetries + " retries", lastException);
     }
 
     // ── Socket 连接 ──
@@ -260,7 +257,8 @@ public class GINEInferenceEngine {
         SocketConnection(String host, int port) throws IOException {
             socket = new Socket(host, port);
             socket.setTcpNoDelay(true);
-            socket.setSoTimeout(30000);
+            socket.setSoTimeout(300000);
+            socket.setKeepAlive(true);
             in = new DataInputStream(new BufferedInputStream(socket.getInputStream(), 4096));
             out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream(), 4096));
         }
