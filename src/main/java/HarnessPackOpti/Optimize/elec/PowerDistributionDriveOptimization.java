@@ -95,7 +95,7 @@ public class PowerDistributionDriveOptimization {
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
         File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\powerOutput.txt");
         Files.write(outputFile.toPath(), s.getBytes());
-        System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
+        System.out.println("JSON yi cheng gong shu chu dao: " + outputFile.getAbsolutePath());
     }
 
     public String powerDriverOptimize(String jsonContent) throws Exception {
@@ -344,8 +344,8 @@ public class PowerDistributionDriveOptimization {
                         loopElecById, loopElecByIdStart);
             }
 
-            System.out.println("枚举模式耗时:" + (System.currentTimeMillis() - combinationsTime));
-            System.out.println("总方案数: " + combinations);
+            System.out.println("enum take time:" + (System.currentTimeMillis() - combinationsTime));
+            System.out.println("total cases : " + combinations);
 
             // 总方案数 ≤ 1，没有优化空间，直接返回原始方案
             if (combinations <= 1) {
@@ -541,7 +541,7 @@ public class PowerDistributionDriveOptimization {
 
             while (true) {
                 long iterStartMs = System.currentTimeMillis();
-                System.out.println((hybridizationNumber + 1) + "代迭代开始, 仓库方案数: " + WareHouse.size());
+                System.out.println((hybridizationNumber + 1) + "dai die dai kai shi , cang ku fang an shu : " + WareHouse.size());
 
                 if (optimizeStopStatusStore.get(optimizeRecordId) == false) {
                     System.out.println("optimize break");
@@ -566,7 +566,7 @@ public class PowerDistributionDriveOptimization {
                         random,
                         resourceNum, jsonMap);
 
-                System.out.println("交叉生成 " + crossedSchemes.size() + " 个方案");
+                System.out.println("jiao cha sheng cheng " + crossedSchemes.size() + " ge fang an");
 
                 List<Map<String, Object>> allSchemesForMutation = new ArrayList<>(currentTopBest);
                 allSchemesForMutation.addAll(crossedSchemes);
@@ -591,16 +591,16 @@ public class PowerDistributionDriveOptimization {
                         loopElecByIdStart,
                         random,
                         resourceNum);
-                System.out.println("变异生成 " + mutatedSchemes.size() + " 个方案");
+//                System.out.println("bian yi sheng cheng " + mutatedSchemes.size() + " ge fang an");
 
                 boolean noProgress = mutatedSchemes.isEmpty() && crossedSchemes.isEmpty();
                 if (noProgress) {
                     emptyGenCount++;
-                    System.out.println("第" + (hybridizationNumber + 1) + "代未生成有效方案（连续空代: "
-                            + emptyGenCount + "/" + MaxConsecutiveEmptyGenerations + "），继续下一轮");
+                    System.out.println("di " + (hybridizationNumber + 1) + " dai wei sheng cheng you xiao fang an ( lian xu kong dai : "
+                            + emptyGenCount + "/" + MaxConsecutiveEmptyGenerations + " ) , ji xu xia yi lun");
                     if (emptyGenCount >= MaxConsecutiveEmptyGenerations) {
-                        System.out.println("连续 " + MaxConsecutiveEmptyGenerations
-                                + " 代无新有效方案，终止遗传迭代，返回当前最优方案");
+                        System.out.println("lian xu " + MaxConsecutiveEmptyGenerations
+                                + " dai wu xin you xiao fang an , zhong zhi yi chuan die dai , fan hui dang qian zui you fang an");
                         break;
                     }
                     hybridizationNumber++;
@@ -616,7 +616,7 @@ public class PowerDistributionDriveOptimization {
                 int numb = 0;
                 while (resuliList.size() < HybridizationLessRandomSamleNumber) {
                     int need = HybridizationLessRandomSamleNumber - resuliList.size();
-                    System.out.println("方案数量不足，需要补充 " + need + " 个方案");
+                    System.out.println("fang an shu liang bu zu , xu yao bu chong " + need + " ge fang an");
                     List<Map<String, Object>> supplementedSchemes = generateInitialPopulation(
                             need,
                             targetLoops,
@@ -641,8 +641,8 @@ public class PowerDistributionDriveOptimization {
                 }
                 currentTopBest = findBest.findBest(resuliList, "成本", TopNumber);
                 long iterElapsed = System.currentTimeMillis() - iterStartMs;
-                System.out.println("第" + (hybridizationNumber + 1) + "代完成, 最优成本: " +
-                        currentTopBest.get(0).get("成本") + ", 本代耗时: " + iterElapsed + "ms");
+                System.out.println("di " + (hybridizationNumber + 1) + " dai wan cheng , zui you cheng ben : " +
+                        currentTopBest.get(0).get("cheng ben") + ", ben dai hao shi : " + iterElapsed + "ms");
 
                 if (hybridizationNumber == 0) {
                     double costTotal = Double
@@ -673,19 +673,19 @@ public class PowerDistributionDriveOptimization {
                     }
                 }
                 if (BestRepetitionNumber == IterationRestrictNumber) {
-                    System.out.println("迭代次数达到限制，后续与上一代结果相同达到30次");
+                    System.out.println("die dai ci shu da dao xian zhi , hou xu yu shang yi dai jie guo xiang tong da dao 30 ci");
                     break;
                 }
 
                 hybridizationNumber++;
             }
 
-            System.out.println("遗传算法完成，共迭代 " + hybridizationNumber + " 代");
+            System.out.println("yi chuan suan fa wan cheng , gong die dai " + hybridizationNumber + " dai");
 
             // 兜底1：GA 一代有效方案都没出，且 combinations 规模小，直接走枚举
             if (currentTopBest.isEmpty() && combinations > 1 && combinations <= caseNumber * 10
                     && (enumeratedSchemes == null || enumeratedSchemes.isEmpty())) {
-                System.out.println("[兜底] GA 未产出有效方案，尝试兜底枚举生成 topBest ...");
+                System.out.println("[dou di ] GA wei chan chu you xiao fang an , chang shi dou di mei ju sheng cheng topBest ...");
                 try {
                     List<Map<String, String>> fallbackTarget = null;
                     if (typeList.contains("3") && typeList.contains("4"))
@@ -745,17 +745,17 @@ public class PowerDistributionDriveOptimization {
                         }
                         if (!currentTopBest.isEmpty()) {
                             currentTopBest = findBest.findBest(currentTopBest, "成本", TopNumber);
-                            System.out.println("[兜底] 枚举兜底生成 " + currentTopBest.size() + " 个有效方案");
+                            System.out.println("[dou di ] mei ju dou di sheng cheng " + currentTopBest.size() + " ge you xiao fang an");
                         }
                     }
                 } catch (Exception ex) {
-                    System.out.println("[兜底] 枚举兜底失败: " + ex.getMessage());
+                    System.out.println("[dou di ] mei ju dou di shi bai : " + ex.getMessage());
                 }
             }
 
             // 兜底2：所有方案都没拿到，返回原始方案
             if (currentTopBest.isEmpty()) {
-                System.out.println("[兜底] 全部失败，返回原始方案");
+                System.out.println("[dou di ] quan bu shi bai , fan hui yuan shi fang an");
                 Map<String, Object> origMap = new HashMap<>();
                 origMap.put("loopInfos", deepCopyLoopInfos(loopInfos));
                 origMap.put("appPositions", deepCopyAppPositions(appPositions));
@@ -780,7 +780,7 @@ public class PowerDistributionDriveOptimization {
                     enrichedTopBest.add(enrichToFullScheme(slim, jsonMap, objectMapper,
                             projectCircuitInfoOutput, jsonToMap, topoInfoMap, projectInfo, isInitial));
                 } catch (Exception e) {
-                    System.err.println("方案还原失败，使用精简版: " + e.getMessage());
+                    System.err.println("fang an huan yuan shi bai , shi yong jing jian ban : " + e.getMessage());
                     enrichedTopBest.add(slim);
                 }
             }
@@ -791,7 +791,7 @@ public class PowerDistributionDriveOptimization {
                 try {
                     threadPool.shutdown();
                 } catch (Exception e) {
-                    System.err.println("[PowerDistributionDriveOptimization] 关闭线程池异常: " + e.getMessage());
+                    System.err.println("[PowerDistributionDriveOptimization] guan bi xian cheng chi yi chang : " + e.getMessage());
                 }
             }
         }
@@ -993,7 +993,7 @@ public class PowerDistributionDriveOptimization {
         long xStartMs = System.currentTimeMillis();
         List<Map<String, Object>> crossedSchemes = Collections.synchronizedList(new ArrayList<>());
         int populationSize = topSchemes.size();
-        System.out.println("开始并行交叉操作，种群大小: " + populationSize);
+//        System.out.println("kai shi bing xing jiao cha cao zuo , zhong qun da xiao : " + populationSize);
 
         List<Map<String, Object>> shuffledSchemes = new ArrayList<>(topSchemes);
         Collections.shuffle(shuffledSchemes, random);
@@ -1040,7 +1040,7 @@ public class PowerDistributionDriveOptimization {
 
         threadPool.awaitCompletion();
         long xElapsed = System.currentTimeMillis() - xStartMs;
-        System.out.println("交叉完成: " + crossedSchemes.size() + " 个方案, 耗时 " + xElapsed + "ms");
+//        System.out.println("jiao cha wan cheng : " + crossedSchemes.size() + " ge fang an , hao shi " + xElapsed + "ms");
         return crossedSchemes;
     }
 
@@ -1376,7 +1376,7 @@ public class PowerDistributionDriveOptimization {
         List<Map<String, Object>> mutatedSchemes = Collections.synchronizedList(new ArrayList<>());
         // 原子计数器：用 CAS 替代 synchronizedList.size() 检查，避免 race
         java.util.concurrent.atomic.AtomicInteger mutationCount = new java.util.concurrent.atomic.AtomicInteger(0);
-        System.out.println("开始并行对 " + topSchemes.size() + " 个方案进行多分支变异...");
+        System.out.println("kai shi bing xing dui " + topSchemes.size() + " ge fang an jin xing duo fen zhi bian yi ...");
 
         for (int schemeIdx = 0; schemeIdx < topSchemes.size(); schemeIdx++) {
             final int idx = schemeIdx;
@@ -1462,7 +1462,7 @@ public class PowerDistributionDriveOptimization {
 
         long mElapsed = System.currentTimeMillis()
                 - mStartMs;
-        System.out.println("变异完成: " + mutatedSchemes.size() + " 个有效方案, 耗时 " + mElapsed + "ms");
+//        System.out.println("bian yi wan cheng : " + mutatedSchemes.size() + " ge you xiao fang an , hao shi " + mElapsed + "ms");
         return mutatedSchemes;
     }
 
@@ -1976,15 +1976,15 @@ public class PowerDistributionDriveOptimization {
         // 2. 若 originalResult 为空,强制用 jsonContent 重新做一次整车计算
         if (result == null || result.isEmpty()) {
             try {
-                System.out.println("[base] originalResult 为空,用入参 jsonContent 重新做整车计算");
+                System.out.println("[base] originalResult wei kong , yong ru can jsonContent chong xin zuo zheng che ji suan");
                 result = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
             } catch (Exception e) {
-                System.err.println("[base] 用 jsonContent 重算整车失败: " + e.getMessage());
+                System.err.println("[base] yong jsonContent chong suan zheng che shi bai : " + e.getMessage());
                 return null;
             }
         }
         if (result == null || result.isEmpty()) {
-            System.err.println("[base] 整车计算返回空,无法构造 base 方案");
+            System.err.println("[base] zheng che ji suan fan hui kong , wu fa gou zao base fang an");
             return null;
         }
         try {
@@ -2008,9 +2008,9 @@ public class PowerDistributionDriveOptimization {
             if (origMap.containsKey("成本")) {
                 return origMap;
             }
-            System.err.println("[base] 整车计算结果中缺少 projectCircuitInfo 或成本字段");
+            System.err.println("[base] zheng che ji suan jie guo zhong que shao projectCircuitInfo huo cheng ben zi duan");
         } catch (Exception e) {
-            System.err.println("[base] 构造 base 方案失败: " + e.getMessage());
+            System.err.println("[base] gou zao base fang an shi bai : " + e.getMessage());
         }
         return null;
     }
@@ -2071,7 +2071,7 @@ public class PowerDistributionDriveOptimization {
         }
         if (!hasBetter) {
             // 没有比 base 更优的方案,只返回 base
-            System.out.println("[兜底] 没有比 base 更优的方案,只返回 base 方案");
+            System.out.println("[dou di ] mei you bi base geng you de fang an , zhi fan hui base fang an");
             List<Map<String, Object>> onlyBase = new ArrayList<>();
             onlyBase.add(baseScheme);
             return onlyBase;
@@ -2576,19 +2576,19 @@ public class PowerDistributionDriveOptimization {
             return null;
         }
         if (result == null || result.isEmpty()) {
-            System.out.println("[computeFullCost] projectCircuitInfoOutput 返回空（通常是 data 缺失或位置未绑定）");
+            System.out.println("[computeFullCost] projectCircuitInfoOutput fan hui kong ( tong chang shi data que shi huo wei zhi wei bang ding )");
             return null;
         }
         Map<String, Object> parsed;
         try {
             parsed = jsonToMap.TransJsonToMap(result);
         } catch (Exception ex) {
-            System.out.println("[computeFullCost] 解析 projectCircuitInfoOutput 结果失败: " + ex.getMessage());
+            System.out.println("[computeFullCost] jie xi projectCircuitInfoOutput jie guo shi bai : " + ex.getMessage());
             return null;
         }
         Map<String, Object> pcInfo = (Map<String, Object>) parsed.get("projectCircuitInfo");
         if (pcInfo == null) {
-            System.out.println("[computeFullCost] 结果无 projectCircuitInfo 字段，原始片段: "
+            System.out.println("[computeFullCost] jie guo wu projectCircuitInfo zi duan , yuan shi pian duan : "
                     + (result.length() > 200 ? result.substring(0, 200) + "..." : result));
             return null;
         }
@@ -2596,7 +2596,7 @@ public class PowerDistributionDriveOptimization {
         Object tw = pcInfo.get("回路总重量");
         Object tl = pcInfo.get("回路总长度");
         if (!(tc instanceof Number && tw instanceof Number && tl instanceof Number)) {
-            System.out.println("[computeFullCost] 成本字段类型异常 tc=" + (tc == null ? "null" : tc.getClass().getSimpleName())
+            System.out.println("[computeFullCost] cheng ben zi duan lei xing yi chang tc=" + (tc == null ? "null" : tc.getClass().getSimpleName())
                     + " tw=" + (tw == null ? "null" : tw.getClass().getSimpleName())
                     + " tl=" + (tl == null ? "null" : tl.getClass().getSimpleName()));
             return null;
@@ -2740,7 +2740,7 @@ public class PowerDistributionDriveOptimization {
         int totalTasks = Math.min(populationSize * 2, populationSize * 10);
 
         long genStartMs = System.currentTimeMillis();
-        System.out.println("开始并行生成 " + populationSize + " 个初代个体（" + threadPool.getThreadCount() + " 线程）...");
+        System.out.println("kai shi bing xing sheng cheng " + populationSize + " ge chu dai ge ti ( " + threadPool.getThreadCount() + " xian cheng ) ...");
 
         for (int t = 0; t < totalTasks; t++) {
             // 队列满时 execute 会自动阻塞，形成自然背压
@@ -2805,8 +2805,8 @@ public class PowerDistributionDriveOptimization {
                         int curSize = currentSize.incrementAndGet(); // 真正加入时再自增
                         if (curSize % 200 == 0 || curSize == populationSize) {
                             long elapsed = System.currentTimeMillis() - genStartMs;
-                            System.out.println("已生成 " + curSize + "/" + populationSize
-                                    + " 个有效个体, 耗时 " + elapsed + "ms");
+                            System.out.println("yi sheng cheng " + curSize + "/" + populationSize
+                                    + " ge you xiao ge ti , hao shi " + elapsed + "ms");
                         }
                         return; // 本任务成功，退出重试
                     } catch (Exception e) {
@@ -2822,9 +2822,9 @@ public class PowerDistributionDriveOptimization {
         int resultSize = Math.min(populationSize, population.size());
         List<Map<String, Object>> result = new ArrayList<>(population.subList(0, resultSize));
         long elapsed = System.currentTimeMillis() - genStartMs;
-        System.out.println("初代种群生成完成: " + result.size() + " 个个体, "
-                + "总耗时 " + elapsed + "ms, "
-                + (elapsed > 0 ? (result.size() * 1000L / elapsed) : "?") + " 个/秒");
+//        System.out.println("chu dai zhong qun sheng cheng wan cheng : " + result.size() + " ge ge ti , "
+//                + "zong hao shi " + elapsed + "ms , "
+//                + (elapsed > 0 ? (result.size() * 1000L / elapsed) : "?") + " ge / miao");
         return result;
     }
 
@@ -3279,15 +3279,15 @@ public class PowerDistributionDriveOptimization {
 
         // 统一入口：连接关系变化和用电器位置变化都参与枚举（乘积关系）
         // 当 varKeys 为空时（无连接关系变化），仍为"空赋值"枚举所有位置组合
-        System.out.println("开始回溯枚举，变量数: " + varKeys.size()
-                + "（连接关系），位置变化: " + (elecChangeablePosition != null ? elecChangeablePosition.size() : 0) + " 个用电器");
+        System.out.println("kai shi hui su mei ju , bian liang shu : " + varKeys.size()
+                + " ( lian jie guan xi ) , wei zhi bian hua : " + (elecChangeablePosition != null ? elecChangeablePosition.size() : 0) + " ge yong dian qi");
         Map<String, String> currentAssignment = new LinkedHashMap<>(); // 当前赋值状态
         Set<String> usedEndApps = new HashSet<>(); // 已被使用的终点用电器集合(用于互斥剪枝)
         enumerateSchemesByBacktrack(
                 varDomains, mutualIdToVarKeys, varsInAnyMutualGroup,
                 0, varKeys, currentAssignment, usedEndApps,
                 targetLoops, loopById, elecChangeablePosition, loopElecByIdStart);
-        System.out.println("枚举完成，耗时: " + (System.currentTimeMillis() - startTime) + "ms");
+        System.out.println("mei ju wan cheng , hao shi : " + (System.currentTimeMillis() - startTime) + "ms");
     }
 
     private void enumerateSchemesByBacktrack(
@@ -3303,7 +3303,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, List<String>> elecChangeablePosition,
             Map<String, Set<String>> loopElecByIdStart) {
         if (enumeratedSchemes.size() >= caseNumber) {
-            System.out.println("枚举方案数已达到限制(" + caseNumber + ")，提前退出");
+            System.out.println("mei ju fang an shu yi da dao xian zhi (" + caseNumber + ") , ti qian tui chu");
             return;
         }
         if (varIndex == varKeys.size()) {
@@ -3477,7 +3477,7 @@ public class PowerDistributionDriveOptimization {
             if (!scheme.isEmpty()) {
                 enumeratedSchemes.add(scheme);
                 if (enumeratedSchemes.size() % 100 == 0) {
-                    System.out.println("已枚举 " + enumeratedSchemes.size() + " 个方案...");
+                    System.out.println("yi mei ju " + enumeratedSchemes.size() + " ge fang an ...");
                 }
             }
             return;
@@ -3569,9 +3569,9 @@ public class PowerDistributionDriveOptimization {
                 total, overflow, loopInfos, loopById, elecChangeablePosition);
 
         long totalCombinations = total[0];
-        System.out.println("可行方案总数（含约束）: " + totalCombinations
-                + (overflow[0] ? " (已超过 caseNumber=" + caseNumber : ""));
-        System.out.println("方案数计算耗时: " + (System.currentTimeMillis() - calcStart) + "ms");
+        System.out.println("ke xing fang an zong shu ( han yue shu ) : " + totalCombinations
+                + (overflow[0] ? " ( yi chao guo caseNumber=" + caseNumber : ""));
+        System.out.println("fang an shu ji suan hao shi : " + (System.currentTimeMillis() - calcStart) + "ms");
         return totalCombinations;
     }
 

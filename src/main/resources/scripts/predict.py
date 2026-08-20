@@ -246,7 +246,7 @@ def main():
     print(f"Model ready")
 
     server = ThreadedTCPServer((args.host, args.port), PredictHandler)
-    print(f"[predict] 监听 {args.host}:{args.port}")
+    print(f"[predict] jian ting {args.host}:{args.port}")
 
     def shutdown(sig, frame):
         print("\n[predict]mo xing zhun bei tui chu ...")

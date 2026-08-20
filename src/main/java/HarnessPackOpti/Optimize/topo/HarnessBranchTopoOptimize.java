@@ -657,7 +657,7 @@ public class HarnessBranchTopoOptimize {
                 mutexMap, chooseOneList, togetherBCList,
                 togetherBCIndex, chooseOneIndex, mutexConflictIndex,
                 canChangeSSet);
-        System.out.println("初代方案生成" + initialSchemes.size() + "个方案耗时：" + (System.currentTimeMillis() - initTime));
+        System.out.println("Initial generate" + initialSchemes.size() + "cases,take time：" + (System.currentTimeMillis() - initTime));
         if (initialSchemes.isEmpty()) {
             System.err.println("初代方案生成失败：0个方案通过约束，无法继续优化");
             return null;
@@ -666,7 +666,7 @@ public class HarnessBranchTopoOptimize {
         long predictTime = System.currentTimeMillis();
         List<Map<String, Object>> findBest = predictAndFindBest(initialSchemes, edges, normList, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, null, objectMapper);
-        System.out.println("预测" + initialSchemes.size() + "个样本耗时：" + (System.currentTimeMillis() - predictTime));
+        System.out.println("predict" + initialSchemes.size() + "take time：" + (System.currentTimeMillis() - predictTime));
 
         // 将初始化方案也放入到迭代中去
         Map<String, Object> addtoMap = new HashMap<>();
@@ -703,7 +703,7 @@ public class HarnessBranchTopoOptimize {
             }
             TopDetail = findBest;
             long genDuration = System.currentTimeMillis() - startTime;
-            System.out.println("第" + hybridizationNumber + "代迭代结束，耗时：" + genDuration);
+            System.out.println("the" + hybridizationNumber + "end，take time：" + genDuration);
             // 提示 GC 回收本代生成的大量临时对象（10000+ 方案的中转数据）
             System.gc();
             if (hybridizationNumber == 1) {
@@ -743,13 +743,13 @@ public class HarnessBranchTopoOptimize {
                 }
             }
             if (BestRepetitionNumber == IterationRestrictNumber) {
-                System.out.println("迭代次数达到限制，后续与上一代结果相同达到30次");
+                System.out.println("迭代次数达到限制，后续与上一代结果相同达到指定次数");
                 break;
             }
             hybridizationNumber++;
         }
         long hybridizationDuration = System.currentTimeMillis() - hybridizationTime;
-        System.out.println("遗传算法结束，耗时：" + hybridizationDuration);
+        System.out.println("yi chuan jie shu，take time：" + hybridizationDuration);
         FindBest findBestUtil = new FindBest();
         List<Map<String, Object>> topBeat = findBestUtil.findBest(findBest, "成本", InteratorLastTop);
         // 对遗传生成的方案进行闭环检测，打断代价低的分支改S
@@ -1950,11 +1950,11 @@ public class HarnessBranchTopoOptimize {
         Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
         ProjectCircuitInfoOutput projectCircuitInfoOutput = new ProjectCircuitInfoOutput();
         Boolean whetherOnLoop = caseInfo.get("loopcreate").toString().equals("true") ? true : false;
-        System.out.println("一共需要计算方案：" + simpleList.size());
+        System.out.println("total calculate cases：" + simpleList.size());
         JsonToMap jsonToMap = new JsonToMap();
         ObjectMapper mapper = new ObjectMapper();
         // 检查生成的方案是否存在穿腔如果存在 将对应的闭环中 将打断成本最小的分支情况进行一个替换
-        System.out.println("每个方案开始加s");
+        System.out.println("case start add s");
         List<Map<String, Object>> resultList = new ArrayList<>();
         // 创建Callable任务列表
         // ★追踪:每个 task 注入 _inputIndex / _inputServiceableStatue,
@@ -2667,7 +2667,7 @@ public class HarnessBranchTopoOptimize {
         int topUpRounds = 0;
         for (List<String> parent : parentStatues) {
             if (phase1.size() >= perGenTarget) {
-                System.out.println("[hybridization] 阶段一早停:累计 " + phase1.size());
+//                System.out.println("[hybridization] 阶段一早停:累计 " + phase1.size());
                 break;
             }
             List<List<String>> variants = generateInitialSchemes(
@@ -2704,8 +2704,8 @@ public class HarnessBranchTopoOptimize {
                 break;
             }
         }
-        System.out.println("[hybridization] 阶段一累计 " + phase1.size() + " 个有效方案,耗时 "
-                + (System.currentTimeMillis() - phase1Time) + " ms");
+//        System.out.println("[hybridization] 阶段一累计 " + phase1.size() + " 个有效方案,耗时 "
+//                + (System.currentTimeMillis() - phase1Time) + " ms");
         // 对上面生成的样本进行ai预测成本，拿top
         if (phase1.isEmpty()) {
             System.out.println("[hybridization] 阶段一无有效方案,跳过 AI 预测");
@@ -2717,9 +2717,9 @@ public class HarnessBranchTopoOptimize {
                 phase1, edges, normList, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection,
                 multiLoopInfos, pointMap, null, objectMapper);
-        System.out.println("[hybridization] 阶段一 AI 预测+取 top 耗时 "
-                + (System.currentTimeMillis() - phase1PredictTime) + " ms,top 数 "
-                + (phase1Top == null ? 0 : phase1Top.size()));
+//        System.out.println("[hybridization] 阶段一 AI 预测+取 top 耗时 "
+//                + (System.currentTimeMillis() - phase1PredictTime) + " ms,top 数 "
+//                + (phase1Top == null ? 0 : phase1Top.size()));
 
         // 3) 阶段二:交叉变异(以阶段一 AI 预测的 top 为父本,两两配对)
         // ★ 不是上一代 TopDetail,而是刚刚阶段一 AI 预测排序拿到的 top
@@ -2754,8 +2754,8 @@ public class HarnessBranchTopoOptimize {
         }
         List<List<String>> phase2Raw = crossoverMutation(
                 phase2Parents, initialScheme, normList, crossTarget, parentCosts);
-        System.out.println("[hybridization] 阶段二原始生成 " + phase2Raw.size() + " 个,耗时 "
-                + (System.currentTimeMillis() - phase2Time) + " ms");
+//        System.out.println("[hybridization] 阶段二原始生成 " + phase2Raw.size() + " 个,耗时 "
+//                + (System.currentTimeMillis() - phase2Time) + " ms");
 
         // 4) 阶段二约束检查 + 入仓。交叉变异产生的子代未经过约束感知处理，
         // 这里先做 togetherBC展开 + mutex校验 + chooseOne传播，再入仓。
@@ -2810,8 +2810,8 @@ public class HarnessBranchTopoOptimize {
                 phase2Valid.add(adjusted);
             }
         }
-        System.out.println("[hybridization] 阶段二通过约束 " + phase2Valid.size() + " 个,耗时 "
-                + (System.currentTimeMillis() - phase2CheckTime) + " ms");
+//        System.out.println("[hybridization] 阶段二通过约束 " + phase2Valid.size() + " 个,耗时 "
+//                + (System.currentTimeMillis() - phase2CheckTime) + " ms");
         // 交叉变异原始产物已用完（仅 valid 子集保留），释放引用
         phase2Raw = null;
 
@@ -2855,7 +2855,7 @@ public class HarnessBranchTopoOptimize {
         finaleResult.addAll(phase1Top);
         FindBest findBest = new FindBest();
         List<Map<String, Object>> topBeat = findBest.findBest(finaleResult, "成本", TopNumber);
-        System.out.println("预测" + allSchemesSize + "个样本成本耗时：" + findBestTimeMs);
+        System.out.println("predict " + allSchemesSize + "cases take time：" + findBestTimeMs);
         return topBeat;
     }
 
@@ -3678,8 +3678,8 @@ public class HarnessBranchTopoOptimize {
             System.err.println("generateInitialSchemes 父本邻域变异异常: " + e.getMessage());
         }
 
-        System.out.println("阶段一耗时（父本邻域变异）：" + (System.currentTimeMillis() - time) + " ms, 生成 "
-                + result.size() + " 个方案");
+//        System.out.println("bian yi hao shi:" + (System.currentTimeMillis() - time) + " ms, 生成 "
+//                + result.size() + " 个方案");
         return result;
     }
 

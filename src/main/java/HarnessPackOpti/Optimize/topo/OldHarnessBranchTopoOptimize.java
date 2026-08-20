@@ -110,7 +110,6 @@ public class OldHarnessBranchTopoOptimize {
             List<Map<String, String>> points = (List<Map<String, String>>) jsonMap.get("points");
             CaseId = caseInfo.get("id").toString();
             optimizeRecordId = optimizeRecord.get("id").toString();
-            // optimizeRecordId = java.util.UUID.randomUUID().toString();
             optimizeStopStatusStore.setKey(optimizeRecordId);
             Boolean whetherAI = false;
 
@@ -788,7 +787,7 @@ public class OldHarnessBranchTopoOptimize {
             // 不管正常返回还是异常,都关闭本次调用的本地线程池
             if (threadPool != null) {
                 try {
-                    threadPool.shutdown();
+                    threadPool.terminateNow();
                 } catch (Exception e) {
                     System.err.println("[OldHarnessBranchTopoOptimize] 关闭线程池异常: " + e.getMessage());
                 }
@@ -1459,11 +1458,12 @@ public class OldHarnessBranchTopoOptimize {
         // 每次提交10个任务
         int batchSize = 10;
         for (Callable<Map<String, Object>> task : tasks) {
-            // 检查状态，防止多次提交
-            // if (resultList.size() == LastNumber) {
-            //// threadPool.terminateNow();
-            // break;
-            // }
+            // 方案数够了就跳出(前端已点暂停,不再提交新任务)
+            synchronized (resultList) {
+                if (resultList.size() >= LastNumber) {
+                    break;
+                }
+            }
             Future<Map<String, Object>> submit = threadPool.submit(task);
             futures.add(submit);
             submittedCount++;
@@ -1482,8 +1482,8 @@ public class OldHarnessBranchTopoOptimize {
                             completeFutures.add(future); // 添加到已完成列表
                         }
 
-                        if (resultList.size() == LastNumber) {
-                            System.out.println("方案数量已经达到20个");
+                        if (resultList.size() >= LastNumber) {
+                            System.out.println("方案数量已经达到LastNumber个");
                             break;
                         }
                     } catch (Exception e) {
@@ -1494,11 +1494,11 @@ public class OldHarnessBranchTopoOptimize {
                     }
 
                 }
-                if (resultList.size() == LastNumber) {
+                if (resultList.size() >= LastNumber) {
                     break;
                 }
             }
-            if (resultList.size() == LastNumber) {
+            if (resultList.size() >= LastNumber) {
                 break;
             }
         }
@@ -2331,7 +2331,7 @@ public class OldHarnessBranchTopoOptimize {
                 if (scrapOrNot) {
                     return null;
                 }
-                System.out.println("遗传算法返回top耗时，每个方案闭环检测结束耗时" + (System.currentTimeMillis() - startTime));
+//                System.out.println("遗传算法返回top耗时，每个方案闭环检测结束耗时" + (System.currentTimeMillis() - startTime));
                 return map;
             });
         }
@@ -2658,7 +2658,7 @@ public class OldHarnessBranchTopoOptimize {
             }
             return true;
         } catch (Exception e) {
-            System.out.println("refreshCircuitInfo 异常: " + e.getMessage());
+//            System.out.println("refreshCircuitInfo 异常: " + e.getMessage());
             return false;
         }
     }

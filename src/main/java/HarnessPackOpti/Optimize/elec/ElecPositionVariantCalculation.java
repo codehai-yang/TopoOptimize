@@ -141,7 +141,7 @@ public class ElecPositionVariantCalculation {
             }
             Set<String> elecChangeablePositionSet = new HashSet<>(elecChangeablePosition.keySet());
             List<String> elecChangeableList = new ArrayList<>(elecChangeablePositionSet);
-            System.out.println("计算用电器再每个点的成本");
+            System.out.println("ji suan yong dian qi zai mei ge dian de cheng ben");
 
             // 计算每个用电器在所有点的成本计算
             long costTime = System.currentTimeMillis();
@@ -156,14 +156,15 @@ public class ElecPositionVariantCalculation {
                 elecInAllAddressDetail.put("detail", best);
                 elecInAllAddress.add(elecInAllAddressDetail);
             }
-            System.out.println("计算用电器再每个点的成本所用时间" + (System.currentTimeMillis() - costTime));
-            System.out.println("计算用电器再每个点的成本完成");
+            System.out.println("ji suan yong dian qi zai mei ge dian de cheng ben suo yong shi jian "
+                    + (System.currentTimeMillis() - costTime));
+            System.out.println("ji suan yong dian qi zai mei ge dian de cheng ben wan cheng");
 
-            System.out.println("生成字典");
+            System.out.println("sheng cheng zi dian");
             long start = System.currentTimeMillis();
             Map<String, Object> filtration = filtration(adjacencyMatrixGraph, projectInfo);
-            System.out.println("生成字典所用时间" + (System.currentTimeMillis() - start));
-            System.out.println("字典生成完成");
+            System.out.println("sheng cheng zi dian suo yong shi jian " + (System.currentTimeMillis() - start));
+            System.out.println("zi dian sheng cheng wan cheng");
             // 筛选出可变的回路
             List<Map<String, Object>> unfixedLoopInfoList = new ArrayList<>();
             for (Map<String, Object> loopInfo : loopInfos) {
@@ -207,7 +208,7 @@ public class ElecPositionVariantCalculation {
             // 对当前的用电器进行一个分组
             List<List<String>> lists = elecGroup(elecChangeablePositionSet.stream().collect(Collectors.toList()),
                     correlationElec);
-            System.out.println("用电器分组时间:" + (System.currentTimeMillis() - groupTime));
+            System.out.println("yong dian qi fen zu shi jian: " + (System.currentTimeMillis() - groupTime));
             List<Map<String, Object>> bestList = new ArrayList<>();
             // 针对不同的阈值进行一个计算
             long optimizeTime = System.currentTimeMillis();
@@ -276,7 +277,8 @@ public class ElecPositionVariantCalculation {
                 BestCost = new HashMap<>();
                 BestRepetitionNumber = 0;
             }
-            System.out.println("对分好组的用电器进行优化，耗时:" + (System.currentTimeMillis() - optimizeTime));
+            System.out.println("dui fen hao zu de yong dian qi jin xing you hua, hao shi: "
+                    + (System.currentTimeMillis() - optimizeTime));
             //
             long noneGroupTime = System.currentTimeMillis();
             Set<String> groupSet = new HashSet<>();
@@ -311,7 +313,8 @@ public class ElecPositionVariantCalculation {
 
                 }
             }
-            System.out.println("对未分组用电器优化，耗时：" + (System.currentTimeMillis() - noneGroupTime));
+            System.out.println(
+                    "dui wei fen zu yong dian qi you hua, hao shi: " + (System.currentTimeMillis() - noneGroupTime));
             String json = objectMapper.writeValueAsString(bestList);
             return json;
         } finally {
@@ -320,7 +323,8 @@ public class ElecPositionVariantCalculation {
                 try {
                     threadPool.shutdown();
                 } catch (Exception e) {
-                    System.err.println("[ElecPositionVariantCalculation] 关闭线程池异常: " + e.getMessage());
+                    System.err.println(
+                            "[ElecPositionVariantCalculation] guan bi xian cheng chi yi chang: " + e.getMessage());
                 }
             }
         }
@@ -442,7 +446,7 @@ public class ElecPositionVariantCalculation {
         // 重新划定用电器可变的位置点
         for (String s : electricalList) {
             Map<String, Object> deepCopyMap = deepCopy(initMapFile);
-            System.out.println(s);
+            // System.out.println(s);
             List<String> list = elecChangeablePosition.get(s);
             if (list.size() < 5) {
                 newElecChangeablePosition.put(s, list);
@@ -520,7 +524,7 @@ public class ElecPositionVariantCalculation {
         // 按照新的位置点随机生成一批样本
         long startTime = System.currentTimeMillis();
         List<List<String>> possibilityLists = initialOptimize(newElecChangeablePosition, electricalList);
-        System.out.println("生成初代样本耗时：" + (System.currentTimeMillis() - startTime));
+        System.out.println("sheng cheng chu dai yang ben hao shi: " + (System.currentTimeMillis() - startTime));
         WareHouse.addAll(possibilityLists);
         // 找出这些可变用电器的相关回路
         List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) mapFile.get("loopInfos");
@@ -566,7 +570,8 @@ public class ElecPositionVariantCalculation {
         long findBestTime = System.currentTimeMillis();
         List<Map<String, Object>> findBest = compute(possibilityLists, mapFile, electricalList, "0",
                 elecFixedLocationLibrary, elecBusinessPrice, filtration);
-        System.out.println("初代方案中找最优Top耗时:" + (System.currentTimeMillis() - findBestTime));
+        System.out.println(
+                "chu dai fang an zhong zhao zui you Top hao shi: " + (System.currentTimeMillis() - findBestTime));
         temporarilyList.addAll(findBest);
         // 开始进行一个迭代
         int hybridizationNumber = 1;
@@ -577,7 +582,7 @@ public class ElecPositionVariantCalculation {
                 result.addAll(restore);
                 return result;
             }
-            System.out.println("第" + hybridizationNumber + "次迭代");
+            System.out.println("di " + hybridizationNumber + " ci die dai");
             findBest = hybridization(temporarilyList, mapFile, electricalList, newElecChangeablePosition,
                     hybridizationNumber, elecFixedLocationLibrary, elecBusinessPrice, filtration);
             temporarilyList = findBest;
@@ -613,7 +618,7 @@ public class ElecPositionVariantCalculation {
             }
             hybridizationNumber++;
         }
-        System.out.println("遗传算法迭代耗时：" + (System.currentTimeMillis() - hybridizationTime));
+        System.out.println("yi chuan suan fa die dai hao shi: " + (System.currentTimeMillis() - hybridizationTime));
         List<Map<String, Object>> restore = restore(findBest, initMapFile);
         result.addAll(restore);
         return result;
@@ -666,7 +671,7 @@ public class ElecPositionVariantCalculation {
             allPossibilityLists = allPossibilityLists.stream().distinct().collect(Collectors.toList());
             IterationNumber++;
         }
-        System.out.println("最终方案数量：" + allPossibilityLists.size());
+        System.out.println("zui zhong fang an shu liang: " + allPossibilityLists.size());
         Map<String, Object> mapFile = new HashMap<>(initMapFile);
         List<Map<String, Object>> hybridizationcompute = compute(allPossibilityLists, mapFile, electricalList,
                 String.valueOf(hybridizationNumber), elecFixedLocationLibrary, elecBusinessPrice, filtration);
@@ -706,7 +711,7 @@ public class ElecPositionVariantCalculation {
         double baseWeight = (Double) baseProjectCircuitInfo.get("回路总重量");
         double baseLength = (Double) baseProjectCircuitInfo.get("回路总长度");
 
-        System.out.println("lists:" + lists.size() + "个方案");
+        System.out.println("lists: " + lists.size() + " ge fang an");
         int numbber = 1;
         DecimalFormat df = new DecimalFormat("0.00");
         // 多线程优化(10000个方案)
@@ -844,7 +849,7 @@ public class ElecPositionVariantCalculation {
         List<Map<String, Object>> allArrangementList = new ArrayList<>();
         // System.out.println("开始计算=================");
         for (String s : list) {
-            System.out.println(s);
+            // System.out.println(s);
             Map<String, Object> map = new HashMap<>();
             for (Map<String, Object> appPosition : appPositions) {
                 if (appPosition.get("appName").toString().equals(name)) {
@@ -1000,7 +1005,7 @@ public class ElecPositionVariantCalculation {
         List<Map<String, Object>> cost = findBest.findBest(allArrangementList, "成本", TopNumber);
         long restoreTime = System.currentTimeMillis();
         List<Map<String, Object>> restore = restore(cost, initmapFile);
-        System.out.println("方案还原耗时：" + (System.currentTimeMillis() - restoreTime));
+        System.out.println("fang an huan yuan hao shi: " + (System.currentTimeMillis() - restoreTime));
         result.addAll(restore);
         allArrangementList = null;
         System.gc();
