@@ -2639,6 +2639,7 @@ public class HarnessBranchTopoOptimize {
             Map<String, Set<String>> chooseOneIndex,
             Map<String, Set<String>> mutexConflictIndex,
             Set<String> canChangeSSet) throws Exception {
+        long time = System.currentTimeMillis();
         // 0) 兜底:没有上一代父本,直接退出
         if (TopDetail == null || TopDetail.isEmpty()) {
             return null;
@@ -2688,6 +2689,8 @@ public class HarnessBranchTopoOptimize {
                     canChangeSSet);
             phase1.addAll(variants);
         }
+        System.out.println("phase1 generate time :" + (System.currentTimeMillis() - time));
+        time = System.currentTimeMillis();
         while (phase1.size() < HybridizationLessRandomSamleNumber) {
             // 继续调用初代生成的方案直到满足方案数量
             // 限制:补充次数 ≤ AutoCompleteNumber 防止无限循环
@@ -2714,6 +2717,7 @@ public class HarnessBranchTopoOptimize {
                 break;
             }
         }
+        System.out.println("phase1 bu chong take time :" + (System.currentTimeMillis() - time));
 //        System.out.println("[hybridization] 阶段一累计 " + phase1.size() + " 个有效方案,耗时 "
 //                + (System.currentTimeMillis() - phase1Time) + " ms");
         // 对上面生成的样本进行ai预测成本，拿top
@@ -2721,12 +2725,13 @@ public class HarnessBranchTopoOptimize {
             System.out.println("[hybridization] 阶段一无有效方案,跳过 AI 预测");
             return null;
         }
-        long phase1PredictTime = System.currentTimeMillis();
+        time = System.currentTimeMillis();
         // findBestPre 传 null 避免注入 10% 精英(由本方法统一控制)
         List<Map<String, Object>> phase1Top = predictAndFindBest(
                 phase1, edges, normList, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection,
                 multiLoopInfos, pointMap, null, objectMapper);
+        System.out.println("phase1 take top take time :" + (System.currentTimeMillis() - time));
 //        System.out.println("[hybridization] 阶段一 AI 预测+取 top 耗时 "
 //                + (System.currentTimeMillis() - phase1PredictTime) + " ms,top 数 "
 //                + (phase1Top == null ? 0 : phase1Top.size()));
@@ -2734,6 +2739,7 @@ public class HarnessBranchTopoOptimize {
         // 3) 阶段二:交叉变异(以阶段一 AI 预测的 top 为父本,两两配对)
         // ★ 不是上一代 TopDetail,而是刚刚阶段一 AI 预测排序拿到的 top
         // 同样做 S → C 还原(避免 S 状态污染父本邻域的 baseStatusMap)
+        time = System.currentTimeMillis();
         List<List<String>> phase2Parents = new ArrayList<>();
         for (Map<String, Object> detail : phase1Top) {
             List<String> statue = (List<String>) detail.get("serviceableStatue");
@@ -2751,7 +2757,7 @@ public class HarnessBranchTopoOptimize {
             System.out.println("[hybridization] 阶段一 AI top 无有效父本,跳过交叉变异");
             return null;
         }
-        long phase2Time = System.currentTimeMillis();
+        time = System.currentTimeMillis();
         int crossTarget = Math.max(perGenTarget, phase2Parents.size() * 2);
         List<Double> parentCosts = new ArrayList<>();
         for (Map<String, Object> detail : phase1Top) {
@@ -2764,12 +2770,12 @@ public class HarnessBranchTopoOptimize {
         }
         List<List<String>> phase2Raw = crossoverMutation(
                 phase2Parents, initialScheme, normList, crossTarget, parentCosts);
+        System.out.println("phase2 generate time :" + (System.currentTimeMillis() - time));
 //        System.out.println("[hybridization] 阶段二原始生成 " + phase2Raw.size() + " 个,耗时 "
 //                + (System.currentTimeMillis() - phase2Time) + " ms");
-
+        time = System.currentTimeMillis();
         // 4) 阶段二约束检查 + 入仓。交叉变异产生的子代未经过约束感知处理，
         // 这里先做 togetherBC展开 + mutex校验 + chooseOne传播，再入仓。
-        long phase2CheckTime = System.currentTimeMillis();
         List<List<String>> phase2Valid = new ArrayList<>();
         // 构建 baseStatusMap（用于 chooseOne 传播判断原本状态）
         Map<String, String> baseStatusMapForPhase2 = new LinkedHashMap<>();
@@ -2820,6 +2826,7 @@ public class HarnessBranchTopoOptimize {
                 phase2Valid.add(adjusted);
             }
         }
+        System.out.println("phase2 check time :" + (System.currentTimeMillis() - time));
 //        System.out.println("[hybridization] 阶段二通过约束 " + phase2Valid.size() + " 个,耗时 "
 //                + (System.currentTimeMillis() - phase2CheckTime) + " ms");
         // 交叉变异原始产物已用完（仅 valid 子集保留），释放引用
@@ -2851,9 +2858,12 @@ public class HarnessBranchTopoOptimize {
         // findBestPre 传 null 避免 predictAndFindBest 内部再注入 10%(精英由本方法统一控制)
         long predTime = System.currentTimeMillis();
         phase2Valid.addAll(topThirty);
+        System.out.println("start predict and findBest");
+        time  = System.currentTimeMillis();
         List<Map<String, Object>> mapList = predictAndFindBest(phase2Valid, edges, normList, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection,
                 multiLoopInfos, pointMap, null, objectMapper);
+        System.out.println("phase2 predictAndFindBest take time" + (System.currentTimeMillis() - time));
         // 阶段二方案列表已用完（已通过 predictAndFindBest 预测完毕），释放引用
         int allSchemesSize = allSchemes.size();
         allSchemes = null;
@@ -2865,7 +2875,6 @@ public class HarnessBranchTopoOptimize {
         finaleResult.addAll(phase1Top);
         FindBest findBest = new FindBest();
         List<Map<String, Object>> topBeat = findBest.findBest(finaleResult, "成本", TopNumber);
-        System.out.println("predict " + allSchemesSize + "cases take time：" + findBestTimeMs);
         return topBeat;
     }
 
@@ -3113,7 +3122,8 @@ public class HarnessBranchTopoOptimize {
 
     /**
      * 约束感知的打断展开:给定一组要打断的分支,先展开 togetherBC(同组必须一起变),
-     * 再快速校验互斥约束(每对互斥组至少一方有B),全部通过则返回展开后的完整打断集合。
+     * 再快速校验互斥约束(互斥组之间不再要求必有一方为B,仅做组内同态的 togetherBC 展开),
+     * 全部通过则返回展开后的完整打断集合。
      * 若约束冲突则返回 null。注意:chooseOne 约束(每组最多一个C)在只添加B的情况下自动满足,无需额外检查。
      */
     private Set<String> expandAndValidateBreaks(
@@ -3141,36 +3151,8 @@ public class HarnessBranchTopoOptimize {
             expanded.addAll(toAdd);
         }
 
-        // 2) 构建临时状态：baseStatusMap + expanded打断
-        Map<String, String> tempStatus = new LinkedHashMap<>(baseStatusMap);
-        for (String id : expanded) {
-            tempStatus.put(id, "B");
-        }
-
-        // 3) 快速检查 mutex：每对互斥组至少一方有B
-        Set<Integer> checkedMutex = new HashSet<>();
-        for (Map.Entry<String, Set<String>> entry : mutexConflictIndex.entrySet()) {
-            String myId = entry.getKey();
-            Set<String> conflictIds = entry.getValue();
-            // 用冲突方集合的 identityHashCode 去重（每对互斥组只检查一次）
-            int pairKey = System.identityHashCode(conflictIds);
-            if (!checkedMutex.add(pairKey)) {
-                continue;
-            }
-            // 检查双方：myId所在组 和 conflictIds所在组，至少一方有B
-            boolean hasB = "B".equals(tempStatus.get(myId));
-            if (!hasB) {
-                for (String cid : conflictIds) {
-                    if ("B".equals(tempStatus.get(cid))) {
-                        hasB = true;
-                        break;
-                    }
-                }
-            }
-            if (!hasB) {
-                return null; // 双方都非B，违规
-            }
-        }
+        // 2) 互斥组之间不再强制"必有一方为 B":一组为 B 时,另一组可为 B/C/S 任意,
+        //    (跨组是否需要互斥,统一由 checkFirstOption 最终入仓校验把关)
 
         return expanded;
     }
@@ -3498,36 +3480,30 @@ public class HarnessBranchTopoOptimize {
                 }
             }
         }
-        // 2) mutex：每对互斥组至少一方是B
+        // 2) mutex：互斥组团（组内同态 + 组间成对约束）
+        //    组内同态已由上方 togetherBCList 校验保证；
+        //    组间成对：同一 mutexFullName 下任意两个子组不得同为 C、也不得同为 S（B 可任意共存）。
         for (Map.Entry<String, Map<String, List<String>>> entry : mutexMap.entrySet()) {
             Map<String, List<String>> groupMap = entry.getValue();
-            List<String> firstGroup = new ArrayList<>();
-            List<String> secondGroup = new ArrayList<>();
-            int cycle = 0;
+            List<String> statuses = new ArrayList<>();
             for (List<String> ids : groupMap.values()) {
-                if (cycle == 0)
-                    firstGroup.addAll(ids);
-                else
-                    secondGroup.addAll(ids);
-                cycle++;
-            }
-            boolean firstHasB = false, secondHasB = false;
-            for (String id : firstGroup) {
-                int idx = normList.indexOf(id);
-                if (idx >= 0 && "B".equals(fullStatus.get(idx))) {
-                    firstHasB = true;
-                    break;
+                if (ids == null || ids.isEmpty()) {
+                    continue;
                 }
-            }
-            for (String id : secondGroup) {
-                int idx = normList.indexOf(id);
-                if (idx >= 0 && "B".equals(fullStatus.get(idx))) {
-                    secondHasB = true;
-                    break;
+                int idx = normList.indexOf(ids.get(0));
+                if (idx < 0) {
+                    continue;
                 }
+                statuses.add(fullStatus.get(idx));
             }
-            if (!firstHasB && !secondHasB) {
-                return false;
+            for (int i = 0; i < statuses.size(); i++) {
+                for (int j = i + 1; j < statuses.size(); j++) {
+                    String a = statuses.get(i);
+                    String b = statuses.get(j);
+                    if (("C".equals(a) && "C".equals(b)) || ("S".equals(a) && "S".equals(b))) {
+                        return false;
+                    }
+                }
             }
         }
         // 3) chooseOne：每组最多一个C
@@ -3630,6 +3606,7 @@ public class HarnessBranchTopoOptimize {
         List<Future<List<List<String>>>> futures = new ArrayList<>();
         try {
             for (int k = 1; k <= maxK; k++) {
+                long bianyi = System.currentTimeMillis();
                 for (int k1 = 0; k1 <= Math.min(k, pB); k1++) {
                     int k2 = k - k1;
                     if (k2 > pC)
@@ -3671,6 +3648,7 @@ public class HarnessBranchTopoOptimize {
                         }));
                     }
                 }
+//                System.out.println("mei ju he chou yang hao shi：" + (System.currentTimeMillis() - bianyi));
             }
             for (Future<List<List<String>>> f : futures) {
                 try {
@@ -4113,58 +4091,49 @@ public class HarnessBranchTopoOptimize {
         }
 
         // 对互斥的情况进行一个检查
-        // 规则：
-        // 1) 同 mutexFullName 内所有分支必须同状态（全 B 或全 C/S）
-        // 2) 不同 mutexFullName 之间状态必须相反
-        // - 第一组 B → 其他组必须 C 或 S（不允许 B）
-        // - 第一组 C/S → 其他组必须 B（被打断）
-        // 3) 同一 changeTogether 组（mutexGroupList）内所有分支必须同状态
-        // （处理"互斥组团"语义：A 在 changeTogether 组里，A 变 B 时整个组团都变 B）
+        // 规则（互斥组团"一起变"，组内同态 + 组间成对约束）：
+        // - 组内同态：同 mutexFullName 的一个子组内，首状态 B → 全组必须 B；首状态 C/S → 全组必须 C 或 S
+        // - 组间成对：同一 mutexFullName 下的任意两个子组，不得同为 C，也不得同为 S
+        //   （即"一组为 B 时其余可为任意；为 C 时另一组必须不同(不能同为 C)；为 S 时其他组也必须不同(不能同为 S)"，
+        //      B 可任意共存：B/B、B/C、B/S、C/S 均合法）
         Set<String> mutexName = mutexMap.keySet();
         for (String s : mutexName) {
             Map<String, List<String>> listMap = mutexMap.get(s);
-            Set<String> sonset = listMap.keySet();
-            int cycleNumber = 1;
-            String statue = null;
-            for (String edgeId : sonset) {
-                List<String> list = listMap.get(edgeId);
-                if (cycleNumber == 1) {
-                    // 第一组:同 mutexFullName 内必须同状态
-                    statue = changeList.get(normList.indexOf(list.get(0)));
-                    if (statue.equals("B")) {
-                        for (String topologyStatusCode : list) {
-                            if (!changeList.get(normList.indexOf(topologyStatusCode)).equals("B")) {
-                                return false;
-                            }
+            List<List<String>> subGroups = new ArrayList<>(new LinkedHashSet<>(listMap.values()));
+            if (subGroups.isEmpty()) {
+                continue;
+            }
+            // 记录每个子组的基础状态（用于组间成对判断）
+            List<String> groupStatuses = new ArrayList<>();
+            for (List<String> list : subGroups) {
+                if (list == null || list.isEmpty()) {
+                    continue;
+                }
+                // 组内同态：以首分支状态为基准，组内其余分支必须与之同态
+                String groupStatus = changeList.get(normList.indexOf(list.get(0)));
+                for (String topologyStatusCode : list) {
+                    String currentStatus = changeList.get(normList.indexOf(topologyStatusCode));
+                    if ("B".equals(groupStatus)) {
+                        if (!"B".equals(currentStatus)) {
+                            return false;
                         }
                     } else {
-                        for (String topologyStatusCode : list) {
-                            if (!(changeList.get(normList.indexOf(topologyStatusCode)).equals("C")
-                                    || changeList.get(normList.indexOf(topologyStatusCode)).equals("S"))) {
-                                return false;
-                            }
-                        }
-                    }
-                } else {
-                    // 其他组:必须和第一组状态相反
-                    if (statue.equals("B")) {
-                        // 第一组 B → 其他组必须 C 或 S(不允许 B,避免"同 mutex 相反"语义失效)
-                        for (String topologyStatusCode : list) {
-                            if (!(changeList.get(normList.indexOf(topologyStatusCode)).equals("C")
-                                    || changeList.get(normList.indexOf(topologyStatusCode)).equals("S"))) {
-                                return false;
-                            }
-                        }
-                    } else {
-                        // 第一组 C/S → 其他组必须 B
-                        for (String topologyStatusCode : list) {
-                            if (!changeList.get(normList.indexOf(topologyStatusCode)).equals("B")) {
-                                return false;
-                            }
+                        if (!("C".equals(currentStatus) || "S".equals(currentStatus))) {
+                            return false;
                         }
                     }
                 }
-                cycleNumber++;
+                groupStatuses.add(groupStatus);
+            }
+            // 组间成对：任意两个子组不得同为 C，也不得同为 S
+            for (int i = 0; i < groupStatuses.size(); i++) {
+                for (int j = i + 1; j < groupStatuses.size(); j++) {
+                    String a = groupStatuses.get(i);
+                    String b = groupStatuses.get(j);
+                    if (("C".equals(a) && "C".equals(b)) || ("S".equals(a) && "S".equals(b))) {
+                        return false;
+                    }
+                }
             }
         }
 
@@ -4311,12 +4280,14 @@ public class HarnessBranchTopoOptimize {
         // 释放全量预测结果列表（10000+ 条），仅保留 topBeat
         resultList = null;
         // WareHouseTop 去重入仓
+        long checkTime = System.currentTimeMillis();
         for (Map<String, Object> map : topBeat) {
             List<String> list = (List<String>) map.get("serviceableStatue");
             if (!containsList(list, WareHouseTop)) {
                 WareHouseTop.add(list);
             }
         }
+        System.out.println("qu chong take time" + (System.currentTimeMillis() - checkTime));
         return topBeat;
     }
 
