@@ -18,6 +18,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -193,6 +194,15 @@ public class HarnessBranchTopoOptimize {
         CaseId = caseInfo.get("id").toString();
         optimizeRecordId = optimizeRecord.get("id").toString();
         optimizeStopStatusStore.setKey(optimizeRecordId);
+        // 生成本次接口请求的日志文件名 (方案名_日期_毫秒.log)，通过协议传给 Python，
+        // Python 不重启，用线程局部变量把日志写到 python_logs/下的这个文件
+        Object caseNameObj = caseInfo.get("caseName");
+        String caseName = (caseNameObj != null) ? caseNameObj.toString() : "unknown";
+        String safeCaseName = caseName.trim().replaceAll("[\\\\/:*?\"<>|]", "_");
+        String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmssSSS").format(new java.util.Date());
+        String logFileName = safeCaseName + "_" + timestamp + ".log";
+        HarnessPackOpti.utils.GINEInferenceEngine.setSchemeName(caseName);
+        HarnessPackOpti.utils.GINEInferenceEngine.setLogFileName(logFileName);
 
         // 整车信息计算
         String initializeCaseResult = projectCircuitInfoOutput.projectCircuitInfoOutput(jsonContent);
@@ -2290,7 +2300,7 @@ public class HarnessBranchTopoOptimize {
         // 获取线程池结果
         for (Future<Map<String, Object>> future : futures) {
             try {
-                Map<String, Object> result = future.get(6000, java.util.concurrent.TimeUnit.SECONDS);
+                Map<String, Object> result = future.get(600, java.util.concurrent.TimeUnit.SECONDS);
                 if (result != null) {
                     resultList.add(result);
                 }
@@ -4244,91 +4254,35 @@ public class HarnessBranchTopoOptimize {
         List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) jsonMap.get("loopInfos");
         List<Map<String, String>> pointsList = (List<Map<String, String>>) jsonMap.get("points");
         List<Map<String, Object>> resultList = new ArrayList<>();
-        List<Callable<Map<String, Object>>> tasks = new ArrayList<>();
+        // 滑动窗口提交：始终保持窗口内最多 windowSize(=连接池容量) 个任务在运行/排队，
+        // 每完成一个预测、归还连接后，立即补一个新任务进窗口。
+        // 多请求并发时，各请求独立滑动、持续推进，即使连接被其他请求占用，
+        // 只要空出一条连接就立即补任务，不会出现"等整批全返回"或"等对方释放"的互相卡死。
+        int windowSize = Math.max(1, HarnessPackOpti.utils.GINEInferenceEngine.connectionPoolSize());
         long start = System.currentTimeMillis();
-        for (List<String> strings : simpleList) {
-            tasks.add(() -> {
-                List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
-
-                List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
-                // 深拷贝
-                List<Map<String, String>> originalList = (List<Map<String, String>>) jsonMap.get("appPositions");
-                List<Map<String, String>> deepCopyAppPositions = new ArrayList<>(originalList.size());
-                for (Map<String, String> item : originalList) {
-                    deepCopyAppPositions.add(new HashMap<>(item)); // 逐个复制
-                }
-                // 深拷贝
-                Map<String, Object> threadLocalJsonMap = new HashMap<>(jsonMap);
-                threadLocalJsonMap.put("edges", serviceableEdge);
-                threadLocalJsonMap.put("appPositions", deepCopyAppPositions);
-
-                // 分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1]
-                List<List<Float>> branchFeatureList = new ArrayList<>();
-                for (String s : serviceableStatue) {
-                    List<Float> statue = new ArrayList<>();
-                    switch (s) {
-                        case "B":
-                            statue = new ArrayList<>(Arrays.asList(0.0f, 0.0f, 0.0f));
-                            break;
-                        case "C":
-                            statue = new ArrayList<>(Arrays.asList(0.0f, 1.0f, 0.0f));
-                            break;
-                        case "S":
-                            statue = new ArrayList<>(Arrays.asList(0.0f, 0.0f, 1.0f));
-                            break;
-                        default:
-                            break;
-                    }
-                    branchFeatureList.add(statue);
-                }
-                for (int i = 0; i < length.size(); i++) {
-                    List<Float> integers = branchFeatureList.get(i);
-                    integers.add(length.get(i));
-                }
-                // 标准化特征矩阵
-                float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap,
-                        pointsList, normList, multiLoopInfos, pointMap);
-                long[][] edgeIndex = new long[2][connection.get(0).size()];
-                for (int i = 0; i < 2; i++) {
-                    for (int j = 0; j < connection.get(i).size(); j++) {
-                        edgeIndex[i][j] = connection.get(i).get(j);
-                    }
-                }
-                float[][] edgeAttr = new float[branchFeatureList.size()][branchFeatureList.get(0).size()];
-                for (int i = 0; i < branchFeatureList.size(); i++) {
-                    for (int j = 0; j < branchFeatureList.get(i).size(); j++) {
-                        edgeAttr[i][j] = branchFeatureList.get(i).get(j);
-                    }
-                }
-                float predict = gine.predict(x, edgeIndex, edgeAttr);
-
-                // 构建返回结果：仅保留 serviceableStatue 和成本，不携带 serviceableEdges
-                // serviceableEdges（所有边的深拷贝）约 100KB/方案，10000 方案 ≈ 1GB，下游不需要
-                Map<String, Object> costResultData = new HashMap<>();
-                costResultData.put("总成本", (double) predict);
-                // AI模型仅预测成本，重量和长度置为占位值
-                costResultData.put("总重量", 0.0);
-                costResultData.put("总长度", 0.0);
-
-                Map<String, Object> map = new HashMap<>();
-                map.put("成本", costResultData);
-                map.put("serviceableStatue", serviceableStatue);
-                return map;
-            });
-        }
-        // 线程池提交任务
-        List<Future<Map<String, Object>>> futures = new ArrayList<>();
-        for (Callable<Map<String, Object>> task : tasks) {
-            futures.add(threadPool.submit(task));
-        }
-        // 提交完毕立即释放 tasks 引用（每个 task 内部持有的闭包变量可提前被 GC）
-        tasks = null;
-
-        // 获取线程池结果（边取边释放 Future，避免全部结果同时驻留内存）
-        for (int i = 0; i < futures.size(); i++) {
-            Future<Map<String, Object>> future = futures.get(i);
+        // 自定义 ThreadPool 未实现标准 Executor 接口，包装为 Executor 后交给 ExecutorCompletionService 使用。
+        java.util.concurrent.Executor es = command -> {
             try {
-                Map<String, Object> result = future.get(6000, java.util.concurrent.TimeUnit.SECONDS);
+                threadPool.execute(command);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new java.util.concurrent.RejectedExecutionException("interrupted", ie);
+            }
+        };
+        ExecutorCompletionService<Map<String, Object>> ecs = new ExecutorCompletionService<>(es);
+        int total = simpleList.size();
+        int submitted = 0;
+        // 先用 windowSize 个任务填满窗口
+        while (submitted < total && submitted < windowSize) {
+            ecs.submit(buildPredictTask(gine, simpleList.get(submitted), edges, normList, jsonMap, elecPosition,
+                    branchLength, connection, multiLoopInfos, pointMap));
+            submitted++;
+        }
+        // 逐个消费结果：完成一个 → 取回 → 补一个新任务，保证窗口不空、持续推进
+        for (int completed = 0; completed < total; completed++) {
+            try {
+                Future<Map<String, Object>> future = ecs.take(); // 阻塞等待最早完成的一个
+                Map<String, Object> result = future.get(600, java.util.concurrent.TimeUnit.SECONDS);
                 if (result != null) {
                     resultList.add(result);
                 }
@@ -4336,9 +4290,13 @@ public class HarnessBranchTopoOptimize {
                 // Python 预测失败，抛出异常让 topoOptimize 走 base 方案兜底，不再继续遗传
                 throw new RuntimeException("Python predict failed, fallback to base scheme", e);
             }
-            futures.set(i, null);
+            // 补一个新任务进窗口
+            if (submitted < total) {
+                ecs.submit(buildPredictTask(gine, simpleList.get(submitted), edges, normList, jsonMap, elecPosition,
+                        branchLength, connection, multiLoopInfos, pointMap));
+                submitted++;
+            }
         }
-        futures.clear();
         // 按AI预测成本排序，取topN
         FindBest findBest = new FindBest();
         if (findBestPre != null) {
@@ -4360,6 +4318,93 @@ public class HarnessBranchTopoOptimize {
             }
         }
         return topBeat;
+    }
+
+    /**
+     * 构建单个 AI 预测任务（含造边、深拷贝、特征标准化、调用 GINE 预测）。
+     * 抽出成独立方法供滑动窗口的 ExecutorCompletionService 复用。
+     */
+    private Callable<Map<String, Object>> buildPredictTask(GINEInferenceEngine gine,
+            List<String> strings,
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            Map<String, Object> jsonMap,
+            Map<String, Map<String, String>> elecPosition,
+            Map<String, Object> branchLength,
+            List<List<Integer>> connection,
+            Map<String, List<String>> multiLoopInfos,
+            Map<String, String> pointMap) {
+        return () -> {
+            List<String> serviceableStatue = strings.stream().collect(Collectors.toList());
+
+            List<Map<String, Object>> serviceableEdge = createNewEdges(serviceableStatue, edges, normList);
+            // 深拷贝
+            List<Map<String, String>> originalList = (List<Map<String, String>>) jsonMap.get("appPositions");
+            List<Map<String, String>> deepCopyAppPositions = new ArrayList<>(originalList.size());
+            for (Map<String, String> item : originalList) {
+                deepCopyAppPositions.add(new HashMap<>(item)); // 逐个复制
+            }
+            // 深拷贝
+            Map<String, Object> threadLocalJsonMap = new HashMap<>(jsonMap);
+            threadLocalJsonMap.put("edges", serviceableEdge);
+            threadLocalJsonMap.put("appPositions", deepCopyAppPositions);
+
+            // 分支特征参数列表 B：[0,0,0],C[0,1,0],S[0,0,1]
+            List<List<Float>> branchFeatureList = new ArrayList<>();
+            for (String s : serviceableStatue) {
+                List<Float> statue = new ArrayList<>();
+                switch (s) {
+                    case "B":
+                        statue = new ArrayList<>(Arrays.asList(0.0f, 0.0f, 0.0f));
+                        break;
+                    case "C":
+                        statue = new ArrayList<>(Arrays.asList(0.0f, 1.0f, 0.0f));
+                        break;
+                    case "S":
+                        statue = new ArrayList<>(Arrays.asList(0.0f, 0.0f, 1.0f));
+                        break;
+                    default:
+                        break;
+                }
+                branchFeatureList.add(statue);
+            }
+            List<Float> length = (List<Float>) branchLength.get("branchLength");
+            for (int i = 0; i < length.size(); i++) {
+                List<Float> integers = branchFeatureList.get(i);
+                integers.add(length.get(i));
+            }
+            List<Map<String, Object>> loopInfos = (List<Map<String, Object>>) jsonMap.get("loopInfos");
+            List<Map<String, String>> pointsList = (List<Map<String, String>>) jsonMap.get("points");
+            // 标准化特征矩阵
+            float[][] x = Normalize.normalizeData(serviceableEdge, loopInfos, elecPosition, threadLocalJsonMap,
+                    pointsList, normList, multiLoopInfos, pointMap);
+            long[][] edgeIndex = new long[2][connection.get(0).size()];
+            for (int i = 0; i < 2; i++) {
+                for (int j = 0; j < connection.get(i).size(); j++) {
+                    edgeIndex[i][j] = connection.get(i).get(j);
+                }
+            }
+            float[][] edgeAttr = new float[branchFeatureList.size()][branchFeatureList.get(0).size()];
+            for (int i = 0; i < branchFeatureList.size(); i++) {
+                for (int j = 0; j < branchFeatureList.get(i).size(); j++) {
+                    edgeAttr[i][j] = branchFeatureList.get(i).get(j);
+                }
+            }
+            float predict = gine.predict(x, edgeIndex, edgeAttr);
+
+            // 构建返回结果：仅保留 serviceableStatue 和成本，不携带 serviceableEdges
+            // serviceableEdges（所有边的深拷贝）约 100KB/方案，10000 方案 ≈ 1GB，下游不需要
+            Map<String, Object> costResultData = new HashMap<>();
+            costResultData.put("总成本", (double) predict);
+            // AI模型仅预测成本，重量和长度置为占位值
+            costResultData.put("总重量", 0.0);
+            costResultData.put("总长度", 0.0);
+
+            Map<String, Object> map = new HashMap<>();
+            map.put("成本", costResultData);
+            map.put("serviceableStatue", serviceableStatue);
+            return map;
+        };
     }
 
     /**

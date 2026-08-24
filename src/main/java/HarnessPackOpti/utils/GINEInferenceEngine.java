@@ -46,7 +46,30 @@ public class GINEInferenceEngine {
 
     private static volatile BlockingQueue<SocketConnection> pool;
     private static volatile boolean initialized = false;
+    private static volatile Process pythonProc;
+    private static volatile String schemeName = "unknown";
+    // 每个接口请求的日志文件名 (方案名_日期_毫秒.log)，通过协议传给 Python，不重启 Python
+    private static volatile String logFileName = "unknown.log";
     private static final Object INIT_LOCK = new Object();
+
+    // 设置方案名称 (仅记录，不重启 Python)
+    public static void setSchemeName(String name) {
+        if (name != null && !name.trim().isEmpty()) {
+            schemeName = name.trim().replaceAll("[\\\\/:*?\"<>|]", "_");
+        }
+    }
+
+    // 设置当前接口请求的日志文件名，每次 predict 会把它附在 payload 前面传给 Python
+    public static void setLogFileName(String name) {
+        if (name != null && !name.trim().isEmpty()) {
+            logFileName = name.trim();
+        }
+    }
+
+    // 连接池大小：AI 预测分批提交时，每批任务数不超过连接池容量，避免队列积压死锁
+    public static int connectionPoolSize() {
+        return POOL_SIZE;
+    }
 
     // ── 脚本目录解析 ──
     private static String resolveScriptDir() {
@@ -73,8 +96,39 @@ public class GINEInferenceEngine {
         }
     }
 
+    // 杀掉占用指定端口的进程（Windows）
+    private static void killProcessOnPort(int port) {
+        try {
+            Process netstat = new ProcessBuilder("cmd", "/c", "netstat -ano | findstr \":" + port + "\"").start();
+            java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(netstat.getInputStream()));
+            java.util.Set<String> pids = new java.util.HashSet<>();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.trim().split("\\s+");
+                if (parts.length >= 5 && parts[3].equals("LISTENING")) {
+                    pids.add(parts[4]);
+                }
+            }
+            netstat.waitFor();
+            for (String pid : pids) {
+                new ProcessBuilder("cmd", "/c", "taskkill /f /pid " + pid).start().waitFor();
+                System.out.println("[GINE] killed orphan process on port " + port + ", pid=" + pid);
+            }
+        } catch (Exception e) {
+            System.err.println("[GINE] killProcessOnPort fail: " + e.getMessage());
+        }
+    }
+
     // ── 启动 Python 服务器（仅一次）──
     private static void initOnce() throws IOException {
+        // 杀掉旧 Python 进程，避免端口冲突残留
+        if (pythonProc != null && pythonProc.isAlive()) {
+            pythonProc.destroyForcibly();
+            pythonProc = null;
+        }
+        // 杀掉占用端口的孤儿 Python 进程（上次 Java 崩溃残留的）
+        killProcessOnPort(PORT);
         System.out.println("start run python");
         System.out.println("[GINE] python.exe    = " + PYTHON_EXE);
         System.out.println("[GINE] predict.py    = " + PREDICT_SCRIPT);
@@ -101,19 +155,29 @@ public class GINEInferenceEngine {
         }
 
         // 关键: 加 -u 让 Python stdout/stderr 无缓冲
-        ProcessBuilder pb = new ProcessBuilder(PYTHON_EXE, "-u", PREDICT_SCRIPT, "--port", String.valueOf(PORT));
+        // 传日志目录给 Python，方案名/日志文件名通过每次 predict 的协议传递，不重启 Python
+        String logBaseDir = System.getProperty("user.dir");
+        File pythonLogsDir = new File(logBaseDir, "python_logs");
+        if (!pythonLogsDir.isDirectory() && !pythonLogsDir.mkdirs()) {
+            System.err.println("[GINE] warn: create python_logs dir fail: " + pythonLogsDir.getAbsolutePath());
+        }
+        ProcessBuilder pb = new ProcessBuilder(
+                PYTHON_EXE, "-u", PREDICT_SCRIPT,
+                "--port", String.valueOf(PORT),
+                "--log-dir", pythonLogsDir.getAbsolutePath());
         pb.directory(new File(SCRIPT_DIR));
         pb.redirectErrorStream(true);
         // 双保险: 也设置环境变量
         pb.environment().put("PYTHONUNBUFFERED", "1");
         pb.environment().put("PYTHONIOENCODING", "utf-8");
-
-        // Python 日志输出到 JAR 同级目录的文件，不走 Java 控制台
-        String logDir = System.getProperty("user.dir");
-        File logFile = new File(logDir, "gine-python.log");
-        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile));
+        // 不再 Java 端重定向输出到单个文件，由 Python 自行写到 python_logs/方案名+日期.log
+        // Java 8 没有 Redirect.DISCARD，使用系统空设备丢弃 Python 标准输出(Python 端已自行重定向 fd 到日志文件)
+        String osName = System.getProperty("os.name", "").toLowerCase();
+        File discard = new File(osName.contains("win") ? "NUL" : "/dev/null");
+        pb.redirectOutput(ProcessBuilder.Redirect.to(discard));
 
         final Process proc = pb.start();
+        pythonProc = proc;
 
         // JVM 退出时杀掉子进程，避免残留卡死
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -201,8 +265,13 @@ public class GINEInferenceEngine {
         // 序列化
         int nodeDim = matrix.length, edgeDim = edgeIndex[0].length;
         int edgeFeatDim = edgeAttr[0].length, nodeFeatDim = matrix[0].length;
-        int payloadBytes = 8 + (edgeDim * 2 * 4) + (edgeDim * edgeFeatDim * 4) + (nodeDim * nodeFeatDim * 4);
+        // payload 结构: [logNameLen(4)][logName(UTF-8)][nodeDim(4)][edgeDim(4)][edgeIndex...][edgeAttr...][nodeFeat...]
+        byte[] logNameBytes = logFileName.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        int payloadBytes = 4 + logNameBytes.length + 8
+                + (edgeDim * 2 * 4) + (edgeDim * edgeFeatDim * 4) + (nodeDim * nodeFeatDim * 4);
         ByteBuffer payload = ByteBuffer.allocate(payloadBytes).order(ByteOrder.BIG_ENDIAN);
+        payload.putInt(logNameBytes.length);
+        payload.put(logNameBytes);
         payload.putInt(nodeDim);
         payload.putInt(edgeDim);
         for (long[] row : edgeIndex)
@@ -257,7 +326,7 @@ public class GINEInferenceEngine {
         SocketConnection(String host, int port) throws IOException {
             socket = new Socket(host, port);
             socket.setTcpNoDelay(true);
-            socket.setSoTimeout(300000);
+            socket.setSoTimeout(600000);
             socket.setKeepAlive(true);
             in = new DataInputStream(new BufferedInputStream(socket.getInputStream(), 4096));
             out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream(), 4096));

@@ -15,83 +15,13 @@ import sys
 import os
 import json
 import time
-import datetime
 import signal
 import struct
 import argparse
 import socket
 import socketserver
-import threading
 import traceback
 from typing import Optional, Tuple
-
-# ============================================================
-# 日志：每个接口请求独立日志文件 (python_logs/方案名_日期_毫秒.log)
-# 不重启 Python 进程，通过线程局部变量为每个请求路由日志
-# ============================================================
-
-_thread_local = threading.local()
-_open_log_files = {}            # filename -> file handle (缓存已打开的日志文件)
-_open_log_files_lock = threading.Lock()
-
-
-def _get_or_open_log_file(filename):
-    """按文件名获取(或打开并缓存)日志文件句柄。"""
-    if not filename:
-        return None
-    with _open_log_files_lock:
-        lf = _open_log_files.get(filename)
-        if lf is None or lf.closed:
-            path = os.path.join(_log_dir, filename)
-            lf = open(path, 'a', encoding='utf-8')
-            _open_log_files[filename] = lf
-    return lf
-
-
-def _set_thread_log_file(filename):
-    """设置当前线程的日志文件 (一个接口请求的所有 predict 共用同一文件)。"""
-    if filename:
-        _thread_local.log_file = _get_or_open_log_file(filename)
-    else:
-        _thread_local.log_file = None
-
-
-def _log(msg):
-    """写一条带时间戳的日志到当前线程的日志文件；
-    若未设置线程局部文件(启动阶段)，则写到启动日志 (fd 1/2)。"""
-    ts = datetime.datetime.now().strftime('[%Y-%m-%d %H:%M:%S]')
-    line = '%s %s\n' % (ts, msg)
-    lf = getattr(_thread_local, 'log_file', None)
-    if lf is not None:
-        lf.write(line)
-        lf.flush()
-    else:
-        sys.__stdout__.write(line)
-        sys.__stdout__.flush()
-
-
-def _log_traceback():
-    """将当前异常的 traceback 写到当前线程的日志文件。"""
-    lf = getattr(_thread_local, 'log_file', None)
-    if lf is not None:
-        traceback.print_exc(file=lf)
-        lf.flush()
-    else:
-        traceback.print_exc()
-
-
-# 解析命令行参数，设置日志目录 (仅请求阶段的日志文件使用，不做启动日志重定向)
-_parser = argparse.ArgumentParser(description='GINE 模型推理 TCP 服务器')
-_parser.add_argument('--port', type=int, default=16000, help='监听端口（默认 16000）')
-_parser.add_argument('--host', default='127.0.0.1', help='绑定地址（默认 127.0.0.1）')
-_parser.add_argument('--log-dir', default='python_logs', help='日志目录（默认 python_logs）')
-_args = _parser.parse_args()
-_log_dir = _args.log_dir
-try:
-    if not os.path.isdir(_log_dir):
-        os.makedirs(_log_dir, exist_ok=True)
-except Exception as e:
-    sys.__stderr__.write('[predict] create log dir fail: %s\n' % e)
 
 import warnings
 warnings.filterwarnings('ignore', message=r".*pyg-lib.*")
@@ -198,12 +128,9 @@ def denormalize_output(val):
 
 # ============================================================
 # 二进制反序列化
-# payload 结构: [log_name_len(4)][log_name(UTF-8)][nodeDim(4)][edgeDim(4)][...]
 # ============================================================
-def deserialize_binary(data: bytes) -> Tuple[str, np.ndarray, np.ndarray, np.ndarray]:
+def deserialize_binary(data: bytes) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     off = 0
-    name_len = int(np.frombuffer(data[off:off+4], dtype='>i4')[0]);  off += 4
-    log_name = data[off:off+name_len].decode('utf-8');              off += name_len
     nn = int(np.frombuffer(data[off:off+4], dtype='>i4')[0]);   off += 4
     ne = int(np.frombuffer(data[off:off+4], dtype='>i4')[0]);   off += 4
     eib = 2 * ne * 4
@@ -215,7 +142,7 @@ def deserialize_binary(data: bytes) -> Tuple[str, np.ndarray, np.ndarray, np.nda
           .reshape(ne, EDGE_FEAT_DIM).byteswap().newbyteorder('=').copy()); off += eab
     x  = (np.frombuffer(data[off:off+xb], dtype='>f4')
           .reshape(nn, NODE_FEAT_DIM).byteswap().newbyteorder('=').copy())
-    return log_name, x, ei, ea
+    return x, ei, ea
 
 # ============================================================
 # 模型加载 / 推理
@@ -242,12 +169,13 @@ def predict(x: np.ndarray, edge_index: np.ndarray, edge_attr: np.ndarray) -> flo
     with torch.no_grad():
         return model(xt, eit, eat).item()
 
-def do_predict(x: np.ndarray, edge_index: np.ndarray, edge_attr: np.ndarray) -> str:
+def do_predict(raw: bytes, seq: int = 0) -> str:
     """完整推理流水线，返回一行 JSON。"""
     start = time.time()
+    x, ei, ea = deserialize_binary(raw)
     nnodes = x.shape[0]
-    ea, x = normalize_input(edge_attr, x, num_nodes=nnodes)
-    pred_norm = predict(x, edge_index, ea)
+    ea, x = normalize_input(ea, x, num_nodes=nnodes)
+    pred_norm = predict(x, ei, ea)
     cost = denormalize_output(pred_norm)
     elapsed = (time.time() - start) * 1000
     return json.dumps({"predicted_cost": round(float(cost), 4), "elapsed_ms": round(elapsed, 1)})
@@ -273,10 +201,9 @@ class PredictHandler(socketserver.BaseRequestHandler):
     def handle(self):
         sock: socket.socket = self.request
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        # 长连接复用模型：等待下一个请求时不设短超时，避免"闲置误杀"。
-        # 推理本身只需几十 ms，Java 端 setSoTimeout 已保证 Python 真卡死时的兜底。
-        sock.settimeout(None)
+        sock.settimeout(300)  # 5min 读超时，与 Java 端 setSoTimeout(300000) 一致
         conn_id = id(sock)
+        print(f"[predict] handle start, conn={conn_id}", flush=True)
 
         while True:
             try:
@@ -284,24 +211,24 @@ class PredictHandler(socketserver.BaseRequestHandler):
                 payload_len = struct.unpack('>i', header)[0]
 
                 if payload_len == 0:
+                    print(f"[predict] exit signal, conn={conn_id}", flush=True)
                     break  # 退出信号
 
                 raw = _recv_exact(sock, payload_len)
-                # 解析日志文件名，设置线程局部日志文件 (仅错误日志会写到该文件)
-                log_name, x, ei, ea = deserialize_binary(raw)
-                _set_thread_log_file(log_name)
+                print(f"[predict] recv done, len={payload_len}, conn={conn_id}", flush=True)
 
                 # 推理（阻塞当前 handler 线程，但其他连接不受影响）
-                result_line = do_predict(x, ei, ea)
+                result_line = do_predict(raw)
+                print(f"[predict] predict done, conn={conn_id}, result={result_line[:80]}", flush=True)
                 sock.sendall((result_line + '\n').encode('utf-8'))
 
             except (ConnectionError, socket.timeout, OSError) as e:
-                _log(f"[predict] connection error: {e}, conn={conn_id}")
-                _log_traceback()
+                print(f"[predict] connection error: {e}, conn={conn_id}", flush=True)
+                traceback.print_exc()
                 break
             except Exception as e:
-                _log(f"[predict] inference error: {e}, conn={conn_id}")
-                _log_traceback()
+                print(f"[predict] inference error: {e}, conn={conn_id}", flush=True)
+                traceback.print_exc()
                 err = json.dumps({"error": str(e)})
                 try:
                     sock.sendall((err + '\n').encode('utf-8'))
@@ -317,8 +244,10 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 # 入口
 # ============================================================
 def main():
-    # 命令行参数和日志重定向已在模块加载阶段完成(早于 torch 导入)
-    args = _args
+    parser = argparse.ArgumentParser(description='GINE 模型推理 TCP 服务器')
+    parser.add_argument('--port', type=int, default=16000, help='监听端口（默认 16000）')
+    parser.add_argument('--host', default='127.0.0.1', help='绑定地址（默认 127.0.0.1）')
+    args = parser.parse_args()
 
     # 预加载模型和归一化参数
     print(f"predict load model... device={_device}")
