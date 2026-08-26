@@ -55,7 +55,7 @@ public class HarnessBranchTopoOptimize {
     // top几的数量规定
     public static Integer TopNumber = 1000;
     // 遗传最后一轮要精确计算的top
-    public static Integer InteratorLastTop = 100;
+    public static Integer IteratorLastTop = 100;
     // 最终返回前端的参数
     public static Integer resultNumber = 20;
     // 绕线优化:分支累计绕线成本贡献阈值,超过则 B 改 C
@@ -103,6 +103,9 @@ public class HarnessBranchTopoOptimize {
     // 定义一个仓库
     public static List<List<String>> WareHouseTop = new ArrayList<>();
 
+    // 遗传全程累积仓库：存储每个方案(serviceableStatue)及其成本(map)，遗传结束后从中重算最优Top
+    private static final List<Map<String, Object>> ALL_GENETIC = new ArrayList<>();
+
     // 是否启用AI
     public static String whetherAI = "0";
 
@@ -117,7 +120,7 @@ public class HarnessBranchTopoOptimize {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\线束拓扑优化TXT.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\报错日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         HarnessBranchTopoOptimize newHarnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
         long startTime = System.currentTimeMillis();
@@ -176,6 +179,7 @@ public class HarnessBranchTopoOptimize {
         // 每次优化前清理仓库，避免跨case累积
         WAREHOUSE_KEYS.clear();
         WareHouseTop.clear();
+        ALL_GENETIC.clear();
         TopDetail.clear();
         BestCost.clear();
         BestRepetitionNumber = 0;
@@ -672,16 +676,15 @@ public class HarnessBranchTopoOptimize {
             System.err.println("初代方案生成失败：0个方案通过约束，无法继续优化");
             return null;
         }
+        // 将 base 方案(原始状态 primeList)加入初代预测集，使其计算出真实成本，格式与其它方案一致
+        initialSchemes.add(new ArrayList<>(primeList));
         // 模型预测成本
         long predictTime = System.currentTimeMillis();
         List<Map<String, Object>> findBest = predictAndFindBest(initialSchemes, edges, normList, jsonMap,
                 edgeChooseBS, elecPosition, branchLength, connection, multiLoopInfos, pointMap, null, objectMapper);
         System.out.println("predict" + initialSchemes.size() + "take time：" + (System.currentTimeMillis() - predictTime));
 
-        // 将初始化方案也放入到迭代中去
-        Map<String, Object> addtoMap = new HashMap<>();
-        addtoMap.put("serviceableStatue", primeList);
-        findBest.add(addtoMap);
+        // base 方案(primeList)已在初代预测集中算出真实成本，随预测结果一起带回(带成本)。
         // 遗传算法第一代的父本=初代预测 Top 100 + 初始方案
         // 阶段一以 TopDetail[0](初代最优)为基准变异,不再使用 initialScheme
         TopDetail = findBest;
@@ -711,6 +714,8 @@ public class HarnessBranchTopoOptimize {
             if (findBest == null || findBest.size() == 0) {
                 break;
             }
+            // 将本代遗传产出的方案(含成本)累积进全局仓库，供遗传结束后从全量仓库重算最优Top
+            ALL_GENETIC.addAll(findBest);
             TopDetail = findBest;
             long genDuration = System.currentTimeMillis() - startTime;
             System.out.println("the" + hybridizationNumber + "end，take time：" + genDuration);
@@ -761,7 +766,14 @@ public class HarnessBranchTopoOptimize {
         long hybridizationDuration = System.currentTimeMillis() - hybridizationTime;
         System.out.println("yi chuan jie shu，take time：" + hybridizationDuration);
         FindBest findBestUtil = new FindBest();
-        List<Map<String, Object>> topBeat = findBestUtil.findBest(findBest, "成本", InteratorLastTop);
+        // 遗传结束后，从遗传全程累积仓库(ALL_GENETIC，含方案+成本)重算最优Top。
+        // 即使最后一代裂变不出新方案，仓库中仍保留历代的优质方案，不丢失。
+        List<Map<String, Object>> topBeat = findBestUtil.findBest(ALL_GENETIC, "成本", IteratorLastTop);
+        // 仓库也为空(遗传全程无任何可行方案)时，返回原始 base 方案计算结果，跳过后续优化
+        if (topBeat == null || topBeat.size() == 0) {
+            System.out.println("mei you ke yong fang an ,shi yong base");
+            return buildBaseSchemeResult(jsonContent, jsonMap);
+        }
         // 对遗传生成的方案进行闭环检测，打断代价低的分支改S
         List<List<String>> lists = new ArrayList<>();
         for (Map<String, Object> stringObjectMap : topBeat) {
@@ -891,9 +903,7 @@ public class HarnessBranchTopoOptimize {
             for (Map<String, Object> edge : edges) {
                 Map<String, String> r = new HashMap<>();
                 r.put("edgeId", edge.get("id").toString());
-                String statusCode = edge.get("topologyStatusCode") == null
-                        ? "B"
-                        : edge.get("topologyStatusCode").toString();
+                String statusCode =  edge.get("topologyStatusCode").toString();
                 r.put("statue", statusCode);
                 topoOptimizeResult.add(r);
                 serviceableStatue.add(statusCode);
@@ -2700,6 +2710,7 @@ public class HarnessBranchTopoOptimize {
             }
             topUpRounds++;
             // 用 initialScheme 作基础状态调 generateInitialSchemes,补充初代方案
+            System.out.println("kai shi bu chong ");
             List<List<String>> moreVariants = generateInitialSchemes(
                     edges, canBreakToBSet, initialScheme, appPositions, eleclection,
                     bestBreakCount, breakCostMap, normList,
@@ -2709,8 +2720,8 @@ public class HarnessBranchTopoOptimize {
             int beforeSize = phase1.size();
             phase1.addAll(moreVariants);
             int added = phase1.size() - beforeSize;
-            System.out.println("[hybridization] 第 " + topUpRounds + " 次初代补充:本次新增 " + added
-                    + " 个,累计 " + phase1.size());
+            System.out.println("[hybridization] the " + topUpRounds + " ci bu chong,xin zeng " + added
+                    + " ge,lei ji : " + phase1.size());
             // 本次未新增任何方案,说明仓库已饱和,退出防止死循环
             if (added == 0) {
                 System.out.println("[hybridization] 仓库已饱和,停止补充");

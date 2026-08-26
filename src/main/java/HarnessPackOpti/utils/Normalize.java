@@ -41,6 +41,11 @@ public class Normalize {
         List<String> endPointName = new ArrayList<>();
         Map<String, String> positionNameMap = new HashMap<>();
         Map<String, String> namePositionMap = new HashMap<>();
+        // 用电器位置：以回路连接用电器名称为准，忽略大小写建立规范化索引（如 appPositions 的 Rzcu 与回路 RZCU）
+        Map<String, Map<String, String>> elecPositionNorm = new HashMap<>();
+        for (Map.Entry<String, Map<String, String>> e : elecPosition.entrySet()) {
+            elecPositionNorm.put(e.getKey().toUpperCase(), e.getValue());
+        }
         List<Point> coordinateList = new ArrayList<>();
         List<List<String>> branchBreakList = new ArrayList<>();
         for (Map<String, Object> edge : serviceableEdge) {
@@ -125,12 +130,23 @@ public class Normalize {
             if (startApp.startsWith("[")) {
                 startPosition = multiLocation.get(startApp);
             } else {
-                startPosition = elecPosition.get(startApp).values().iterator().next();
+                // 以回路用电器名称(忽略大小写)为准匹配位置，兼容 appPositions 的 Rzcu 与回路 RZCU
+                Map<String, String> spMap = elecPositionNorm.get(startApp.toUpperCase());
+                if (spMap == null) {
+                    System.out.println("startApp[" + startApp + "] 无匹配位置");
+                } else {
+                    startPosition = spMap.values().iterator().next();
+                }
             }
             if (endApp.startsWith("[")) {
                 endPosition = multiLocation.get(endApp);
             } else {
-                endPosition = elecPosition.get(endApp).values().iterator().next();
+                Map<String, String> epMap = elecPositionNorm.get(endApp.toUpperCase());
+                if (epMap == null) {
+                    System.out.println("endApp[" + endApp + "] 无匹配位置");
+                } else {
+                    endPosition = epMap.values().iterator().next();
+                }
             }
             String startParam = getWaterParam(startPosition, pointList);
             String endParam = getWaterParam(endPosition, pointList);
