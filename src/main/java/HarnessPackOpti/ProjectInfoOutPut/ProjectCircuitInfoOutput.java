@@ -64,7 +64,6 @@ public class ProjectCircuitInfoOutput {
         File outputFile = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\output.txt");
         Files.write(outputFile.toPath(), json.getBytes());
         System.out.println("JSON已成功输出到: " + outputFile.getAbsolutePath());
-
     }
 
     public String projectCircuitInfoOutput(String fileStringFormat) throws Exception {
