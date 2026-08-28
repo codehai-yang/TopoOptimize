@@ -629,25 +629,27 @@ public class PowerDistributionDriveOptimization {
                         resourceNum, random);
                 // 3.1 批A 纯连接变异：连接变种本身就是完整方案，直接走同一套后处理
                 List<Map<String, Object>> pureConnSchemes = new ArrayList<>();
-                int pureConnDup = 0, pureConnReject = 0;
+                int pureConnDup = 0, pureConnConstraint = 0, pureConnResource = 0, pureConnZero = 0;
                 for (ConnectionVariant cv : connVariants) {
-                    // 诊断：先看原始指纹是否已在全局仓库(去重失败)，便于定位纯连接有效数偏少的原因
-                    boolean rawDup = WareHouse.contains(generateSchemeFingerprint(cv.loopInfos, cv.appPositions));
-                    Map<String, Object> s = validateAndBuildScheme(
+                    BuildResult r = validateAndBuildScheme(
                             deepCopyLoopInfos(cv.loopInfos), deepCopyAppPositions(cv.appPositions),
                             togetherGroup, mutualGroup, loopElecById, elecChangeablePosition,
                             pointNameId, resourceNum, random);
-                    if (s != null) {
-                        pureConnSchemes.add(s);
-                    } else if (rawDup) {
+                    if (r.scheme != null) {
+                        pureConnSchemes.add(r.scheme);
+                    } else if (r.reason == BuildFailReason.DUPLICATE) {
                         pureConnDup++;
+                    } else if (r.reason == BuildFailReason.RESOURCE) {
+                        pureConnResource++;
+                    } else if (r.reason == BuildFailReason.ZERO_COST) {
+                        pureConnZero++;
                     } else {
-                        pureConnReject++;
+                        pureConnConstraint++;
                     }
                 }
                 // 3.2 批B 纯位置变异：位置编辑集叠加到最优父代(连接不变)，再走后处理
                 List<Map<String, Object>> purePosSchemes = new ArrayList<>();
-                int purePosDup = 0, purePosReject = 0;
+                int purePosDup = 0, purePosConstraint = 0, purePosResource = 0, purePosZero = 0;
                 if (!parents.isEmpty()) {
                     for (PositionVariant pv : posVariants) {
                         List<Map<String, String>> posLoopInfos = deepCopyLoopInfos(
@@ -665,26 +667,28 @@ public class PowerDistributionDriveOptimization {
                                 }
                             }
                         }
-                        // 诊断：先看原始指纹是否已在全局仓库
-                        boolean rawDup = WareHouse.contains(generateSchemeFingerprint(posLoopInfos, posAppPositions));
-                        Map<String, Object> s = validateAndBuildScheme(
+                        BuildResult r = validateAndBuildScheme(
                                 posLoopInfos, posAppPositions, togetherGroup, mutualGroup, loopElecById,
                                 elecChangeablePosition, pointNameId, resourceNum, random);
-                        if (s != null) {
-                            purePosSchemes.add(s);
-                        } else if (rawDup) {
+                        if (r.scheme != null) {
+                            purePosSchemes.add(r.scheme);
+                        } else if (r.reason == BuildFailReason.DUPLICATE) {
                             purePosDup++;
+                        } else if (r.reason == BuildFailReason.RESOURCE) {
+                            purePosResource++;
+                        } else if (r.reason == BuildFailReason.ZERO_COST) {
+                            purePosZero++;
                         } else {
-                            purePosReject++;
+                            purePosConstraint++;
                         }
                     }
                 }
                 System.out.println((hybridizationNumber + 1) + "代裂变: 期望 连接" + connVariantCount + "/位置" + posVariantCount
                         + "，父代 " + parents.size() + "，实际 连接 " + connVariants.size() + " × 位置 " + posVariants.size()
                         + "，交叉有效 " + fissionSchemes.size() + "，纯连接 " + pureConnSchemes.size()
-                        + "(重复 " + pureConnDup + "/约束资源失败 " + pureConnReject + ")"
+                        + "(约束 " + pureConnConstraint + "/资源 " + pureConnResource + "/重复 " + pureConnDup + "/成本 " + pureConnZero + ")"
                         + "，纯位置 " + purePosSchemes.size()
-                        + "(重复 " + purePosDup + "/约束资源失败 " + purePosReject + ")"
+                        + "(约束 " + purePosConstraint + "/资源 " + purePosResource + "/重复 " + purePosDup + "/成本 " + purePosZero + ")"
                         + "，耗时 " + (System.currentTimeMillis() - fissionStart) + "ms");
 
                 // 4. 合并候选池：交叉 + 纯连接 + 纯位置 + 上一代 top 30% 精英
@@ -2569,6 +2573,30 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
+     * 按成本优先加权选父代：parents 已按字典成本升序(索引越靠前成本越低)，
+     * 权重按指数衰减(Math.pow(0.6, i))，保证最优父代被选中概率最高，同时保留少量多样性。
+     */
+    private Map<String, Object> pickWeightedParent(List<Map<String, Object>> parents, Random random) {
+        int size = parents.size();
+        if (size <= 1) {
+            return parents.get(0);
+        }
+        double[] cumulative = new double[size];
+        double sum = 0;
+        for (int i = 0; i < size; i++) {
+            sum += Math.pow(0.6, i);
+            cumulative[i] = sum;
+        }
+        double t = random.nextDouble() * sum;
+        for (int i = 0; i < size; i++) {
+            if (t <= cumulative[i]) {
+                return parents.get(i);
+            }
+        }
+        return parents.get(0);
+    }
+
+    /**
      * 生成连接关系变种：
      * 1) 可变回路 = 目标回路中起点或终点存在可连接用电器列表(且可选项 > 1)的回路；
      * 2) 每代变种等级 k 从 1..可变回路数 均匀随机取，变 k 根回路的起点/终点连接关系；
@@ -2624,7 +2652,7 @@ public class PowerDistributionDriveOptimization {
         int maxAttempts = Math.max(count * 10, 2000);
         while (variants.size() < count && attempts < maxAttempts) {
             attempts++;
-            Map<String, Object> parent = parents.get(random.nextInt(parents.size()));
+            Map<String, Object> parent = pickWeightedParent(parents, random);
             List<Map<String, String>> loopInfos = deepCopyLoopInfos(
                     (List<Map<String, String>>) parent.get("loopInfos"));
             List<Map<String, String>> appPositions = deepCopyAppPositions(
@@ -2744,11 +2772,29 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
+     * 单个产物后处理失败环节（诊断用）
+     */
+    private enum BuildFailReason { OK, CONSTRAINT, RESOURCE, DUPLICATE, ZERO_COST }
+
+    /**
+     * 后处理结果：scheme 非空表示通过，为空时 reason 标记失败环节
+     */
+    private static final class BuildResult {
+        final Map<String, Object> scheme;
+        final BuildFailReason reason;
+
+        BuildResult(Map<String, Object> scheme, BuildFailReason reason) {
+            this.scheme = scheme;
+            this.reason = reason;
+        }
+    }
+
+    /**
      * 单个产物完整后处理（批A纯连接/批B纯位置/批C交叉三批共用）：
      * 约束校验 -> 位置统一 -> 资源检查 -> 仓库去重 -> 导线选型更新 -> 字典成本。
-     * 任一环节不通过返回 null，通过则返回完整方案。
+     * 任一环节不通过返回 BuildResult(null, 失败环节)，通过则返回完整方案。
      */
-    private Map<String, Object> validateAndBuildScheme(
+    private BuildResult validateAndBuildScheme(
             List<Map<String, String>> loopInfos,
             List<Map<String, String>> appPositions,
             Map<String, List<String>> togetherGroup,
@@ -2761,18 +2807,18 @@ public class PowerDistributionDriveOptimization {
         // 约束校验（组团 + 互斥）
         if (!enforceAllConstraints(loopInfos, appPositions, togetherGroup, mutualGroup,
                 loopElecById, elecChangeablePosition, pointNameId, random)) {
-            return null;
+            return new BuildResult(null, BuildFailReason.CONSTRAINT);
         }
         // 位置统一：确保每个用电器一个位置（缺失位置随机补）
         syncAppPositionsPreservingExisting(loopInfos, appPositions, elecChangeablePosition, pointNameId, random);
         // 资源检查
         if (!elecResourceCheck(loopInfos, resourceNum)) {
-            return null;
+            return new BuildResult(null, BuildFailReason.RESOURCE);
         }
         // 去重
         String fingerprint = generateSchemeFingerprint(loopInfos, appPositions);
         if (!WareHouse.add(fingerprint)) {
-            return null;
+            return new BuildResult(null, BuildFailReason.DUPLICATE);
         }
         // 导线选型更新（成本计算前）
         updateWireSelectionForScheme(loopInfos, appPositions, currentOptimizeType);
@@ -2780,7 +2826,7 @@ public class PowerDistributionDriveOptimization {
         double cost = calcSchemeDictCost(loopInfos, appPositions);
         if (cost <= 0) {
             WareHouse.remove(fingerprint);
-            return null;
+            return new BuildResult(null, BuildFailReason.ZERO_COST);
         }
         Map<String, Double> projectCost = new HashMap<>();
         projectCost.put("总成本", cost);
@@ -2790,7 +2836,7 @@ public class PowerDistributionDriveOptimization {
         map.put("成本", projectCost);
         map.put("loopInfos", loopInfos);
         map.put("appPositions", appPositions);
-        return map;
+        return new BuildResult(map, BuildFailReason.OK);
     }
 
     /**
@@ -2822,7 +2868,7 @@ public class PowerDistributionDriveOptimization {
             }
         }
         return validateAndBuildScheme(loopInfos, appPositions, togetherGroup, mutualGroup,
-                loopElecById, elecChangeablePosition, pointNameId, resourceNum, random);
+                loopElecById, elecChangeablePosition, pointNameId, resourceNum, random).scheme;
     }
 
     /**
