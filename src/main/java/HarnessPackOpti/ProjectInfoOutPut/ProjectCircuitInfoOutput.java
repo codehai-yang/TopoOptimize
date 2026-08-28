@@ -50,7 +50,7 @@ public class ProjectCircuitInfoOutput {
 
     public static void main(String[] args) throws Exception {
         File file = new File(
-                "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\入参.json");
+                "F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\拓扑优化json日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         // 去掉外层可能存在的双引号（JSON被双重转义的情况）
         jsonContent = jsonContent.trim();
@@ -2092,14 +2092,24 @@ public class ProjectCircuitInfoOutput {
                         }
                         sinaglePath.put("起点用电器名称", stringMap.get("回路起点用电器"));
                         sinaglePath.put("起点用电器id", findidByAppName(stringMap.get("回路起点用电器"), appPositions));
-                        sinaglePath.put("起点位置名称", stringMap.get("回路起点用电器").startsWith("[") ? null : endName);
-                        sinaglePath.put("起点位置id",
-                                stringMap.get("回路起点用电器").startsWith("[") ? null : findIdByName(endName, pointList));
+                        // 如果起点是焊点，直接把焊点位置信息填充进去，方便前端统一读取
+                        if (stringMap.get("回路起点用电器").startsWith("[")) {
+                            sinaglePath.put("起点位置名称", integer);
+                            sinaglePath.put("起点位置id", startElectricalId);
+                        } else {
+                            sinaglePath.put("起点位置名称", endName);
+                            sinaglePath.put("起点位置id", findIdByName(endName, pointList));
+                        }
                         sinaglePath.put("终点用电器名称", stringMap.get("回路终点用电器"));
                         sinaglePath.put("终点用电器id", findidByAppName(stringMap.get("回路终点用电器"), appPositions));
-                        sinaglePath.put("终点位置名称", stringMap.get("回路终点用电器").startsWith("[") ? null : endName);
-                        sinaglePath.put("终点位置id",
-                                stringMap.get("回路起点用电器").startsWith("[") ? null : findIdByName(endName, pointList));
+                        // 如果终点是焊点，直接把焊点位置信息填充进去，方便前端统一读取
+                        if (stringMap.get("回路终点用电器").startsWith("[")) {
+                            sinaglePath.put("终点位置名称", integer);
+                            sinaglePath.put("终点位置id", startElectricalId);
+                        } else {
+                            sinaglePath.put("终点位置名称", endName);
+                            sinaglePath.put("终点位置id", findIdByName(endName, pointList));
+                        }
                         sinaglePath.put("回路属性", stringMap.get("回路属性"));
                         sinaglePath.put("导线选型", stringMap.get("回路导线选型"));
                         sinaglePath.put("回路编号", stringMap.get("回路编号"));

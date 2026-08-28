@@ -14,6 +14,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -114,7 +115,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\电源分配优化日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\驱动分配优化日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -512,7 +513,9 @@ public class PowerDistributionDriveOptimization {
                         enriched.add(slim);
                     }
                 }
-                return objectMapper.writeValueAsString(enriched);
+                // 只返回 base 方案及比 base 更优秀的方案(总成本不高于 base)，并按整车精确成本升序
+                return objectMapper.writeValueAsString(
+                        filterBetterThanBase(enriched, baseScheme == null ? null : dictCostOf(baseScheme)));
             }
 
             // 开始生成初代样本
@@ -623,10 +626,11 @@ public class PowerDistributionDriveOptimization {
                 List<PositionVariant> posVariants = generatePositionVariants(
                         parents, posVariantCount, targetLoops, elecChangeablePosition, random);
                 // 3. 交叉裂变：连接变种i(基底+连接编辑) × 位置变种j(位置编辑)
+                int[] crossoverValidCount = new int[1];
                 List<Map<String, Object>> fissionSchemes = crossoverFission(
                         connVariants, posVariants, fissionTargetPerGen,
                         togetherGroup, mutualGroup, loopElecById, elecChangeablePosition, pointNameId,
-                        resourceNum, random);
+                        resourceNum, random, crossoverValidCount);
                 // 3.1 批A 纯连接变异：连接变种本身就是完整方案，直接走同一套后处理
                 List<Map<String, Object>> pureConnSchemes = new ArrayList<>();
                 int pureConnDup = 0, pureConnConstraint = 0, pureConnResource = 0, pureConnZero = 0;
@@ -660,7 +664,7 @@ public class PowerDistributionDriveOptimization {
                             String appName = e.getKey();
                             String position = e.getValue();
                             for (Map<String, String> ap : posAppPositions) {
-                                if (appName.equals(ap.get("appName"))) {
+                                if (ap.get("appName") != null && ap.get("appName").equalsIgnoreCase(appName)) {
                                     ap.put("unregularPointName", position);
                                     ap.put("unregularPointId", pointNameId.get(position));
                                     break;
@@ -685,7 +689,7 @@ public class PowerDistributionDriveOptimization {
                 }
                 System.out.println((hybridizationNumber + 1) + "代裂变: 期望 连接" + connVariantCount + "/位置" + posVariantCount
                         + "，父代 " + parents.size() + "，实际 连接 " + connVariants.size() + " × 位置 " + posVariants.size()
-                        + "，交叉有效 " + fissionSchemes.size() + "，纯连接 " + pureConnSchemes.size()
+                        + "，交叉有效 " + crossoverValidCount[0] + "(保留 top " + fissionSchemes.size() + ")，纯连接 " + pureConnSchemes.size()
                         + "(约束 " + pureConnConstraint + "/资源 " + pureConnResource + "/重复 " + pureConnDup + "/成本 " + pureConnZero + ")"
                         + "，纯位置 " + purePosSchemes.size()
                         + "(约束 " + purePosConstraint + "/资源 " + purePosResource + "/重复 " + purePosDup + "/成本 " + purePosZero + ")"
@@ -900,10 +904,10 @@ public class PowerDistributionDriveOptimization {
                     enrichedTopBest.add(slim);
                 }
             }
-            // 此前按字典近似成本排序，enrichToFullScheme 后已重算为整车精确成本，
-            // 需按精确成本重新升序排列，保证输出按成本从小到大
-            enrichedTopBest.sort(Comparator.comparingDouble(PowerDistributionDriveOptimization::dictCostOf));
-            return objectMapper.writeValueAsString(enrichedTopBest);
+            // 此前按字典近似成本排序，enrichToFullScheme 后已重算为整车精确成本；
+            // 最终只返回 base 方案及比 base 更优的方案(总成本不高于 base)，并按精确成本升序排列
+            return objectMapper.writeValueAsString(
+                    filterBetterThanBase(enrichedTopBest, baseSchemeFinal == null ? null : dictCostOf(baseSchemeFinal)));
         } finally {
             // 不管正常返回还是异常,都关闭本次调用的本地线程池
             if (threadPool != null) {
@@ -931,7 +935,7 @@ public class PowerDistributionDriveOptimization {
             return;
         Map<String, Map<String, String>> appIndex = new HashMap<>();
         for (Map<String, String> ap : appPositionsCopy)
-            appIndex.put(ap.get("appName"), ap);
+            appIndex.put(ap.get("appName") == null ? null : ap.get("appName").toUpperCase(), ap);
         for (Map.Entry<String, String> entry : scheme.entrySet()) {
             String loopId = entry.getKey();
             String value = entry.getValue();
@@ -952,12 +956,12 @@ public class PowerDistributionDriveOptimization {
                 }
             }
 
-            Map<String, String> startAp = appIndex.get(startApp);
+            Map<String, String> startAp = appIndex.get(startApp.toUpperCase());
             if (startAp != null && !startPos.isEmpty()) {
                 startAp.put("unregularPointName", startPos);
                 startAp.put("unregularPointId", pointNameId.get(startPos));
             }
-            Map<String, String> endAp = appIndex.get(endApp);
+            Map<String, String> endAp = appIndex.get(endApp.toUpperCase());
             if (endAp != null && !endPos.isEmpty()) {
                 endAp.put("unregularPointName", endPos);
                 endAp.put("unregularPointId", pointNameId.get(endPos));
@@ -999,11 +1003,15 @@ public class PowerDistributionDriveOptimization {
 
             String startApp = loopInfo.get("startApp");
             String endApp = loopInfo.get("endApp");
-            if (startApp != null && resourceNum.containsKey(startApp)) {
-                actualResource.computeIfAbsent(startApp, k -> new HashMap<>()).merge(statKey, 1, Integer::sum);
+            // 回路里的用电器名称视为正确大小写；resourceNum 键来自 appPositions(用户可能写错大小写)，忽略大小写匹配，
+            // 并以 resourceNum 中实际的键聚合，保证下方 entrySet 遍历按原键取数一致。
+            String startKey = findKeyIgnoreCase(resourceNum, startApp);
+            if (startKey != null) {
+                actualResource.computeIfAbsent(startKey, k -> new HashMap<>()).merge(statKey, 1, Integer::sum);
             }
-            if (endApp != null && resourceNum.containsKey(endApp)) {
-                actualResource.computeIfAbsent(endApp, k -> new HashMap<>()).merge(statKey, 1, Integer::sum);
+            String endKey = findKeyIgnoreCase(resourceNum, endApp);
+            if (endKey != null) {
+                actualResource.computeIfAbsent(endKey, k -> new HashMap<>()).merge(statKey, 1, Integer::sum);
             }
         }
 
@@ -1189,7 +1197,7 @@ public class PowerDistributionDriveOptimization {
                 // 修正：复用该用电器已有位置，若无则随机
                 String existingPosition = null;
                 for (Map<String, String> appPos : childApps) {
-                    if (appPos.get("appName").equals(newEndApp)) {
+                    if (appPos.get("appName") != null && appPos.get("appName").equalsIgnoreCase(newEndApp)) {
                         existingPosition = appPos.get("unregularPointName");
                         break;
                     }
@@ -1197,11 +1205,11 @@ public class PowerDistributionDriveOptimization {
                 if (existingPosition != null && !existingPosition.isEmpty()) {
                     // 位置已存在，无需操作
                 } else {
-                    List<String> positions = elecChangeablePosition.get(newEndApp);
+                    List<String> positions = positionsOfIgnoreCase(elecChangeablePosition, newEndApp);
                     if (positions != null && !positions.isEmpty()) {
                         String selectedPosition = positions.get(random.nextInt(positions.size()));
                         for (Map<String, String> appPos : childApps) {
-                            if (appPos.get("appName").equals(newEndApp)) {
+                            if (appPos.get("appName") != null && appPos.get("appName").equalsIgnoreCase(newEndApp)) {
                                 appPos.put("unregularPointName", selectedPosition);
                                 appPos.put("unregularPointId", pointNameId.get(selectedPosition));
                                 break;
@@ -1307,18 +1315,19 @@ public class PowerDistributionDriveOptimization {
         for (String appName : appsInLoops) {
             boolean hasPosition = false;
             for (Map<String, String> ap : appPositions) {
-                if (ap.get("appName").equals(appName) && ap.get("unregularPointName") != null
+                if (ap.get("appName") != null && ap.get("appName").equalsIgnoreCase(appName)
+                        && ap.get("unregularPointName") != null
                         && !ap.get("unregularPointName").isEmpty()) {
                     hasPosition = true;
                     break;
                 }
             }
             if (!hasPosition) {
-                List<String> positions = elecChangeablePosition.get(appName);
+                List<String> positions = positionsOfIgnoreCase(elecChangeablePosition, appName);
                 if (positions != null && !positions.isEmpty()) {
                     String chosenPos = positions.get(random.nextInt(positions.size()));
                     for (Map<String, String> ap : appPositions) {
-                        if (ap.get("appName").equals(appName)) {
+                        if (ap.get("appName") != null && ap.get("appName").equalsIgnoreCase(appName)) {
                             ap.put("unregularPointName", chosenPos);
                             ap.put("unregularPointId", pointNameId.get(chosenPos));
                             break;
@@ -1385,6 +1394,30 @@ public class PowerDistributionDriveOptimization {
 
     private static boolean isBlank(String s) {
         return s == null || s.isEmpty();
+    }
+
+    /**
+     * 不区分大小写地从 Map 中查找与 target 匹配的键，返回 Map 里实际存在的键(保留其原始大小写)。
+     * 用途：回路里的用电器名称视为正确大小写，而 appPositions/资源限制等映射的键可能来自用户填写、大小写不规范，
+     * 用该键回查原 Map 可保证后续 entrySet/getOrDefault 等以原键为准的操作一致。
+     */
+    private static String findKeyIgnoreCase(Map<String, ?> map, String target) {
+        if (map == null || map.isEmpty() || target == null)
+            return null;
+        for (String key : map.keySet())
+            if (key != null && key.equalsIgnoreCase(target))
+                return key;
+        return null;
+    }
+
+    private static boolean containsKeyIgnoreCase(Map<String, ?> map, String target) {
+        return findKeyIgnoreCase(map, target) != null;
+    }
+
+    /** 从以用电器名称为键的位置映射中，忽略大小写地取该用电器可用的位置列表。 */
+    private static List<String> positionsOfIgnoreCase(Map<String, List<String>> map, String target) {
+        String key = findKeyIgnoreCase(map, target);
+        return key == null ? null : map.get(key);
     }
 
     /**
@@ -1503,6 +1536,35 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
+     * 最终输出过滤规则：只返回 base 方案以及比 base 成本更优(总成本不高于 base)的方案。
+     * 若没有任何方案优于 base，则结果只剩 base 一个；baseCost 为 null 表示无法构造 base，不过滤。
+     * 注意：必须在 enrichToFullScheme 补齐整车精确成本后调用，保证与 base 的成本口径一致。
+     * 返回前按整车精确总成本升序排列。
+     *
+     * @param enriched 已补齐整车精确成本的完整方案列表(应包含 base 方案)
+     * @param baseCost base 方案的总成本阈值；为 null 表示不过滤
+     */
+    private List<Map<String, Object>> filterBetterThanBase(List<Map<String, Object>> enriched, Double baseCost) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (enriched == null) {
+            return result;
+        }
+        if (baseCost == null) {
+            result.addAll(enriched);
+        } else {
+            // 容忍浮点误差：base 本身(成本相等)也算保留
+            double threshold = baseCost + 1e-9;
+            for (Map<String, Object> scheme : enriched) {
+                if (scheme != null && dictCostOf(scheme) <= threshold) {
+                    result.add(scheme);
+                }
+            }
+        }
+        result.sort(Comparator.comparingDouble(PowerDistributionDriveOptimization::dictCostOf));
+        return result;
+    }
+
+    /**
      * 构造成本+可变位置的指纹 key
      */
     private String buildCostAndPositionKey(Map<String, Object> scheme) {
@@ -1555,13 +1617,13 @@ public class PowerDistributionDriveOptimization {
         if (!"3".equals(optimizeType) && !"5".equals(optimizeType)) {
             return;
         }
-        // 构建用电器类型映射
+        // 构建用电器类型映射：键统一为大写，兼容 appPositions 中大小写不规范而回路里名称正确的情况
         Map<String, String> appTypeMap = new HashMap<>();
         for (Map<String, String> app : appPositions) {
             String name = app.get("appName");
             String type = app.get("appType");
             if (name != null && type != null) {
-                appTypeMap.put(name, type);
+                appTypeMap.put(name.toUpperCase(), type);
             }
         }
         // 构建邻接表: appName -> [(neighborApp, loopInfo)]
@@ -1586,12 +1648,12 @@ public class PowerDistributionDriveOptimization {
         Map<String, List<Object[]>> filteredAdjacency = new HashMap<>();
         for (Map.Entry<String, List<Object[]>> entry : adjacency.entrySet()) {
             String node = entry.getKey();
-            if (isolatorSet.contains(node)) {
+            if (isolatorSet.contains(node.toUpperCase())) {
                 continue;
             }
             for (Object[] edge : entry.getValue()) {
                 String neighbor = (String) edge[0];
-                if (isolatorSet.contains(neighbor)) {
+                if (isolatorSet.contains(neighbor.toUpperCase())) {
                     continue;
                 }
                 filteredAdjacency.computeIfAbsent(node, k -> new ArrayList<>()).add(edge);
@@ -1632,7 +1694,7 @@ public class PowerDistributionDriveOptimization {
             // 检查该子图是否含发电/储电单元
             String root = null;
             for (String n : component) {
-                String t = appTypeMap.get(n);
+                String t = appTypeMap.get(n.toUpperCase());
                 if ("发电单元".equals(t) || "储电单元".equals(t)) {
                     root = n;
                     break;
@@ -1656,14 +1718,14 @@ public class PowerDistributionDriveOptimization {
         // 在子图内查找根节点: 优先发电单元, 无则储电单元
         String root = null;
         for (String node : subgraphNodes) {
-            if ("发电单元".equals(appTypeMap.get(node))) {
+            if ("发电单元".equals(appTypeMap.get(node.toUpperCase()))) {
                 root = node;
                 break;
             }
         }
         if (root == null) {
             for (String node : subgraphNodes) {
-                if ("储电单元".equals(appTypeMap.get(node))) {
+                if ("储电单元".equals(appTypeMap.get(node.toUpperCase()))) {
                     root = node;
                     break;
                 }
@@ -1703,7 +1765,7 @@ public class PowerDistributionDriveOptimization {
         Map<String, Double> updatedGauges = new HashMap<>();
         boolean updateController = "5".equals(optimizeType);
         for (String node : bfsOrder) {
-            String nodeType = appTypeMap.get(node);
+            String nodeType = appTypeMap.get(node.toUpperCase());
             // 按回路获取子回路: 从邻接表排除到parent的回路
             List<Object[]> allNeighbors = adjacency.get(node);
             if (allNeighbors == null || allNeighbors.isEmpty()) {
@@ -1735,7 +1797,7 @@ public class PowerDistributionDriveOptimization {
                 if (parent == null) {
                     continue;
                 }
-                String parentType = appTypeMap.get(parent);
+                String parentType = appTypeMap.get(parent.toUpperCase());
                 // 父为发电/储电单元 = 顶层回路,跳过不更新;其他都更新
                 if ("发电单元".equals(parentType) || "储电单元".equals(parentType)) {
                     continue;
@@ -1768,7 +1830,7 @@ public class PowerDistributionDriveOptimization {
                 if (parent == null) {
                     continue;
                 }
-                String parentType = appTypeMap.get(parent);
+                String parentType = appTypeMap.get(parent.toUpperCase());
                 // 父为发电/储电单元 = 顶层回路,跳过不更新;其他都更新
                 if ("发电单元".equals(parentType) || "储电单元".equals(parentType)) {
                     continue;
@@ -1883,13 +1945,13 @@ public class PowerDistributionDriveOptimization {
         if (loopInfos == null || loopInfos.isEmpty() || appPositions == null) {
             return;
         }
-        // 构建用电器类型映射
+        // 构建用电器类型映射：键统一为大写，兼容 appPositions 中大小写不规范而回路里名称正确的情况
         Map<String, String> appTypeMap = new HashMap<>();
         for (Map<String, String> app : appPositions) {
             String name = app.get("appName");
             String type = app.get("appType");
             if (name != null && type != null) {
-                appTypeMap.put(name, type);
+                appTypeMap.put(name.toUpperCase(), type);
             }
         }
         // 按基名分组: baseName -> [(loop, suffix)]
@@ -1940,7 +2002,7 @@ public class PowerDistributionDriveOptimization {
             // 从交集中筛选控制器类型
             String selectedController = null;
             for (String candidate : intersection) {
-                if ("控制器".equals(appTypeMap.get(candidate))) {
+                if ("控制器".equals(appTypeMap.get(candidate.toUpperCase()))) {
                     selectedController = candidate;
                     break;
                 }
@@ -2333,7 +2395,7 @@ public class PowerDistributionDriveOptimization {
 
             List<String> endAppList = new ArrayList<>(endAppIntersection);
             String selectedEndApp = endAppList.get(random.nextInt(endAppList.size()));
-            List<String> positions = elecChangeablePosition.get(selectedEndApp);
+            List<String> positions = positionsOfIgnoreCase(elecChangeablePosition, selectedEndApp);
             String selectedPosition = null;
             if (positions != null && !positions.isEmpty()) {
                 selectedPosition = positions.get(random.nextInt(positions.size()));
@@ -2361,7 +2423,7 @@ public class PowerDistributionDriveOptimization {
                 loop.put("endApp", selectedEndApp);
                 if (selectedPosition != null) {
                     for (Map<String, String> appPos : appPositionsCopy) {
-                        if (appPos.get("appName").equals(selectedEndApp)) {
+                        if (appPos.get("appName") != null && appPos.get("appName").equalsIgnoreCase(selectedEndApp)) {
                             appPos.put("unregularPointName", selectedPosition);
                             appPos.put("unregularPointId", pointNameId.get(selectedPosition));
                             break;
@@ -2370,11 +2432,11 @@ public class PowerDistributionDriveOptimization {
                 }
                 String startApp = loop.get("startApp");
                 if (startApp != null && !startApp.isEmpty()) {
-                    List<String> startPositions = elecChangeablePosition.get(startApp);
+                    List<String> startPositions = positionsOfIgnoreCase(elecChangeablePosition, startApp);
                     if (startPositions != null && !startPositions.isEmpty()) {
                         String randomStartPos = startPositions.get(random.nextInt(startPositions.size()));
                         for (Map<String, String> appPos : appPositionsCopy) {
-                            if (appPos.get("appName").equals(startApp)) {
+                            if (appPos.get("appName") != null && appPos.get("appName").equalsIgnoreCase(startApp)) {
                                 appPos.put("unregularPointName", randomStartPos);
                                 appPos.put("unregularPointId", pointNameId.get(randomStartPos));
                                 break;
@@ -2428,11 +2490,11 @@ public class PowerDistributionDriveOptimization {
                 usedEndApps.add(selectedEndApp);
                 loop.put("endApp", selectedEndApp);
 
-                List<String> positions = elecChangeablePosition.get(selectedEndApp);
+                List<String> positions = positionsOfIgnoreCase(elecChangeablePosition, selectedEndApp);
                 if (positions != null && !positions.isEmpty()) {
                     String selectedPosition = positions.get(random.nextInt(positions.size()));
                     for (Map<String, String> appPos : appPositionsCopy) {
-                        if (appPos.get("appName").equals(selectedEndApp)) {
+                        if (appPos.get("appName") != null && appPos.get("appName").equalsIgnoreCase(selectedEndApp)) {
                             appPos.put("unregularPointName", selectedPosition);
                             appPos.put("unregularPointId", pointNameId.get(selectedPosition));
                             break;
@@ -2441,11 +2503,11 @@ public class PowerDistributionDriveOptimization {
                 }
                 String startApp = loop.get("startApp");
                 if (startApp != null && !startApp.isEmpty()) {
-                    List<String> startPositions = elecChangeablePosition.get(startApp);
+                    List<String> startPositions = positionsOfIgnoreCase(elecChangeablePosition, startApp);
                     if (startPositions != null && !startPositions.isEmpty()) {
                         String randomStartPos = startPositions.get(random.nextInt(startPositions.size()));
                         for (Map<String, String> appPos : appPositionsCopy) {
-                            if (appPos.get("appName").equals(startApp)) {
+                            if (appPos.get("appName") != null && appPos.get("appName").equalsIgnoreCase(startApp)) {
                                 appPos.put("unregularPointName", randomStartPos);
                                 appPos.put("unregularPointId", pointNameId.get(randomStartPos));
                                 break;
@@ -2517,11 +2579,11 @@ public class PowerDistributionDriveOptimization {
 
         // 统一为每个用电器随机选择一个位置（保证唯一性）
         for (String appName : appsToRandomize) {
-            List<String> positions = elecChangeablePosition.get(appName);
+            List<String> positions = positionsOfIgnoreCase(elecChangeablePosition, appName);
             if (positions != null && !positions.isEmpty()) {
                 String chosenPos = positions.get(random.nextInt(positions.size()));
                 for (Map<String, String> appPos : appPositionsCopy) {
-                    if (appPos.get("appName").equals(appName)) {
+                    if (appPos.get("appName") != null && appPos.get("appName").equalsIgnoreCase(appName)) {
                         appPos.put("unregularPointName", chosenPos);
                         appPos.put("unregularPointId", pointNameId.get(chosenPos));
                         break;
@@ -2556,23 +2618,6 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 从集合中随机选一个与 exclude 不同的元素；集合只有一个元素或全被排除时返回 null。
-     */
-    private String randomDifferent(Set<String> options, String exclude, Random random) {
-        List<String> list = new ArrayList<>(options);
-        if (list.size() <= 1) {
-            return null;
-        }
-        if (exclude != null && list.size() > 1) {
-            list.remove(exclude);
-        }
-        if (list.isEmpty()) {
-            return null;
-        }
-        return list.get(random.nextInt(list.size()));
-    }
-
-    /**
      * 按成本优先加权选父代：parents 已按字典成本升序(索引越靠前成本越低)，
      * 权重按指数衰减(Math.pow(0.6, i))，保证最优父代被选中概率最高，同时保留少量多样性。
      */
@@ -2597,12 +2642,13 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 生成连接关系变种：
+     * 生成连接关系变种(双亲交叉)：
      * 1) 可变回路 = 目标回路中起点或终点存在可连接用电器列表(且可选项 > 1)的回路；
-     * 2) 每代变种等级 k 从 1..可变回路数 均匀随机取，变 k 根回路的起点/终点连接关系；
-     * 3) 有约束(组团/互斥)的回路优先被选中；
-     * 4) 每个变种保存修改后的完整 loopInfos/appPositions，作为交叉基底；
-     * 5) 新接入的用电器补位(位置统一：同一用电器只保留一个位置)。
+     * 2) 父代A(基底)按成本加权优先选，父代B(接线来源)从 top 随机挑；
+     * 3) 每代变种等级 k 从 1..可变回路数 均匀随机取，把 B 里这 k 根回路的连接(start/end)复制到 A 上；
+     * 4) 有约束(组团/互斥)回路优先被选中，且选中后整组一起从 B 复制，保证组内约束与 B 一致；
+     * 5) 每个变种保存修改后的完整 loopInfos/appPositions，作为交叉基底；
+     * 6) 新接入的用电器补位(位置统一：同一用电器只保留一个位置)。
      */
     private List<ConnectionVariant> generateConnectionVariants(
             List<Map<String, Object>> parents,
@@ -2646,51 +2692,73 @@ public class PowerDistributionDriveOptimization {
             return variants;
         }
         System.out.println("[诊断] 连接变种: count=" + count + ", 可变回路数=" + variableCount);
+        // 回路 -> 所属组全体成员：选中任一组成员时整组一起从父代B复制，保证组团/互斥约束与B一致
+        Map<String, List<String>> loopGroupMap = new HashMap<>();
+        for (Map.Entry<String, List<String>> e : togetherGroup.entrySet()) {
+            for (String m : e.getValue())
+                loopGroupMap.putIfAbsent(m, e.getValue());
+        }
+        for (Map.Entry<String, List<String>> e : mutualGroup.entrySet()) {
+            for (String m : e.getValue())
+                loopGroupMap.putIfAbsent(m, e.getValue());
+        }
         // 变种去重：相同的完整方案(loopInfos+appPositions)只保留一个，保证 M 个基底互不相同，交叉产物不重复
         Set<String> seenVariantKeys = new HashSet<>();
         int attempts = 0;
         int maxAttempts = Math.max(count * 10, 2000);
         while (variants.size() < count && attempts < maxAttempts) {
             attempts++;
+            // 父代A(基底)：成本加权优先，成本越低被选中概率越高
             Map<String, Object> parent = pickWeightedParent(parents, random);
             List<Map<String, String>> loopInfos = deepCopyLoopInfos(
                     (List<Map<String, String>>) parent.get("loopInfos"));
             List<Map<String, String>> appPositions = deepCopyAppPositions(
                     (List<Map<String, String>>) parent.get("appPositions"));
+            // 父代B(接线来源)：从 top 随机挑，提供合法的接线积木
+            Map<String, Object> donor = parents.get(random.nextInt(parents.size()));
+            List<Map<String, String>> donorLoops = (List<Map<String, String>>) donor.get("loopInfos");
+            Map<String, Map<String, String>> donorLoopById = new HashMap<>();
+            for (Map<String, String> loop : donorLoops)
+                donorLoopById.put(loop.get("id"), loop);
             Map<String, Map<String, String>> loopById = new HashMap<>();
             for (Map<String, String> loop : loopInfos)
                 loopById.put(loop.get("id"), loop);
             // 变种等级 k：1..可变回路数 均匀随机
             int k = 1 + random.nextInt(variableCount);
-            // 有约束回路优先选，再从无约束回路补齐
-            List<Map<String, String>> chosen = new ArrayList<>();
+            // 有约束回路优先选，选中后整组(所有成员)一起加入，再从无约束回路补齐
+            Set<String> chosenIds = new LinkedHashSet<>();
             List<Map<String, String>> cs = new ArrayList<>(constrainedVar);
             Collections.shuffle(cs, random);
             int takeConstrained = Math.min(k, cs.size());
-            chosen.addAll(cs.subList(0, takeConstrained));
-            if (chosen.size() < k && !unconstrainedVar.isEmpty()) {
+            for (int i = 0; i < takeConstrained; i++) {
+                String id = cs.get(i).get("id");
+                List<String> group = loopGroupMap.get(id);
+                if (group != null)
+                    chosenIds.addAll(group);
+                else
+                    chosenIds.add(id);
+            }
+            if (chosenIds.size() < k && !unconstrainedVar.isEmpty()) {
                 List<Map<String, String>> us = new ArrayList<>(unconstrainedVar);
                 Collections.shuffle(us, random);
-                chosen.addAll(us.subList(0, Math.min(k - chosen.size(), us.size())));
+                for (Map<String, String> loop : us) {
+                    if (chosenIds.size() >= k)
+                        break;
+                    chosenIds.add(loop.get("id"));
+                }
             }
-            for (Map<String, String> vLoop : chosen) {
-                Map<String, String> loop = loopById.get(vLoop.get("id"));
-                if (loop == null)
+            // 把父代B对应回路的连接(start/end)整组复制到A上（B的连接本就是合法方案，约束天然成立）
+            for (String id : chosenIds) {
+                Map<String, String> loop = loopById.get(id);
+                Map<String, String> donorLoop = donorLoopById.get(id);
+                if (loop == null || donorLoop == null)
                     continue;
-                // 随机变更起点连接关系
-                Set<String> starts = loopElecByIdStart.get(loop.get("id"));
-                if (starts != null && starts.size() > 1) {
-                    String newStart = randomDifferent(starts, loop.get("startApp"), random);
-                    if (newStart != null)
-                        loop.put("startApp", newStart);
-                }
-                // 随机变更终点连接关系
-                Set<String> ends = loopElecById.get(loop.get("id"));
-                if (ends != null && ends.size() > 1) {
-                    String newEnd = randomDifferent(ends, loop.get("endApp"), random);
-                    if (newEnd != null)
-                        loop.put("endApp", newEnd);
-                }
+                String ds = donorLoop.get("startApp");
+                String de = donorLoop.get("endApp");
+                if (ds != null && !ds.isEmpty())
+                    loop.put("startApp", ds);
+                if (de != null && !de.isEmpty())
+                    loop.put("endApp", de);
             }
             // 新接入的用电器补位（位置统一）
             syncAppPositionsPreservingExisting(loopInfos, appPositions, elecChangeablePosition, pointNameId, random);
@@ -2723,12 +2791,12 @@ public class PowerDistributionDriveOptimization {
         Set<String> seenApps = new HashSet<>();
         for (Map<String, String> loop : targetLoops) {
             String start = loop.get("startApp");
-            if (start != null && !start.isEmpty() && elecChangeablePosition.containsKey(start)
+            if (start != null && !start.isEmpty() && containsKeyIgnoreCase(elecChangeablePosition, start)
                     && seenApps.add(start)) {
                 variableApps.add(start);
             }
             String end = loop.get("endApp");
-            if (end != null && !end.isEmpty() && elecChangeablePosition.containsKey(end)
+            if (end != null && !end.isEmpty() && containsKeyIgnoreCase(elecChangeablePosition, end)
                     && seenApps.add(end)) {
                 variableApps.add(end);
             }
@@ -2749,7 +2817,7 @@ public class PowerDistributionDriveOptimization {
             Map<String, String> edits = new LinkedHashMap<>();
             for (int idx = 0; idx < Math.min(k, pool.size()); idx++) {
                 String app = pool.get(idx);
-                List<String> positions = elecChangeablePosition.get(app);
+                List<String> positions = positionsOfIgnoreCase(elecChangeablePosition, app);
                 if (positions == null || positions.isEmpty())
                     continue;
                 edits.put(app, positions.get(random.nextInt(positions.size())));
@@ -2860,7 +2928,7 @@ public class PowerDistributionDriveOptimization {
             String appName = e.getKey();
             String position = e.getValue();
             for (Map<String, String> ap : appPositions) {
-                if (appName.equals(ap.get("appName"))) {
+                if (ap.get("appName") != null && ap.get("appName").equalsIgnoreCase(appName)) {
                     ap.put("unregularPointName", position);
                     ap.put("unregularPointId", pointNameId.get(position));
                     break;
@@ -2885,38 +2953,57 @@ public class PowerDistributionDriveOptimization {
             Map<String, List<String>> elecChangeablePosition,
             Map<String, String> pointNameId,
             Map<String, AppResourceLimit> resourceNum,
-            Random random) {
-        List<Map<String, Object>> result = new ArrayList<>();
+            Random random,
+            int[] validCounter) {
         if (connVariants == null || connVariants.isEmpty()
                 || posVariants == null || posVariants.isEmpty()) {
-            return result;
+            return new ArrayList<>();
         }
         int connN = connVariants.size();
         int posN = posVariants.size();
         int totalPairs = connN * posN;
-        // 第一遍：系统遍历全部 M×N 组合
-        for (int i = 0; i < connN && result.size() < targetCount; i++) {
+        // 只保留成本最优的 maxKeep 个交叉产物(即 TopNumber=20)，不再把全部 10000 个完整方案
+        // (每个含全部回路)同时驻留堆内存——这是之前 1 代就 OOM 的根因。
+        // 调用方只取 top TopNumber 作父代，保留更多没有意义。
+        int maxKeep = Math.min(targetCount, TopNumber);
+        // 小顶堆按字典成本降序排列：堆顶永远是当前保留里成本最差(最高)的方案
+        PriorityQueue<Map<String, Object>> topSchemes = new PriorityQueue<>(
+                Comparator.comparingDouble(PowerDistributionDriveOptimization::dictCostOf).reversed());
+        // 第一遍：系统遍历全部 M×N 组合，只更新 top maxKeep
+        for (int i = 0; i < connN; i++) {
             ConnectionVariant cv = connVariants.get(i);
-            for (int j = 0; j < posN && result.size() < targetCount; j++) {
+            for (int j = 0; j < posN; j++) {
                 Map<String, Object> scheme = buildCrossoverScheme(
                         cv, posVariants.get(j), togetherGroup, mutualGroup, loopElecById,
                         elecChangeablePosition, pointNameId, resourceNum, random);
-                if (scheme != null) {
-                    result.add(scheme);
+                if (scheme == null) {
+                    continue;
+                }
+                // 统计全部有效交叉产物数(用于日志/反映真实探索量)，不随内存保留上限而减少
+                validCounter[0]++;
+                if (topSchemes.size() < maxKeep) {
+                    topSchemes.add(scheme);
+                } else if (dictCostOf(scheme) < dictCostOf(topSchemes.peek())) {
+                    topSchemes.poll();
+                    topSchemes.add(scheme);
                 }
             }
         }
-        // 仍不足目标：随机补几轮
+        // 仍不足 maxKeep：随机补几轮
         int extraCap = Math.max(totalPairs, targetCount * 2);
-        for (int extra = 0; result.size() < targetCount && extra < extraCap; extra++) {
+        for (int extra = 0; topSchemes.size() < maxKeep && extra < extraCap; extra++) {
             Map<String, Object> scheme = buildCrossoverScheme(
                     connVariants.get(random.nextInt(connN)), posVariants.get(random.nextInt(posN)),
                     togetherGroup, mutualGroup, loopElecById, elecChangeablePosition, pointNameId,
                     resourceNum, random);
             if (scheme != null) {
-                result.add(scheme);
+                validCounter[0]++;
+                topSchemes.add(scheme);
             }
         }
+        // 返回按成本升序排列(成本低在前)，方便调用方直接取 top 作父代
+        List<Map<String, Object>> result = new ArrayList<>(topSchemes);
+        result.sort(Comparator.comparingDouble(PowerDistributionDriveOptimization::dictCostOf));
         return result;
     }
 
@@ -2933,8 +3020,8 @@ public class PowerDistributionDriveOptimization {
             if (pos == null || pos.isEmpty()) {
                 pos = ap.get("regularPointName");
             }
-            if (pos != null && !pos.isEmpty()) {
-                posMap.put(ap.get("appName"), pos);
+            if (pos != null && !pos.isEmpty() && ap.get("appName") != null) {
+                posMap.put(ap.get("appName").toUpperCase(), pos);
             }
         }
         double total = 0;
@@ -2945,8 +3032,8 @@ public class PowerDistributionDriveOptimization {
             if (startApp == null || endApp == null || wireType == null || wireType.trim().isEmpty()) {
                 continue;
             }
-            String posA = posMap.get(startApp);
-            String posB = posMap.get(endApp);
+            String posA = posMap.get(startApp.toUpperCase());
+            String posB = posMap.get(endApp.toUpperCase());
             if (posA == null || posB == null) {
                 continue;
             }
@@ -3060,7 +3147,7 @@ public class PowerDistributionDriveOptimization {
                 // 如果没有预设的可选端子，检查该回路终点用电器位置是否可变
                 String endApp = lp.get("endApp");
                 if (endApp != null && !endApp.isEmpty()) {
-                    List<String> changeablePositions = elecChangeablePosition.get(endApp);
+                    List<String> changeablePositions = positionsOfIgnoreCase(elecChangeablePosition, endApp);
                     if (changeablePositions != null && !changeablePositions.isEmpty()) {
                         // 位置可变，使用当前端子作为唯一选项（位置会在 generateSchemesForAssignment 中枚举）
                         varDomains.put("E_L_" + lid, Collections.singletonList(endApp));
@@ -3308,13 +3395,13 @@ public class PowerDistributionDriveOptimization {
             String startApp = loopToStartApp.get(loopId);
             String endApp = loopToEndApp.get(loopId);
             if (startApp != null && !startApp.isEmpty() && !appPositionDomains.containsKey(startApp)) {
-                List<String> positions = elecChangeablePosition.get(startApp);
+                List<String> positions = positionsOfIgnoreCase(elecChangeablePosition, startApp);
                 if (positions != null && !positions.isEmpty()) {
                     appPositionDomains.put(startApp, positions);
                 }
             }
             if (endApp != null && !endApp.isEmpty() && !appPositionDomains.containsKey(endApp)) {
-                List<String> positions = elecChangeablePosition.get(endApp);
+                List<String> positions = positionsOfIgnoreCase(elecChangeablePosition, endApp);
                 if (positions != null && !positions.isEmpty()) {
                     appPositionDomains.put(endApp, positions);
                 }
@@ -3578,13 +3665,13 @@ public class PowerDistributionDriveOptimization {
 
             if (selectedStartApp != null && !selectedStartApp.isEmpty()
                     && !appPositionDomains.containsKey(selectedStartApp)) {
-                List<String> positions = elecChangeablePosition.get(selectedStartApp);
+                List<String> positions = positionsOfIgnoreCase(elecChangeablePosition, selectedStartApp);
                 if (positions != null && !positions.isEmpty())
                     appPositionDomains.put(selectedStartApp, positions);
             }
             if (selectedEndApp != null && !selectedEndApp.isEmpty()
                     && !appPositionDomains.containsKey(selectedEndApp)) {
-                List<String> positions = elecChangeablePosition.get(selectedEndApp);
+                List<String> positions = positionsOfIgnoreCase(elecChangeablePosition, selectedEndApp);
                 if (positions != null && !positions.isEmpty())
                     appPositionDomains.put(selectedEndApp, positions);
             }
