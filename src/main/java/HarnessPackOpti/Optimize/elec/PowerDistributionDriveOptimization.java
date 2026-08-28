@@ -115,7 +115,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\驱动分配优化日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\电源分配优化日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -281,7 +281,12 @@ public class PowerDistributionDriveOptimization {
                         }
                     }
                     list.retainAll(allPoint);
-                    list.add(eleclection.get(appName)); // 把自身位置加进去
+                    // 把自身位置加进去（自身位置可能为空，空值会污染位置列表导致随机选位拿到 null 位置，
+                    // 从而让 findNode 解析不到位置点 -> twoPointInfo null，这里过滤掉）
+                    String selfPos = eleclection.get(appName);
+                    if (selfPos != null && !selfPos.isEmpty()) {
+                        list.add(selfPos);
+                    }
                     elecChangeablePosition.put(appName, list);
                 } else if ("2".equals(appPosition.get("changeType"))) {
                     // 全量位置可变：若 allPoint 为空则无法枚举位置，给出明确告警避免静默 0 方案
@@ -794,12 +799,40 @@ public class PowerDistributionDriveOptimization {
             }
             System.out.println("遗传算法完成，共迭代 " + hybridizationNumber + " 代");
             // 遗传结束后从仓库中选 top(按字典成本)，后续再做精确计算
+            // 注意：遗传过程中候选方案只用字典成本(calcSchemeDictCost)校验，它不调用整车精确计算，
+            // 因此个别方案的起点/终点用电器位置可能解析不到真实拓扑点，直接精确还原会报
+            // "twoPointInfo is null"。这里先用整车精确计算(computeFullCost)过滤出可还原的方案，
+            // 再取 top 交给 enrichToFullScheme，保证最终返回的都是可精确计算的方案。
             if (!gaCostWareHouse.isEmpty()) {
                 List<Map<String, Object>> allGenTop = new ArrayList<>(gaCostWareHouse.values());
                 allGenTop.sort(Comparator.comparingDouble(PowerDistributionDriveOptimization::dictCostOf));
-                currentTopBest = new ArrayList<>(allGenTop.subList(0, Math.min(TopNumber, allGenTop.size())));
+                List<Map<String, Object>> restorableTop = new ArrayList<>();
+                int skippedUnrestorable = 0;
+                for (Map<String, Object> s : allGenTop) {
+                    if (restorableTop.size() >= TopNumber) {
+                        break;
+                    }
+                    try {
+                        // 深拷贝校验，避免 computeFullCost 内部的 fixPlusMinus/导线选型更新污染仓库中的原方案
+                        Map<String, Double> precise = computeFullCost(
+                                deepCopyLoopInfos((List<Map<String, String>>) s.get("loopInfos")),
+                                deepCopyAppPositions((List<Map<String, String>>) s.get("appPositions")),
+                                jsonMap, objectMapper, projectCircuitInfoOutput, jsonToMap);
+                        if (precise != null) {
+                            restorableTop.add(s);
+                        } else {
+                            skippedUnrestorable++;
+                            System.err.println("[最终筛选] 方案无法整车精确还原，跳过: dictCost=" + dictCostOf(s));
+                        }
+                    } catch (Exception e) {
+                        skippedUnrestorable++;
+                        System.err.println("[最终筛选] 方案精确还原异常，跳过: " + e.getMessage());
+                    }
+                }
+                currentTopBest = restorableTop;
                 System.out.println("遗传结束，仓库共 " + gaCostWareHouse.size()
-                        + " 个方案，选取 top " + currentTopBest.size() + " 个等待精确计算");
+                        + " 个方案，选取 top " + currentTopBest.size() + " 个等待精确计算"
+                        + (skippedUnrestorable > 0 ? "，跳过不可精确还原 " + skippedUnrestorable + " 个" : ""));
             }
 
             // 兜底1：GA 一代有效方案都没出，且 combinations 规模小，直接走枚举
@@ -1292,6 +1325,47 @@ public class PowerDistributionDriveOptimization {
             if (assignMutualGroup(copyVariant, optionsList, optionLoopIds, usedEndApps, fromIdx + 1))
                 return true;
             usedEndApps.remove(endApp);
+        }
+        return false;
+    }
+
+    /**
+     * 校验方案中所有回路起点/终点用电器都能够在 appPositions 中解析出非空位置点。
+     * 口径与整车计算 ProjectCircuitInfoOutput.findNode 一致（忽略大小写，unregularPointName 优先、regularPointName 兜底）。
+     * 任一回路解析不到位置，说明整车精确计算时 findTwoPointInfo 会返回 null，直接拒绝该方案。
+     */
+    private boolean allLoopPositionsResolvable(List<Map<String, String>> loopInfos,
+            List<Map<String, String>> appPositions) {
+        if (loopInfos == null || loopInfos.isEmpty()
+                || appPositions == null || appPositions.isEmpty()) {
+            return false;
+        }
+        for (Map<String, String> loop : loopInfos) {
+            if (!singleAppPositionResolvable(loop.get("startApp"), appPositions)
+                    || !singleAppPositionResolvable(loop.get("endApp"), appPositions)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 单个用电器是否能在 appPositions 中解析出非空位置（空连接放行，与整车计算不参与两点计算的回路一致）。 */
+    private boolean singleAppPositionResolvable(String appName, List<Map<String, String>> appPositions) {
+        if (appName == null || appName.trim().isEmpty()) {
+            return true;
+        }
+        for (Map<String, String> ap : appPositions) {
+            if (ap.get("appName") != null && ap.get("appName").equalsIgnoreCase(appName)) {
+                String up = ap.get("unregularPointName");
+                if (up != null && !up.isEmpty()) {
+                    return true;
+                }
+                String rp = ap.get("regularPointName");
+                if (rp != null && !rp.isEmpty()) {
+                    return true;
+                }
+                return false;
+            }
         }
         return false;
     }
@@ -2642,13 +2716,16 @@ public class PowerDistributionDriveOptimization {
     }
 
     /**
-     * 生成连接关系变种(双亲交叉)：
+     * 生成连接关系变种(双亲交叉，显式双向)：
      * 1) 可变回路 = 目标回路中起点或终点存在可连接用电器列表(且可选项 > 1)的回路；
-     * 2) 父代A(基底)按成本加权优先选，父代B(接线来源)从 top 随机挑；
-     * 3) 每代变种等级 k 从 1..可变回路数 均匀随机取，把 B 里这 k 根回路的连接(start/end)复制到 A 上；
-     * 4) 有约束(组团/互斥)回路优先被选中，且选中后整组一起从 B 复制，保证组内约束与 B 一致；
-     * 5) 每个变种保存修改后的完整 loopInfos/appPositions，作为交叉基底；
-     * 6) 新接入的用电器补位(位置统一：同一用电器只保留一个位置)。
+     * 2) 每轮抽一对父代：父代A(基底)成本加权优先选，父代B(接线来源)从 top 随机挑且与 A 不同；
+     * 3) 每代变种等级 k 从 1..可变回路数 均匀随机取，选中 k 根回路；
+     * 4) 显式双向交叉：同一对 (A,B) 同时生成两个变种——
+     *    - 方向1：以 A 为基底，把 B 里这 k 根回路的连接(start/end)整组复制到 A 上；
+     *    - 方向2：以 B 为基底，把 A 里这 k 根回路的连接(start/end)整组复制到 B 上；
+     * 5) 有约束(组团/互斥)回路优先被选中，且选中后整组一起复制，保证组内约束与来源父代一致；
+     * 6) 每个变种保存修改后的完整 loopInfos/appPositions，作为交叉基底；
+     * 7) 新接入的用电器补位(位置统一：同一用电器只保留一个位置)。
      */
     private List<ConnectionVariant> generateConnectionVariants(
             List<Map<String, Object>> parents,
@@ -2704,25 +2781,109 @@ public class PowerDistributionDriveOptimization {
         }
         // 变种去重：相同的完整方案(loopInfos+appPositions)只保留一个，保证 M 个基底互不相同，交叉产物不重复
         Set<String> seenVariantKeys = new HashSet<>();
+        // ===== k=1 强制覆盖阶段：基于最优父代对每个可变回路做单回路翻转(只改 1 根) =====
+        // 随机抽 k 时 k=1 这类最有价值的"改1根"小邻域可能整代抽不到，这里预留一部分预算保证其被探索。
+        // 预算取连接变种总数的一半(至少 5 个)：可变回路少时全部覆盖，可变回路多时也能保证 k=1 每次出现。
+        int k1Budget = Math.min(variableCount, Math.max(5, count / 2));
+        if (k1Budget > 0 && parents.size() > 1) {
+            // 最优父代(字典成本最低)作为 k=1 变异的基底
+            Map<String, Object> bestParent = parents.get(0);
+            for (Map<String, Object> p : parents) {
+                if (dictCostOf(p) < dictCostOf(bestParent)) {
+                    bestParent = p;
+                }
+            }
+            List<Map<String, String>> baseLoops = (List<Map<String, String>>) bestParent.get("loopInfos");
+            List<Map<String, String>> baseApps = (List<Map<String, String>>) bestParent.get("appPositions");
+            Map<String, Map<String, String>> baseLoopById = new HashMap<>();
+            for (Map<String, String> loop : baseLoops) {
+                baseLoopById.put(loop.get("id"), loop);
+            }
+            // 逐根可变回路做 k=1 翻转（有约束回路优先，与随机段一致）
+            List<Map<String, String>> allVarLoops = new ArrayList<>(constrainedVar);
+            allVarLoops.addAll(unconstrainedVar);
+            for (Map<String, String> varLoop : allVarLoops) {
+                if (variants.size() >= k1Budget) {
+                    break;
+                }
+                String id = varLoop.get("id");
+                Map<String, String> baseLoop = baseLoopById.get(id);
+                if (baseLoop == null) {
+                    continue;
+                }
+                // 找一个与该回路连接不同(真正翻转)的父代作 donor
+                Map<String, String> donorLoop = null;
+                for (int t = 0; t < 20 && donorLoop == null; t++) {
+                    Map<String, Object> donor = parents.get(random.nextInt(parents.size()));
+                    if (donor == bestParent) {
+                        continue;
+                    }
+                    Map<String, Map<String, String>> tmp = new HashMap<>();
+                    for (Map<String, String> loop : (List<Map<String, String>>) donor.get("loopInfos")) {
+                        tmp.put(loop.get("id"), loop);
+                    }
+                    Map<String, String> dl = tmp.get(id);
+                    if (dl == null) {
+                        continue;
+                    }
+                    boolean sameStart = dl.get("startApp") == null
+                            ? baseLoop.get("startApp") == null
+                            : dl.get("startApp").equals(baseLoop.get("startApp"));
+                    boolean sameEnd = dl.get("endApp") == null
+                            ? baseLoop.get("endApp") == null
+                            : dl.get("endApp").equals(baseLoop.get("endApp"));
+                    if (sameStart && sameEnd) {
+                        continue; // 连接相同则不是真正的翻转
+                    }
+                    donorLoop = dl;
+                }
+                if (donorLoop == null) {
+                    continue;
+                }
+                // 以最优父代为基底，翻转这一根回路（方向1），其余回路保持最优父代不变
+                List<Map<String, String>> loopsK1 = deepCopyLoopInfos(baseLoops);
+                List<Map<String, String>> appsK1 = deepCopyAppPositions(baseApps);
+                Map<String, Map<String, String>> copyK1ById = new HashMap<>();
+                for (Map<String, String> loop : loopsK1) {
+                    copyK1ById.put(loop.get("id"), loop);
+                }
+                Map<String, String> loopK1 = copyK1ById.get(id);
+                String ds = donorLoop.get("startApp");
+                String de = donorLoop.get("endApp");
+                if (ds != null && !ds.isEmpty()) {
+                    loopK1.put("startApp", ds);
+                }
+                if (de != null && !de.isEmpty()) {
+                    loopK1.put("endApp", de);
+                }
+                syncAppPositionsPreservingExisting(loopsK1, appsK1, elecChangeablePosition, pointNameId, random);
+                String variantKey = generateSchemeFingerprint(loopsK1, appsK1);
+                if (seenVariantKeys.add(variantKey)) {
+                    variants.add(new ConnectionVariant(loopsK1, appsK1));
+                }
+            }
+        }
         int attempts = 0;
         int maxAttempts = Math.max(count * 10, 2000);
         while (variants.size() < count && attempts < maxAttempts) {
             attempts++;
             // 父代A(基底)：成本加权优先，成本越低被选中概率越高
-            Map<String, Object> parent = pickWeightedParent(parents, random);
-            List<Map<String, String>> loopInfos = deepCopyLoopInfos(
-                    (List<Map<String, String>>) parent.get("loopInfos"));
-            List<Map<String, String>> appPositions = deepCopyAppPositions(
-                    (List<Map<String, String>>) parent.get("appPositions"));
-            // 父代B(接线来源)：从 top 随机挑，提供合法的接线积木
-            Map<String, Object> donor = parents.get(random.nextInt(parents.size()));
-            List<Map<String, String>> donorLoops = (List<Map<String, String>>) donor.get("loopInfos");
-            Map<String, Map<String, String>> donorLoopById = new HashMap<>();
-            for (Map<String, String> loop : donorLoops)
-                donorLoopById.put(loop.get("id"), loop);
-            Map<String, Map<String, String>> loopById = new HashMap<>();
-            for (Map<String, String> loop : loopInfos)
-                loopById.put(loop.get("id"), loop);
+            Map<String, Object> parentA = pickWeightedParent(parents, random);
+            // 父代B(接线来源/反向基底)：从 top 随机挑一个与 A 不同的方案
+            Map<String, Object> parentB = parents.get(random.nextInt(parents.size()));
+            if (parentB == parentA) {
+                // A、B 相同则双向交叉无意义，跳过本轮重新抽
+                continue;
+            }
+            List<Map<String, String>> aLoops = (List<Map<String, String>>) parentA.get("loopInfos");
+            List<Map<String, String>> bLoops = (List<Map<String, String>>) parentB.get("loopInfos");
+            // 只读的接线来源索引：donor 的连接只被读取，不会修改原始父代
+            Map<String, Map<String, String>> aLoopById = new HashMap<>();
+            for (Map<String, String> loop : aLoops)
+                aLoopById.put(loop.get("id"), loop);
+            Map<String, Map<String, String>> bLoopById = new HashMap<>();
+            for (Map<String, String> loop : bLoops)
+                bLoopById.put(loop.get("id"), loop);
             // 变种等级 k：1..可变回路数 均匀随机
             int k = 1 + random.nextInt(variableCount);
             // 有约束回路优先选，选中后整组(所有成员)一起加入，再从无约束回路补齐
@@ -2747,26 +2908,59 @@ public class PowerDistributionDriveOptimization {
                     chosenIds.add(loop.get("id"));
                 }
             }
-            // 把父代B对应回路的连接(start/end)整组复制到A上（B的连接本就是合法方案，约束天然成立）
+
+            // 方向1：以 A 为基底，把 B 里这 k 根回路的连接(start/end)整组复制到 A 上
+            // （B 的连接本就是合法方案，约束天然成立）
+            List<Map<String, String>> loopsA = deepCopyLoopInfos(aLoops);
+            List<Map<String, String>> appsA = deepCopyAppPositions(
+                    (List<Map<String, String>>) parentA.get("appPositions"));
+            // 可写索引建立在副本上，donor 索引(bLoopById)只读，避免污染原始父代
+            Map<String, Map<String, String>> copyALoopById = new HashMap<>();
+            for (Map<String, String> loop : loopsA)
+                copyALoopById.put(loop.get("id"), loop);
             for (String id : chosenIds) {
-                Map<String, String> loop = loopById.get(id);
-                Map<String, String> donorLoop = donorLoopById.get(id);
-                if (loop == null || donorLoop == null)
+                Map<String, String> donorLoop = bLoopById.get(id);
+                if (donorLoop == null)
                     continue;
                 String ds = donorLoop.get("startApp");
                 String de = donorLoop.get("endApp");
+                Map<String, String> loop = copyALoopById.get(id);
                 if (ds != null && !ds.isEmpty())
                     loop.put("startApp", ds);
                 if (de != null && !de.isEmpty())
                     loop.put("endApp", de);
             }
             // 新接入的用电器补位（位置统一）
-            syncAppPositionsPreservingExisting(loopInfos, appPositions, elecChangeablePosition, pointNameId, random);
-            String variantKey = generateSchemeFingerprint(loopInfos, appPositions);
-            if (!seenVariantKeys.add(variantKey)) {
-                continue;
+            syncAppPositionsPreservingExisting(loopsA, appsA, elecChangeablePosition, pointNameId, random);
+            String variantKeyA = generateSchemeFingerprint(loopsA, appsA);
+            if (seenVariantKeys.add(variantKeyA)) {
+                variants.add(new ConnectionVariant(loopsA, appsA));
             }
-            variants.add(new ConnectionVariant(loopInfos, appPositions));
+
+            // 方向2：以 B 为基底，把 A 里这 k 根回路的连接(start/end)整组复制到 B 上
+            List<Map<String, String>> loopsB = deepCopyLoopInfos(bLoops);
+            List<Map<String, String>> appsB = deepCopyAppPositions(
+                    (List<Map<String, String>>) parentB.get("appPositions"));
+            Map<String, Map<String, String>> copyBLoopById = new HashMap<>();
+            for (Map<String, String> loop : loopsB)
+                copyBLoopById.put(loop.get("id"), loop);
+            for (String id : chosenIds) {
+                Map<String, String> donorLoop = aLoopById.get(id);
+                if (donorLoop == null)
+                    continue;
+                String ds = donorLoop.get("startApp");
+                String de = donorLoop.get("endApp");
+                Map<String, String> loop = copyBLoopById.get(id);
+                if (ds != null && !ds.isEmpty())
+                    loop.put("startApp", ds);
+                if (de != null && !de.isEmpty())
+                    loop.put("endApp", de);
+            }
+            syncAppPositionsPreservingExisting(loopsB, appsB, elecChangeablePosition, pointNameId, random);
+            String variantKeyB = generateSchemeFingerprint(loopsB, appsB);
+            if (seenVariantKeys.add(variantKeyB)) {
+                variants.add(new ConnectionVariant(loopsB, appsB));
+            }
         }
         return variants;
     }
@@ -2879,6 +3073,13 @@ public class PowerDistributionDriveOptimization {
         }
         // 位置统一：确保每个用电器一个位置（缺失位置随机补）
         syncAppPositionsPreservingExisting(loopInfos, appPositions, elecChangeablePosition, pointNameId, random);
+        // 位置可解析性校验：所有回路起点/终点用电器都必须在 appPositions 中解析出非空位置点。
+        // 交叉复制连接或位置变种可能让某个用电器没有任何位置(或位置为空)，此时字典成本会静默跳过该回路，
+        // 方案看着很便宜，但整车精确计算时 findNode 返回 null -> findTwoPointInfo 返回 null
+        // -> "twoPointInfo is null" NPE。这里直接拒绝，保证仓库中只保留可精确还原的方案。
+        if (!allLoopPositionsResolvable(loopInfos, appPositions)) {
+            return new BuildResult(null, BuildFailReason.CONSTRAINT);
+        }
         // 资源检查
         if (!elecResourceCheck(loopInfos, resourceNum)) {
             return new BuildResult(null, BuildFailReason.RESOURCE);

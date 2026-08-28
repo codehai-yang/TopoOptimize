@@ -661,13 +661,13 @@ public class ElecProjectCircuitInfoOutput {
 
     public String findNode(String appName, List<Map<String, String>> appPositions) {
         for (Map<String, String> appPosition : appPositions) {
-            if (appPosition.get("用电器名称").equals(appName)) {
+            // 用户填写的用电器名称可能大小写不规范，而回路里的名称是规范大小写，匹配时忽略大小写
+            if (appPosition.get("用电器名称") != null
+                    && appPosition.get("用电器名称").equalsIgnoreCase(appName)) {
                 if (appPosition.get("用户更改后用电器位置名称") != null) {
                     return appPosition.get("用户更改后用电器位置名称");
-                } else if (appPosition.get("用户更改后用电器位置名称") == null && appPosition.get("用电器固化位置点名称") != null) {
+                } else if (appPosition.get("用电器固化位置点名称") != null) {
                     return appPosition.get("用电器固化位置点名称");
-                } else if (appPosition.get("用户更改后用电器位置名称") == null && appPosition.get("用电器固化位置点名称") == null) {
-                    return null;
                 }
             }
         }
