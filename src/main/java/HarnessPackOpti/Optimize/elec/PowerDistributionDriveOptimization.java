@@ -115,7 +115,7 @@ public class PowerDistributionDriveOptimization {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\电源分配优化日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\驱动分配优化日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         PowerDistributionDriveOptimization powerDistributionDriveOptimization = new PowerDistributionDriveOptimization();
         String s = powerDistributionDriveOptimization.powerDriverOptimize(jsonContent);
@@ -3001,6 +3001,57 @@ public class PowerDistributionDriveOptimization {
         System.out.println("[诊断] 位置变种: count=" + count + ", 可变用电器数=" + variableApps.size());
         // 位置编辑去重：同一组 用电器->新位置 只保留一个，避免交叉产物大量重复
         Set<String> seenVariantKeys = new HashSet<>();
+        // ===== k=1 强制覆盖阶段：基于最优父代对每个可变用电器做单位置翻转(只改 1 个用电器位置) =====
+        // 与连接变种对应：随机抽 k 时 k=1 这类"只改1个位置"的小邻域可能整代抽不到，
+        // 预留一半预算保证其被探索。新位置基于最优父代当前位置选一个不同值，保证是真正翻转。
+        int k1Budget = Math.min(variableApps.size(), Math.max(5, count / 2));
+        if (k1Budget > 0 && parents != null && !parents.isEmpty()) {
+            Map<String, Object> bestParent = parents.get(0);
+            for (Map<String, Object> p : parents) {
+                if (dictCostOf(p) < dictCostOf(bestParent)) {
+                    bestParent = p;
+                }
+            }
+            // 最优父代中各用电器当前位置，作为"翻转"的参照
+            Map<String, String> currentPosByName = new HashMap<>();
+            for (Map<String, String> ap : (List<Map<String, String>>) bestParent.get("appPositions")) {
+                if (ap.get("appName") == null)
+                    continue;
+                String pos = ap.get("unregularPointName");
+                if (pos == null || pos.isEmpty())
+                    pos = ap.get("regularPointName");
+                currentPosByName.put(ap.get("appName").toUpperCase(), pos);
+            }
+            for (String app : variableApps) {
+                if (variants.size() >= k1Budget)
+                    break;
+                List<String> positions = positionsOfIgnoreCase(elecChangeablePosition, app);
+                if (positions == null || positions.isEmpty())
+                    continue;
+                String currentPos = currentPosByName.get(app.toUpperCase());
+                // 找一个与当前位置不同的新位置(真正翻转)
+                String newPos = null;
+                for (int t = 0; t < 20 && newPos == null; t++) {
+                    String cand = positions.get(random.nextInt(positions.size()));
+                    if (cand.equals(currentPos))
+                        continue;
+                    newPos = cand;
+                }
+                if (newPos == null)
+                    continue;
+                Map<String, String> edits = new LinkedHashMap<>();
+                edits.put(app, newPos);
+                List<String> sortedApps = new ArrayList<>(edits.keySet());
+                Collections.sort(sortedApps);
+                StringBuilder keyBuilder = new StringBuilder();
+                for (String a : sortedApps) {
+                    keyBuilder.append(a).append('=').append(edits.get(a)).append(';');
+                }
+                if (seenVariantKeys.add(keyBuilder.toString())) {
+                    variants.add(new PositionVariant(edits));
+                }
+            }
+        }
         int attempts = 0;
         int maxAttempts = Math.max(count * 10, 1000);
         while (variants.size() < count && attempts < maxAttempts) {
