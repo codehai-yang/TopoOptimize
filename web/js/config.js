@@ -15,6 +15,8 @@
     { key: "system", label: "系统级", defaultMetric: "回路总重量" },
     { key: "elec", label: "用电器级", defaultMetric: "回路总重量" },
     { key: "interface", label: "接口级", defaultMetric: "回路总重量" },
+    { key: "branch", label: "分支级", defaultMetric: "回路总重量" },
+    { key: "circuit", label: "回路级", defaultMetric: "回路重量" },
     { key: "project", label: "整车级", defaultMetric: "回路总重量" }
   ];
 

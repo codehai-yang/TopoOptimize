@@ -58,14 +58,28 @@
   }
 
   /**
-   * 填充指标下拉框，尽量保留当前选中值，否则回落默认指标。
+   * 获取当前层级的默认指标。
+   * @returns {string} 默认指标字段名
+   */
+  function getLevelDefaultMetric() {
+    const found = CONFIG.LEVELS.find(function (level) { return level.key === state.level; });
+    return found ? found.defaultMetric : CONFIG.DEFAULT_METRIC;
+  }
+
+  /**
+   * 填充指标下拉框，尽量保留当前选中值，否则回落「层级默认 → 全局默认 → 首个」。
    * @param {string} [prefer] 优先保留的指标名
    */
   function populateMetricSelect(prefer) {
     const options = DATA.getMetricOptions(state.level, state.outputData);
-    const target = options.indexOf(prefer) >= 0
-      ? prefer
-      : (options.indexOf(CONFIG.DEFAULT_METRIC) >= 0 ? CONFIG.DEFAULT_METRIC : options[0]);
+    const candidates = [prefer, getLevelDefaultMetric(), CONFIG.DEFAULT_METRIC, options[0]];
+    let target = null;
+    for (let i = 0; i < candidates.length; i++) {
+      if (candidates[i] !== null && candidates[i] !== undefined && options.indexOf(candidates[i]) >= 0) {
+        target = candidates[i];
+        break;
+      }
+    }
     ui["metric-select"].innerHTML = options.map(function (key) {
       const selected = key === target ? " selected" : "";
       return '<option value="' + UTIL.escapeHtml(key) + '"' + selected + ">" +
@@ -331,7 +345,7 @@
       const text = await readAsText(file);
       state.outputData = parseOutput(text);
       updateDropZone("output", file, "已加载", "is-ok", "");
-      populateMetricSelect(CONFIG.DEFAULT_METRIC);
+      populateMetricSelect(null);
       buildFilterList();
       ui.analysis.classList.remove("hidden");
       refresh();
