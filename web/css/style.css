@@ -40,10 +40,24 @@ body {
   padding: 18px 32px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
 }
-.app-header h1 { font-size: 20px; font-weight: 600; letter-spacing: .5px; }
-.app-header p { font-size: 12px; opacity: .85; margin-top: 4px; }
 
-.app-main { max-width: 1500px; margin: 0 auto; padding: 24px 24px 48px; }
+.app-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: .5px;
+}
+
+.app-header p {
+  font-size: 12px;
+  opacity: .85;
+  margin-top: 4px;
+}
+
+.app-main {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 24px 24px 48px;
+}
 
 /* ---------- 卡片 ---------- */
 .card {
@@ -54,7 +68,12 @@ body {
   padding: 18px 20px;
   margin-bottom: 18px;
 }
-.card-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+
+.card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
 
 /* ---------- 上传区 ---------- */
 .upload-row {
@@ -62,8 +81,11 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 18px;
 }
+
 @media (max-width: 900px) {
-  .upload-row { grid-template-columns: 1fr; }
+  .upload-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .drop-zone {
@@ -75,13 +97,24 @@ body {
   background: #fafbfd;
   transition: border-color .2s, background .2s;
 }
+
 .drop-zone:hover,
 .drop-zone.is-drag {
   border-color: var(--color-primary);
   background: #eff6ff;
 }
-.drop-icon { font-size: 26px; color: var(--color-primary-light); }
-.drop-hint { font-size: 13px; color: var(--color-text-sub); margin-top: 8px; }
+
+.drop-icon {
+  font-size: 26px;
+  color: var(--color-primary-light);
+}
+
+.drop-hint {
+  font-size: 13px;
+  color: var(--color-text-sub);
+  margin-top: 8px;
+}
+
 .drop-file {
   font-size: 13px;
   font-weight: 600;
@@ -89,8 +122,16 @@ body {
   margin-top: 8px;
   word-break: break-all;
 }
-.drop-error { font-size: 12px; color: var(--color-error); margin-top: 6px; }
-.drop-zone input[type="file"] { display: none; }
+
+.drop-error {
+  font-size: 12px;
+  color: var(--color-error);
+  margin-top: 6px;
+}
+
+.drop-zone input[type="file"] {
+  display: none;
+}
 
 .badge {
   display: inline-block;
@@ -100,11 +141,26 @@ body {
   margin-top: 6px;
   font-weight: 600;
 }
-.badge.is-ok { background: #dcfce7; color: var(--color-ok); }
-.badge.is-wait { background: #fef3c7; color: var(--color-warn); }
 
-.topo-summary { font-size: 13px; color: var(--color-text-sub); margin-top: 12px; }
-.topo-summary b { color: var(--color-text); }
+.badge.is-ok {
+  background: #dcfce7;
+  color: var(--color-ok);
+}
+
+.badge.is-wait {
+  background: #fef3c7;
+  color: var(--color-warn);
+}
+
+.topo-summary {
+  font-size: 13px;
+  color: var(--color-text-sub);
+  margin-top: 12px;
+}
+
+.topo-summary b {
+  color: var(--color-text);
+}
 
 /* ---------- 控件 ---------- */
 .controls {
@@ -113,8 +169,18 @@ body {
   gap: 20px;
   align-items: flex-end;
 }
-.control { display: flex; flex-direction: column; gap: 6px; }
-.control label { font-size: 12px; color: var(--color-text-sub); font-weight: 600; }
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.control label {
+  font-size: 12px;
+  color: var(--color-text-sub);
+  font-weight: 600;
+}
 
 .segmented {
   display: inline-flex;
@@ -122,6 +188,7 @@ body {
   border-radius: 8px;
   padding: 3px;
 }
+
 .segmented button {
   border: none;
   background: transparent;
@@ -132,6 +199,7 @@ body {
   color: var(--color-text-sub);
   transition: all .15s;
 }
+
 .segmented button.is-active {
   background: var(--color-primary);
   color: #fff;
@@ -148,6 +216,7 @@ select {
   min-width: 220px;
   cursor: pointer;
 }
+
 select:focus {
   outline: 2px solid var(--color-primary-light);
   outline-offset: -1px;
@@ -162,11 +231,21 @@ select:focus {
   color: var(--color-text-sub);
   padding: 10px 0 4px;
 }
-.summary-line b { color: var(--color-text); }
+
+.summary-line b {
+  color: var(--color-text);
+}
 
 /* ---------- 柱状图 ---------- */
-.chart-scroll { overflow-x: auto; }
-.chart-inner { display: flex; align-items: flex-end; min-width: 100%; }
+.chart-scroll {
+  overflow-x: auto;
+}
+
+.chart-inner {
+  display: flex;
+  align-items: flex-end;
+  min-width: 100%;
+}
 
 .bar-column {
   position: relative;
@@ -195,7 +274,10 @@ select:focus {
   border-radius: 3px 3px 0 0;
   transition: filter .15s;
 }
-.bar-column:hover .bar-rect { filter: brightness(1.12); }
+
+.bar-column:hover .bar-rect {
+  filter: brightness(1.12);
+}
 
 /* 名称标签：底部 -45° 倾斜，避免长名称互相挤压 */
 .bar-name {
@@ -213,18 +295,94 @@ select:focus {
   transform: rotate(-45deg);
 }
 
+/* ---------- 悬浮提示框 ---------- */
+.chart-tooltip {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  min-width: 120px;
+  max-width: 340px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(17, 24, 39, .94);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .28), 0 2px 6px rgba(0, 0, 0, .18);
+  opacity: 0;
+  visibility: hidden;
+  transform: translate3d(0, 6px, 0);
+  transition: opacity .1s ease, transform .1s ease, visibility .1s;
+}
+
+.chart-tooltip.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translate3d(0, 0, 0);
+}
+
+.chart-tooltip__name {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chart-tooltip__name+.chart-tooltip__value {
+  margin-top: 4px;
+}
+
+.chart-tooltip__value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #93c5fd;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.chart-tooltip__value::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #60a5fa;
+}
+
+/* 指向箭头（默认朝下，位于提示框底部，指向下方光标） */
+.chart-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  margin-left: -6px;
+  border: 6px solid transparent;
+  border-top-color: rgba(17, 24, 39, .94);
+}
+
+/* 翻转态：提示框位于光标下方时，箭头朝上 */
+.chart-tooltip.is-flipped::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: rgba(17, 24, 39, .94);
+}
+
 /* ---------- 整车级卡片 ---------- */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 12px;
 }
+
 .stat-card {
   background: #fafbfd;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 12px 14px;
 }
+
 .stat-name {
   font-size: 12px;
   color: var(--color-text-sub);
@@ -232,6 +390,7 @@ select:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .stat-val {
   font-size: 18px;
   font-weight: 700;
@@ -246,4 +405,7 @@ select:focus {
   font-size: 14px;
   padding: 40px 0;
 }
-.hidden { display: none !important; }
+
+.hidden {
+  display: none !important;
+}

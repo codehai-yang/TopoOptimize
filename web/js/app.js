@@ -316,6 +316,7 @@
     cacheDom();
     buildLevelSegments();
     bindEvents();
+    CHART.initTooltip();
   }
 
   document.addEventListener("DOMContentLoaded", init);

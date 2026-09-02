@@ -78,10 +78,10 @@
       const name = util.escapeHtml(item.name);
       const valueText = util.formatValue(item.value, metric);
       const color = barColor(index, n);
-      const title = name + " : " + valueText;
 
       return (
-        '<div class="bar-column" style="width:' + width + ';height:' + columnHeight + 'px" title="' + title + '">' +
+        '<div class="bar-column" style="width:' + width + ';height:' + columnHeight + 'px" ' +
+        'data-name="' + name + '" data-value="' + valueText + '">' +
         '<div class="bar-value" style="top:' + numberTop + 'px">' + valueText + "</div>" +
         // 柱体
         '<div class="bar-rect" style="bottom:' + bottom + 'px;height:' +
@@ -121,9 +121,124 @@
     grid.innerHTML = html;
   }
 
+  /* ---------------- 悬浮提示框 ---------------- */
+
+  let tooltipEl = null;   // 提示框 DOM
+  let chartContainer = null; // 柱状图容器 DOM
+
+  /**
+   * 初始化悬浮提示框的事件委托（对柱体容器绑定一次，随内层元素重建依然生效）。
+   * 鼠标悬停柱体时，瞬间显示该柱的名称与数值，并跟随鼠标移动。
+   */
+  function initTooltip() {
+    tooltipEl = document.getElementById("chart-tooltip");
+    chartContainer = document.getElementById("chart-inner");
+    if (!tooltipEl || !chartContainer) return;
+    chartContainer.addEventListener("mouseover", onColumnEnter);
+    // 跟随移动监听挂到 document，保证光标离开柱体子元素后仍能持续定位
+    document.addEventListener("mousemove", onColumnMove);
+    chartContainer.addEventListener("mouseout", onColumnLeave);
+  }
+
+  /**
+   * 命中柱体元素；未命中返回 null。
+   * @param {Event} event 鼠标事件
+   * @returns {HTMLElement|null} 被命中的 .bar-column
+   */
+  function hitColumn(event) {
+    const target = event.target.closest ? event.target.closest(".bar-column") : null;
+    return target || null;
+  }
+
+  /**
+   * 显示提示框内容。
+   * @param {HTMLElement} column 柱体列元素
+   */
+  function showTooltip(column) {
+    const rawName = column.dataset.name || "";
+    // 名称中的换行（如系统名含 \n）替换为空格，提升可读性
+    const name = rawName.replace(/\n/g, " ");
+    const value = column.dataset.value || "";
+    tooltipEl.innerHTML =
+      '<span class="chart-tooltip__name">' + util.escapeHtml(name) + "</span>" +
+      '<span class="chart-tooltip__value">' + util.escapeHtml(value) + "</span>";
+    tooltipEl.classList.add("is-visible");
+    tooltipEl.setAttribute("aria-hidden", "false");
+  }
+
+  /**
+   * 隐藏提示框。
+   */
+  function hideTooltip() {
+    tooltipEl.classList.remove("is-visible");
+    tooltipEl.setAttribute("aria-hidden", "true");
+  }
+
+  /**
+   * 依据鼠标位置定位提示框（居中于光标正上方，指向箭头朝下）。
+   * 超出视口边缘时自动翻转或夹取，保证始终可见。
+   * @param {MouseEvent} event 鼠标事件
+   */
+  function positionTooltip(event) {
+    const gap = 16;
+    // 提示框水平居中于光标
+    const halfWidth = tooltipEl.offsetWidth / 2;
+    let left = event.clientX - halfWidth;
+    let top = event.clientY - tooltipEl.offsetHeight - gap;
+
+    // 水平方向钳制在视口内
+    const minLeft = 8;
+    const maxLeft = window.innerWidth - tooltipEl.offsetWidth - 8;
+    left = Math.max(minLeft, Math.min(maxLeft, left));
+
+    // 上方放不下则翻到下方，并切换箭头方向
+    const flipped = top < 8;
+    if (flipped) {
+      top = event.clientY + gap;
+      tooltipEl.classList.add("is-flipped");
+    } else {
+      tooltipEl.classList.remove("is-flipped");
+    }
+
+    tooltipEl.style.left = Math.round(left) + "px";
+    tooltipEl.style.top = Math.round(top) + "px";
+  }
+
+  /**
+   * 鼠标进入柱体。
+   * @param {Event} event 鼠标事件
+   */
+  function onColumnEnter(event) {
+    const column = hitColumn(event);
+    if (!column) return;
+    showTooltip(column);
+    positionTooltip(event);
+  }
+
+  /**
+   * 鼠标在柱体上移动（提示框跟随）。
+   * @param {Event} event 鼠标事件
+   */
+  function onColumnMove(event) {
+    if (!tooltipEl.classList.contains("is-visible")) return;
+    positionTooltip(event);
+  }
+
+  /**
+   * 鼠标离开柱体区域。
+   * @param {Event} event 鼠标事件
+   */
+  function onColumnLeave(event) {
+    const next = event.relatedTarget;
+    // 仅当真正离开柱体容器时才隐藏（避免在子元素间移动时闪烁）
+    if (next && chartContainer.contains(next)) return;
+    hideTooltip();
+  }
+
   root.AppChart = {
     renderBars: renderBars,
     renderProject: renderProject,
+    initTooltip: initTooltip,
     barColor: barColor,
     computeBarWidth: computeBarWidth
   };
