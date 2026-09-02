@@ -32,10 +32,10 @@
     topLabelZone: 20,
     /** 数值标签距柱顶的垂直间距（px） */
     valueGap: 4,
-    /** 名称标签高度（px） */
-    labelHeight: 56,
+    /** 名称标签高度（px），与底部水平名称标签的实际高度一致 */
+    labelHeight: 24,
     /** 名称标签到柱体底部的间距（px） */
-    labelGap: 68,
+    labelGap: 10,
     /** 柱体最小可见高度（px），保证 0 值也可见 */
     barMinHeight: 2,
     /** 柱体左右留白比例（相对柱宽），可视化宽度为剩余的（16%x2） */

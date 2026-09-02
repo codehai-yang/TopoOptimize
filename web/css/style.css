@@ -75,6 +75,140 @@ body {
   margin-bottom: 14px;
 }
 
+/* ---------- 图表卡片头部（标题 + 筛选按钮） ---------- */
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-head .card-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.filter-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+
+.filter-toggle:hover {
+  border-color: var(--color-primary-light);
+  background: #eff6ff;
+}
+
+.filter-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.filter-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  width: 300px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+  padding: 10px;
+}
+
+.filter-search {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.filter-search:focus {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: -1px;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.filter-btn {
+  flex: 1;
+  padding: 5px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+  color: var(--color-text-sub);
+  cursor: pointer;
+}
+
+.filter-btn:hover {
+  background: #f5f7fa;
+  color: var(--color-primary);
+}
+
+.filter-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.filter-item:hover {
+  background: #f5f7fa;
+}
+
+.filter-item input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.filter-item .filter-item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-empty {
+  padding: 16px 0;
+  text-align: center;
+  color: var(--color-text-sub);
+  font-size: 13px;
+}
+
 /* ---------- 上传区 ---------- */
 .upload-row {
   display: grid;
@@ -279,11 +413,12 @@ select:focus {
   filter: brightness(1.12);
 }
 
-/* 名称标签：底部 -45° 倾斜，避免长名称互相挤压 */
+/* 名称标签：水平显示，超出柱宽用省略号隐藏，悬停由提示框展示全名 */
 .bar-name {
   position: absolute;
   bottom: 0;
   left: 0;
+  right: 0;
   height: 24px;
   line-height: 24px;
   font-size: 11px;
@@ -291,8 +426,9 @@ select:focus {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transform-origin: 0 100%;
-  transform: rotate(-45deg);
+  text-align: center;
+  padding: 0 2px;
+  cursor: default;
 }
 
 /* ---------- 悬浮提示框 ---------- */

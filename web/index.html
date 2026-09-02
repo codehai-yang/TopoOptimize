@@ -65,7 +65,23 @@
 
             <!-- 多条目层级：柱状图 -->
             <div class="card hidden" id="chart-card">
-                <h2 class="card-title" id="chart-title">柱状图</h2>
+                <div class="card-head">
+                    <h2 class="card-title" id="chart-title">柱状图</h2>
+                    <div class="filter-wrap">
+                        <button type="button" class="filter-toggle" id="filter-toggle" aria-expanded="false">
+                            筛选
+                            <span class="filter-badge hidden" id="filter-badge"></span>
+                        </button>
+                        <div class="filter-dropdown hidden" id="filter-dropdown">
+                            <input type="text" class="filter-search" id="filter-search" placeholder="搜索…">
+                            <div class="filter-actions">
+                                <button type="button" class="filter-btn" id="filter-all">全选</button>
+                                <button type="button" class="filter-btn" id="filter-clear">清空</button>
+                            </div>
+                            <div class="filter-list" id="filter-list"></div>
+                        </div>
+                    </div>
+                </div>
                 <div class="chart-scroll" id="chart-scroll">
                     <div class="chart-inner" id="chart-inner"></div>
                 </div>

@@ -18,7 +18,10 @@
     topoData: null,   // 优化前整车拓扑 json 解析结果
     level: "system",
     metric: null,
-    ascending: false
+    ascending: false,
+    filter: new Set(),        // 当前选中的条目名称集合（空/全量 = 显示全部）
+    filterNames: [],          // 当前层级全部条目名称（用于计数与全选）
+    filterQuery: ""           // 筛选搜索关键字
   };
 
   /** @type {Object<string, HTMLElement>} DOM 缓存 */
@@ -33,7 +36,9 @@
       "chart-card", "chart-title", "chart-inner", "project-card", "project-grid",
       "badge-output", "badge-topo", "file-name-output", "file-name-topo",
       "drop-error-output", "drop-error-topo", "topo-summary",
-      "drop-zone-output", "drop-zone-topo", "file-input-output", "file-input-topo"
+      "drop-zone-output", "drop-zone-topo", "file-input-output", "file-input-topo",
+      "filter-toggle", "filter-badge", "filter-dropdown", "filter-search",
+      "filter-all", "filter-clear", "filter-list"
     ];
     ids.forEach((id) => { ui[id] = document.getElementById(id); });
   }
@@ -69,6 +74,95 @@
     state.metric = target;
   }
 
+  /* ---------------- 条目筛选 ---------------- */
+
+  /**
+   * 获取当前层级的全部条目名称（唯一、有序）。
+   * @returns {string[]} 名称列表
+   */
+  function getLevelNames() {
+    if (state.level === "project") return [];
+    return DATA.getEntries(state.level, state.outputData).map(function (entry) {
+      return entry.name;
+    });
+  }
+
+  /**
+   * 依据当前层级重建筛选列表：默认全选，并渲染勾选框。
+   */
+  function buildFilterList() {
+    state.filterNames = getLevelNames();
+    state.filter = new Set(state.filterNames);
+    state.filterQuery = "";
+    ui["filter-search"].value = "";
+    renderFilterCheckboxes();
+    updateFilterBadge();
+  }
+
+  /**
+   * 渲染筛选勾选列表（支持关键字过滤）。
+   */
+  function renderFilterCheckboxes() {
+    const query = state.filterQuery.trim().toLowerCase();
+    const visible = state.filterNames.filter(function (name) {
+      return !query || name.toLowerCase().indexOf(query) >= 0;
+    });
+    const html = visible.length === 0
+      ? '<div class="filter-empty">无匹配项</div>'
+      : visible.map(function (name) {
+        const checked = state.filter.has(name) ? " checked" : "";
+        return (
+          '<label class="filter-item">' +
+          '<input type="checkbox" value="' + UTIL.escapeHtml(name) + '"' + checked + ">" +
+          '<span class="filter-item-text" title="' + UTIL.escapeHtml(name) + '">' +
+          UTIL.escapeHtml(name) + "</span>" +
+          "</label>"
+        );
+      }).join("");
+    ui["filter-list"].innerHTML = html;
+  }
+
+  /**
+   * 更新筛选按钮上的计数徽章：仅在非全选时显示「已选/总数」。
+   */
+  function updateFilterBadge() {
+    const total = state.filterNames.length;
+    const selected = state.filter.size;
+    const badge = ui["filter-badge"];
+    if (selected >= total) {
+      badge.classList.add("hidden");
+      badge.textContent = "";
+    } else {
+      badge.classList.remove("hidden");
+      badge.textContent = selected + "/" + total;
+    }
+  }
+
+  /**
+   * 开/关筛选下拉框。
+   * @param {boolean} [open] 强制指定开（true）或关（false）；缺省则取反
+   */
+  function toggleFilterDropdown(open) {
+    const dropdown = ui["filter-dropdown"];
+    const shouldOpen = open !== undefined ? open : dropdown.classList.contains("hidden");
+    dropdown.classList.toggle("hidden", !shouldOpen);
+    ui["filter-toggle"].setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+    if (shouldOpen) ui["filter-search"].focus();
+  }
+
+  /**
+   * 依据当前筛选状态过滤条目。
+   * @param {Array} entries 全部条目
+   * @returns {Array} 过滤后的条目
+   */
+  function applyFilter(entries) {
+    // 全选（选中数 == 总数）时不过滤，直接返回全部
+    if (state.filter.size >= state.filterNames.length) return entries;
+    return entries.filter(function (entry) {
+      return state.filter.has(entry.name);
+    });
+  }
+
   /* ---------------- 渲染 ---------------- */
 
   /**
@@ -90,8 +184,26 @@
    * @param {string} levelName 层级中文名
    */
   function renderBarLevel(levelName) {
-    const entries = DATA.getEntries(state.level, state.outputData);
+    const allEntries = DATA.getEntries(state.level, state.outputData);
     ui["chart-title"].textContent = levelName + " · " + state.metric + " 柱状图";
+
+    // 应用筛选
+    const entries = applyFilter(allEntries);
+    const filterActive = state.filter.size < state.filterNames.length;
+
+    ui["project-card"].classList.add("hidden");
+    ui["chart-card"].classList.remove("hidden");
+
+    // 筛选后无条目：直接展示空态
+    if (entries.length === 0) {
+      ui["chart-inner"].innerHTML =
+        '<div class="empty">当前条件下无条目可显示（筛选为空或指标缺失）</div>';
+      ui["summary-line"].innerHTML =
+        '<span class="summary-item">层级：<b>' + levelName + "</b></span>" +
+        '<span class="summary-item">指标：<b>' + UTIL.escapeHtml(state.metric) + "</b></span>" +
+        '<span class="summary-item">已筛选项：<b>0 / ' + state.filterNames.length + "</b></span>";
+      return;
+    }
 
     // 排序
     const sorted = entries.slice().sort(function (a, b) {
@@ -101,16 +213,17 @@
       return state.ascending ? delta : -delta;
     });
 
-    ui["project-card"].classList.add("hidden");
-    ui["chart-card"].classList.remove("hidden");
     const result = CHART.renderBars(sorted, state.metric);
 
     if (result.count > 0) {
       const skipText = result.skipped > 0 ? "（忽略缺失 " + result.skipped + "）" : "";
+      const filterText = filterActive
+        ? '<span class="summary-item">筛选：<b>' + entries.length + " / " + state.filterNames.length + "</b></span>"
+        : "";
       ui["summary-line"].innerHTML =
         '<span class="summary-item">层级：<b>' + levelName + "</b></span>" +
         '<span class="summary-item">指标：<b>' + UTIL.escapeHtml(state.metric) + "</b></span>" +
-        '<span class="summary-item">条目数：<b>' + result.count + "</b>" + skipText + "</span>" +
+        '<span class="summary-item">条目数：<b>' + result.count + "</b>" + skipText + "</span>" + filterText +
         '<span class="summary-item">最大：<b>' + UTIL.formatValue(result.max, state.metric) + "</b></span>" +
         '<span class="summary-item">最小：<b>' + UTIL.formatValue(result.min, state.metric) + "</b></span>" +
         '<span class="summary-item">合计：<b>' + UTIL.formatValue(result.sum, state.metric) + "</b></span>";
@@ -219,6 +332,7 @@
       state.outputData = parseOutput(text);
       updateDropZone("output", file, "已加载", "is-ok", "");
       populateMetricSelect(CONFIG.DEFAULT_METRIC);
+      buildFilterList();
       ui.analysis.classList.remove("hidden");
       refresh();
     } catch (error) {
@@ -283,6 +397,7 @@
         btn.classList.toggle("is-active", btn === button);
       });
       populateMetricSelect(state.metric);
+      buildFilterList();
       refresh();
     });
 
@@ -300,6 +415,47 @@
     // 指标切换
     ui["metric-select"].addEventListener("change", function () {
       state.metric = ui["metric-select"].value;
+      refresh();
+    });
+
+    // 筛选按钮：开/关下拉框
+    ui["filter-toggle"].addEventListener("click", function () {
+      toggleFilterDropdown();
+    });
+    // 点击筛选区域外时关闭下拉框
+    document.addEventListener("click", function (event) {
+      const wrap = ui["filter-toggle"].closest(".filter-wrap");
+      if (wrap && !wrap.contains(event.target)) {
+        toggleFilterDropdown(false);
+      }
+    });
+    // 搜索关键字
+    ui["filter-search"].addEventListener("input", function () {
+      state.filterQuery = ui["filter-search"].value;
+      renderFilterCheckboxes();
+    });
+    // 全选
+    ui["filter-all"].addEventListener("click", function () {
+      state.filter = new Set(state.filterNames);
+      renderFilterCheckboxes();
+      updateFilterBadge();
+      refresh();
+    });
+    // 清空
+    ui["filter-clear"].addEventListener("click", function () {
+      state.filter = new Set();
+      renderFilterCheckboxes();
+      updateFilterBadge();
+      refresh();
+    });
+    // 勾选/取消勾选（事件委托）
+    ui["filter-list"].addEventListener("change", function (event) {
+      const checkbox = event.target.closest('input[type="checkbox"]');
+      if (!checkbox) return;
+      const name = checkbox.value;
+      if (checkbox.checked) state.filter.add(name);
+      else state.filter.delete(name);
+      updateFilterBadge();
       refresh();
     });
 
