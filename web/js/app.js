@@ -21,7 +21,8 @@
     ascending: false,
     filter: new Set(),        // 当前选中的条目名称集合（空/全量 = 显示全部）
     filterNames: [],          // 当前层级全部条目名称（用于计数与全选）
-    filterQuery: ""           // 筛选搜索关键字
+    filterQuery: "",          // 筛选搜索关键字
+    detail: null              // 当前点开的回路明细：{ name, id }，null 表示未点开
   };
 
   /** @type {Object<string, HTMLElement>} DOM 缓存 */
@@ -38,7 +39,8 @@
       "drop-error-output", "drop-error-topo", "topo-summary",
       "drop-zone-output", "drop-zone-topo", "file-input-output", "file-input-topo",
       "filter-toggle", "filter-badge", "filter-dropdown", "filter-search",
-      "filter-all", "filter-clear", "filter-list"
+      "filter-all", "filter-clear", "filter-list",
+      "detail-card", "detail-title", "detail-table", "detail-thead", "detail-tbody", "detail-close"
     ];
     ids.forEach((id) => { ui[id] = document.getElementById(id); });
   }
@@ -188,8 +190,13 @@
 
     if (state.level === "project") {
       renderProjectLevel();
+      closeCircuitDetail();
     } else {
       renderBarLevel(levelName);
+      // 若有已点开的柱子，随着指标/排序变化同步刷新明细
+      if (state.detail) {
+        openCircuitDetail(state.detail.name, state.detail.id, false);
+      }
     }
   }
 
@@ -257,6 +264,107 @@
       '<span class="summary-item">层级：<b>整车级</b></span>' +
       '<span class="summary-item">指标字段：<b>' + UTIL.escapeHtml(state.metric) + "</b></span>" +
       '<span class="summary-item">整车指标数：<b>' + fieldCount + "</b></span>";
+  }
+
+  /* ---------------- 回路明细 ---------------- */
+
+  /**
+   * 将可能为 null/undefined 的值安全转为转义后的 HTML 文本。
+   * @param {*} value 原始值
+   * @returns {string} 转义后文本（空值返回空串）
+   */
+  function cellText(value) {
+    if (value === null || value === undefined) return "";
+    return UTIL.escapeHtml(String(value));
+  }
+
+  /**
+   * 在柱状图中高亮当前点开的柱子。
+   * @param {string} name 条目名称
+   * @param {string} [id] 回路层唯一 id
+   */
+  function markSelectedColumn(name, id) {
+    const columns = ui["chart-inner"].querySelectorAll(".bar-column");
+    columns.forEach(function (col) {
+      const matched = id !== null && id !== undefined
+        ? col.dataset.id === String(id)
+        : col.dataset.name === String(name);
+      col.classList.toggle("is-selected", matched);
+    });
+  }
+
+  /**
+   * 渲染回路明细表格：第一列为排序指标值，其后为回路编号/起点/终点/导线选型/所属系统。
+   * @param {string} metricField 排序指标字段名
+   * @param {Array<Object>} circuits 已排序的回路对象列表
+   */
+  function renderDetailTable(metricField, circuits) {
+    const headers = [metricField, "回路编号", "起点用电器名称", "终点用电器名称", "导线选型", "所属系统"];
+    ui["detail-thead"].innerHTML = headers.map(function (h) {
+      return "<th>" + UTIL.escapeHtml(h) + "</th>";
+    }).join("");
+
+    if (circuits.length === 0) {
+      ui["detail-tbody"].innerHTML =
+        '<tr><td colspan="' + headers.length + '" class="detail-empty">该条目没有关联回路</td></tr>';
+      return;
+    }
+
+    ui["detail-tbody"].innerHTML = circuits.map(function (circuit) {
+      const raw = UTIL.toNumber(circuit[metricField]);
+      const metricText = Number.isNaN(raw) ? "—" : UTIL.formatValue(raw, metricField);
+      return "<tr>" +
+        '<td class="cell-num">' + metricText + "</td>" +
+        "<td>" + cellText(circuit["回路编号"]) + "</td>" +
+        "<td>" + cellText(circuit["起点用电器名称"]) + "</td>" +
+        "<td>" + cellText(circuit["终点用电器名称"]) + "</td>" +
+        "<td>" + cellText(circuit["导线选型"]) + "</td>" +
+        "<td>" + cellText(circuit["所属系统"]) + "</td>" +
+        "</tr>";
+    }).join("");
+  }
+
+  /**
+   * 打开某个柱子的回路明细（获取该条目关联回路，按当前指标与排序方向排序展示）。
+   * @param {string} name 条目名称
+   * @param {string} [id] 回路层唯一 id
+   * @param {boolean} [doScroll] 是否滚动到明细卡片（仅在用户点击时触发）
+   */
+  function openCircuitDetail(name, id, doScroll) {
+    if (!state.outputData) return;
+    state.detail = { name: name, id: id };
+
+    const circuits = DATA.getCircuitsForEntry(state.outputData, state.level, name, id);
+    const metricField = DATA.resolveCircuitMetric(state.metric, state.outputData);
+
+    // 按指标值排序（缺失值视为 -Infinity，升序时沉底、降序时沉底）
+    circuits.sort(function (a, b) {
+      const va = UTIL.toNumber(a[metricField]);
+      const vb = UTIL.toNumber(b[metricField]);
+      const na = Number.isNaN(va) ? -Infinity : va;
+      const nb = Number.isNaN(vb) ? -Infinity : vb;
+      return state.ascending ? na - nb : nb - na;
+    });
+
+    ui["detail-title"].textContent = "回路明细 · " + String(name).replace(/\n/g, " ");
+    markSelectedColumn(name, id);
+    renderDetailTable(metricField, circuits);
+    ui["detail-card"].classList.remove("hidden");
+
+    if (doScroll) {
+      ui["detail-card"].scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  /**
+   * 关闭回路明细卡片并清除柱子高亮。
+   */
+  function closeCircuitDetail() {
+    state.detail = null;
+    ui["detail-card"].classList.add("hidden");
+    ui["chart-inner"].querySelectorAll(".bar-column").forEach(function (col) {
+      col.classList.remove("is-selected");
+    });
   }
 
   /* ---------------- 文件上传与解析 ---------------- */
@@ -347,6 +455,7 @@
       updateDropZone("output", file, "已加载", "is-ok", "");
       populateMetricSelect(null);
       buildFilterList();
+      closeCircuitDetail();
       ui.analysis.classList.remove("hidden");
       refresh();
     } catch (error) {
@@ -412,6 +521,7 @@
       });
       populateMetricSelect(state.metric);
       buildFilterList();
+      closeCircuitDetail();
       refresh();
     });
 
@@ -472,6 +582,18 @@
       updateFilterBadge();
       refresh();
     });
+
+    // 点击柱状图柱子：展开该条目的回路明细
+    ui["chart-inner"].addEventListener("click", function (event) {
+      const column = event.target.closest(".bar-column");
+      if (!column) return;
+      const name = column.dataset.name || "";
+      const id = column.dataset.id || null;
+      openCircuitDetail(name, id, true);
+    });
+
+    // 关闭回路明细
+    ui["detail-close"].addEventListener("click", closeCircuitDetail);
 
     bindUpload("drop-zone-output", "file-input-output", function (file) { loadOutput(file); });
     bindUpload("drop-zone-topo", "file-input-topo", function (file) { loadTopo(file); });

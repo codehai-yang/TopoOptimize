@@ -92,6 +92,22 @@
                 <h2 class="card-title">整车级指标总览</h2>
                 <div class="stat-grid" id="project-grid"></div>
             </div>
+
+            <!-- 回路明细：点击柱状图某根柱子后展示 -->
+            <div class="card hidden" id="detail-card">
+                <div class="card-head">
+                    <h2 class="card-title" id="detail-title">回路明细</h2>
+                    <button type="button" class="detail-close" id="detail-close" aria-label="关闭回路明细">×</button>
+                </div>
+                <div class="table-wrap">
+                    <table class="detail-table" id="detail-table">
+                        <thead>
+                            <tr id="detail-thead"></tr>
+                        </thead>
+                        <tbody id="detail-tbody"></tbody>
+                    </table>
+                </div>
+            </div>
         </section>
     </main>
 

@@ -438,6 +438,79 @@ select:focus {
   filter: brightness(1.12);
 }
 
+/* 柱体可点击，悬停提示手型 */
+.bar-column {
+  cursor: pointer;
+}
+
+/* 选中的柱子：加深边框高亮 */
+.bar-column.is-selected .bar-rect {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  filter: brightness(1.08);
+}
+
+/* ---------- 回路明细表 ---------- */
+.detail-close {
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--color-text-sub);
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.detail-close:hover {
+  color: var(--color-text);
+}
+
+.table-wrap {
+  max-height: 440px;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.detail-table th,
+.detail-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.detail-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f5f7fa;
+  font-weight: 600;
+  color: var(--color-text);
+  z-index: 1;
+}
+
+.detail-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.detail-table .cell-num {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.detail-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-sub);
+}
+
 /* 名称标签：水平显示，超出柱宽用省略号隐藏，悬停由提示框展示全名 */
 .bar-name {
   position: absolute;

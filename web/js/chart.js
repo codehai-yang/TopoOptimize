@@ -49,7 +49,7 @@
   function renderBars(items, metric) {
     const container = document.getElementById("chart-inner");
     const withValue = items
-      .map((item) => ({ name: item.name, value: util.toNumber(item.agg ? item.agg[metric] : null) }))
+      .map((item) => ({ name: item.name, id: item.id, value: util.toNumber(item.agg ? item.agg[metric] : null) }))
       .filter((item) => !Number.isNaN(item.value));
 
     if (withValue.length === 0) {
@@ -83,10 +83,14 @@
       const growDelay = Math.min(index * 16, 560);
       const growDelayMs = growDelay + "ms";
       const valueDelayMs = (growDelay + 520) + "ms";
+      // 回路层条目携带唯一 id（回路id），供点击后反查回路明细
+      const idAttr = item.id !== null && item.id !== undefined
+        ? ' data-id="' + util.escapeHtml(String(item.id)) + '"'
+        : "";
 
       return (
         '<div class="bar-column" style="width:' + width + ';height:' + columnHeight + 'px" ' +
-        'data-name="' + name + '" data-value="' + valueText + '">' +
+        'data-name="' + name + '" data-value="' + valueText + '"' + idAttr + ">" +
         '<div class="bar-value" style="top:' + numberTop + 'px;animation-delay:' + valueDelayMs + '">' +
         valueText + "</div>" +
         // 柱体（自下而上生长动画）
