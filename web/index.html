@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>拓扑优化结果可视化</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <header class="app-header">
+        <h1>拓扑优化结果可视化</h1>
+        <p>上传「优化后方案 JSON」(output.txt) 与「优化前整车拓扑 JSON」(拓扑优化json日志.txt) 后进行多维度指标分析</p>
+    </header>
+
+    <main class="app-main">
+        <!-- 1. 上传区 -->
+        <section class="card">
+            <h2 class="card-title">1. 上传数据文件</h2>
+            <div class="upload-row">
+                <div class="drop-zone" id="drop-zone-output" role="button" tabindex="0" aria-label="上传优化后方案 JSON">
+                    <div class="drop-icon">📄</div>
+                    <div class="drop-hint">优化后方案结果 JSON<br>（output.txt，必须）</div>
+                    <span class="badge is-wait" id="badge-output">未上传</span>
+                    <div class="drop-file" id="file-name-output"></div>
+                    <div class="drop-error" id="drop-error-output"></div>
+                    <input type="file" id="file-input-output" accept=".txt,.json">
+                </div>
+                <div class="drop-zone" id="drop-zone-topo" role="button" tabindex="0" aria-label="上传优化前整车拓扑 JSON">
+                    <div class="drop-icon">🗺️</div>
+                    <div class="drop-hint">优化前整车拓扑 JSON<br>（拓扑优化json日志.txt，含支点坐标，后续画图用）</div>
+                    <span class="badge is-wait" id="badge-topo">未上传</span>
+                    <div class="drop-file" id="file-name-topo"></div>
+                    <div class="drop-error" id="drop-error-topo"></div>
+                    <input type="file" id="file-input-topo" accept=".txt,.json">
+                </div>
+            </div>
+            <p id="topo-summary" class="topo-summary hidden"></p>
+        </section>
+
+        <!-- 2. 分析区 -->
+        <section id="analysis" class="hidden">
+            <div class="card">
+                <h2 class="card-title">2. 分析维度</h2>
+                <div class="controls">
+                    <div class="control">
+                        <label>统计层级</label>
+                        <div class="segmented" id="level-seg"></div>
+                    </div>
+                    <div class="control">
+                        <label for="metric-select">排序指标</label>
+                        <select id="metric-select"></select>
+                    </div>
+                    <div class="control">
+                        <label>排序方向</label>
+                        <div class="segmented" id="sort-seg">
+                            <button type="button" data-asc="false" class="is-active">降序</button>
+                            <button type="button" data-asc="true">升序</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="summary-line" class="summary-line"></div>
+            </div>
+
+            <!-- 多条目层级：柱状图 -->
+            <div class="card hidden" id="chart-card">
+                <h2 class="card-title" id="chart-title">柱状图</h2>
+                <div class="chart-scroll" id="chart-scroll">
+                    <div class="chart-inner" id="chart-inner"></div>
+                </div>
+            </div>
+
+            <!-- 整车级：指标卡片总览 -->
+            <div class="card hidden" id="project-card">
+                <h2 class="card-title">整车级指标总览</h2>
+                <div class="stat-grid" id="project-grid"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 脚本按依赖顺序加载（config → util → data → chart → app） -->
+    <script src="js/config.js"></script>
+    <script src="js/util.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/chart.js"></script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>

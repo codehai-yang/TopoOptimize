@@ -1,0 +1,322 @@
+/**
+ * 应用编排层
+ * ============================================================
+ * 负责状态管理、文件上传解析、事件绑定与整体渲染协调。
+ * 依赖 AppConfig / AppUtil / AppData / AppChart（按加载顺序存在）。
+ */
+(function () {
+  "use strict";
+
+  const CONFIG = window.AppConfig;
+  const UTIL = window.AppUtil;
+  const DATA = window.AppData;
+  const CHART = window.AppChart;
+
+  /** @type {Object} 应用状态 */
+  const state = {
+    outputData: null, // 优化后方案 output.txt 解析结果
+    topoData: null,   // 优化前整车拓扑 json 解析结果
+    level: "system",
+    metric: null,
+    ascending: false
+  };
+
+  /** @type {Object<string, HTMLElement>} DOM 缓存 */
+  const ui = {};
+
+  /**
+   * 缓存常用 DOM 元素，避免重复查询。
+   */
+  function cacheDom() {
+    const ids = [
+      "analysis", "level-seg", "sort-seg", "metric-select", "summary-line",
+      "chart-card", "chart-title", "chart-inner", "project-card", "project-grid",
+      "badge-output", "badge-topo", "file-name-output", "file-name-topo",
+      "drop-error-output", "drop-error-topo", "topo-summary",
+      "drop-zone-output", "drop-zone-topo", "file-input-output", "file-input-topo"
+    ];
+    ids.forEach((id) => { ui[id] = document.getElementById(id); });
+  }
+
+  /* ---------------- 层级切换控件（由配置动态生成） ---------------- */
+
+  /**
+   * 生成层级分段按钮。
+   */
+  function buildLevelSegments() {
+    const html = CONFIG.LEVELS.map(function (level) {
+      const active = level.key === state.level ? " is-active" : "";
+      return '<button type="button" data-level="' + level.key + '"' +
+        ' class="seg-option' + active + '">' + level.label + "</button>";
+    }).join("");
+    ui["level-seg"].innerHTML = html;
+  }
+
+  /**
+   * 填充指标下拉框，尽量保留当前选中值，否则回落默认指标。
+   * @param {string} [prefer] 优先保留的指标名
+   */
+  function populateMetricSelect(prefer) {
+    const options = DATA.getMetricOptions(state.level, state.outputData);
+    const target = options.indexOf(prefer) >= 0
+      ? prefer
+      : (options.indexOf(CONFIG.DEFAULT_METRIC) >= 0 ? CONFIG.DEFAULT_METRIC : options[0]);
+    ui["metric-select"].innerHTML = options.map(function (key) {
+      const selected = key === target ? " selected" : "";
+      return '<option value="' + UTIL.escapeHtml(key) + '"' + selected + ">" +
+        UTIL.escapeHtml(key) + "</option>";
+    }).join("");
+    state.metric = target;
+  }
+
+  /* ---------------- 渲染 ---------------- */
+
+  /**
+   * 刷新整块分析区（依据当前层级/指标/排序）。
+   */
+  function refresh() {
+    if (!state.outputData) return;
+    const levelName = CONFIG.LEVELS.find(function (l) { return l.key === state.level; }).label;
+
+    if (state.level === "project") {
+      renderProjectLevel();
+    } else {
+      renderBarLevel(levelName);
+    }
+  }
+
+  /**
+   * 渲染多条目层级的柱状图。
+   * @param {string} levelName 层级中文名
+   */
+  function renderBarLevel(levelName) {
+    const entries = DATA.getEntries(state.level, state.outputData);
+    ui["chart-title"].textContent = levelName + " · " + state.metric + " 柱状图";
+
+    // 排序
+    const sorted = entries.slice().sort(function (a, b) {
+      const va = UTIL.toNumber(a.agg ? a.agg[state.metric] : null);
+      const vb = UTIL.toNumber(b.agg ? b.agg[state.metric] : null);
+      const delta = va - vb;
+      return state.ascending ? delta : -delta;
+    });
+
+    ui["project-card"].classList.add("hidden");
+    ui["chart-card"].classList.remove("hidden");
+    const result = CHART.renderBars(sorted, state.metric);
+
+    if (result.count > 0) {
+      const skipText = result.skipped > 0 ? "（忽略缺失 " + result.skipped + "）" : "";
+      ui["summary-line"].innerHTML =
+        '<span class="summary-item">层级：<b>' + levelName + "</b></span>" +
+        '<span class="summary-item">指标：<b>' + UTIL.escapeHtml(state.metric) + "</b></span>" +
+        '<span class="summary-item">条目数：<b>' + result.count + "</b>" + skipText + "</span>" +
+        '<span class="summary-item">最大：<b>' + UTIL.formatValue(result.max, state.metric) + "</b></span>" +
+        '<span class="summary-item">最小：<b>' + UTIL.formatValue(result.min, state.metric) + "</b></span>" +
+        '<span class="summary-item">合计：<b>' + UTIL.formatValue(result.sum, state.metric) + "</b></span>";
+    }
+  }
+
+  /**
+   * 渲染整车级指标卡片总览。
+   */
+  function renderProjectLevel() {
+    ui["chart-card"].classList.add("hidden");
+    ui["project-card"].classList.remove("hidden");
+    CHART.renderProject(state.outputData.projectCircuitInfo || {});
+
+    const fieldCount = Object.keys(state.outputData.projectCircuitInfo || {}).length;
+    ui["summary-line"].innerHTML =
+      '<span class="summary-item">层级：<b>整车级</b></span>' +
+      '<span class="summary-item">指标字段：<b>' + UTIL.escapeHtml(state.metric) + "</b></span>" +
+      '<span class="summary-item">整车指标数：<b>' + fieldCount + "</b></span>";
+  }
+
+  /* ---------------- 文件上传与解析 ---------------- */
+
+  /**
+   * 绑定上传区域（点击/拖拽/键盘）。
+   * @param {string} zoneId 上传区域 DOM id
+   * @param {string} inputId 隐藏 file input DOM id
+   * @param {Function} handler 文件处理回调，入参为 File
+   */
+  function bindUpload(zoneId, inputId, handler) {
+    const zone = ui[zoneId];
+    const input = ui[inputId];
+    const doLoad = function (file) {
+      if (file) handler(file);
+    };
+    zone.addEventListener("click", function () { input.click(); });
+    zone.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        input.click();
+      }
+    });
+    zone.addEventListener("dragover", function (event) {
+      event.preventDefault();
+      zone.classList.add("is-drag");
+    });
+    zone.addEventListener("dragleave", function () { zone.classList.remove("is-drag"); });
+    zone.addEventListener("drop", function (event) {
+      event.preventDefault();
+      zone.classList.remove("is-drag");
+      doLoad(event.dataTransfer.files[0]);
+    });
+    input.addEventListener("change", function () { doLoad(input.files[0]); });
+  }
+
+  /**
+   * 以文本方式读取文件。
+   * @param {File} file 文件对象
+   * @returns {Promise<string>} 文件文本
+   */
+  function readAsText(file) {
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = function () { reject(new Error("文件读取失败")); };
+      reader.readAsText(file);
+    });
+  }
+
+  /**
+   * 校验并解析 output.txt（优化后方案）。
+   * @param {string} text 文件文本
+   * @returns {Object} 解析后的数据对象
+   * @throws {Error} 结构不合法时抛出
+   */
+  function parseOutput(text) {
+    const data = JSON.parse(text);
+    if (!data.systemCircuitInfo) {
+      throw new Error("缺少 systemCircuitInfo 字段，不是有效的 output 方案 JSON");
+    }
+    return data;
+  }
+
+  /**
+   * 校验并解析拓扑日志文件（首份文档后可能追加残缺片段，做容错）。
+   * @param {string} text 文件文本
+   * @returns {Object} 解析后的数据对象
+   * @throws {Error} 结构不合法时抛出
+   */
+  function parseTopo(text) {
+    const doc = UTIL.extractFirstJson(text) || text;
+    const data = JSON.parse(doc);
+    if (!data.points || !data.edges) {
+      throw new Error("缺少 points/edges 字段，不是有效的拓扑 JSON");
+    }
+    return data;
+  }
+
+  /**
+   * 加载并接入 output.txt。
+   * @param {File} file 文件对象
+   */
+  async function loadOutput(file) {
+    try {
+      const text = await readAsText(file);
+      state.outputData = parseOutput(text);
+      updateDropZone("output", file, "已加载", "is-ok", "");
+      populateMetricSelect(CONFIG.DEFAULT_METRIC);
+      ui.analysis.classList.remove("hidden");
+      refresh();
+    } catch (error) {
+      state.outputData = null;
+      updateDropZone("output", file, "解析失败", "is-wait", error.message);
+    }
+  }
+
+  /**
+   * 加载并接入拓扑日志文件。
+   * @param {File} file 文件对象
+   */
+  async function loadTopo(file) {
+    try {
+      const text = await readAsText(file);
+      state.topoData = parseTopo(text);
+      updateDropZone("topo", file, "已加载", "is-ok", "");
+      const caseName = state.topoData.caseInfo && state.topoData.caseInfo.caseName
+        ? state.topoData.caseInfo.caseName : "-";
+      ui["topo-summary"].classList.remove("hidden");
+      ui["topo-summary"].innerHTML =
+        "拓扑信息：<b>" + UTIL.escapeHtml(caseName) + "</b> · " +
+        "支点 <b>" + state.topoData.points.length + "</b> 个 · " +
+        "分支 <b>" + state.topoData.edges.length + "</b> 条 · " +
+        "回路 <b>" + (state.topoData.loopInfos ? state.topoData.loopInfos.length : 0) + "</b> 条 · " +
+        "用电器 <b>" + (state.topoData.appPositions ? state.topoData.appPositions.length : 0) +
+        "</b> 个（坐标已就绪，后续拓扑画图使用）";
+    } catch (error) {
+      state.topoData = null;
+      updateDropZone("topo", file, "解析失败", "is-wait", error.message);
+    }
+  }
+
+  /**
+   * 更新上传区域的状态展示。
+   * @param {string} key "output" | "topo"
+   * @param {File} file 文件对象
+   * @param {string} badgeText 徽章文本
+   * @param {string} badgeClass 徽章样式类
+   * @param {string} errorText 错误文本（可为空）
+   */
+  function updateDropZone(key, file, badgeText, badgeClass, errorText) {
+    const badge = ui["badge-" + key];
+    badge.textContent = badgeText;
+    badge.className = "badge " + badgeClass;
+    ui["file-name-" + key].textContent = file.name + "（" + (file.size / 1024).toFixed(0) + " KB）";
+    ui["drop-error-" + key].textContent = errorText;
+  }
+
+  /* ---------------- 事件装配 ---------------- */
+
+  /**
+   * 绑定各交互控件的点击/变更事件。
+   */
+  function bindEvents() {
+    // 层级切换
+    ui["level-seg"].addEventListener("click", function (event) {
+      const button = event.target.closest("button[data-level]");
+      if (!button) return;
+      state.level = button.dataset.level;
+      document.querySelectorAll("#level-seg button").forEach(function (btn) {
+        btn.classList.toggle("is-active", btn === button);
+      });
+      populateMetricSelect(state.metric);
+      refresh();
+    });
+
+    // 排序方向切换
+    ui["sort-seg"].addEventListener("click", function (event) {
+      const button = event.target.closest("button[data-asc]");
+      if (!button) return;
+      state.ascending = button.dataset.asc === "true";
+      document.querySelectorAll("#sort-seg button").forEach(function (btn) {
+        btn.classList.toggle("is-active", btn === button);
+      });
+      refresh();
+    });
+
+    // 指标切换
+    ui["metric-select"].addEventListener("change", function () {
+      state.metric = ui["metric-select"].value;
+      refresh();
+    });
+
+    bindUpload("drop-zone-output", "file-input-output", function (file) { loadOutput(file); });
+    bindUpload("drop-zone-topo", "file-input-topo", function (file) { loadTopo(file); });
+  }
+
+  /* ---------------- 启动 ---------------- */
+
+  /**
+   * 应用入口：缓存 DOM、生成控件、绑定事件。
+   */
+  function init() {
+    cacheDom();
+    buildLevelSegments();
+    bindEvents();
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();
