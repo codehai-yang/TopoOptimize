@@ -3,8 +3,9 @@
  * ============================================================
  * 负责柱状图的 DOM 构建与布局，以及整车级指标卡片渲染。
  * 柱状图特性：
+ *   - 柱体自下而上生长动画（scaleY），逐柱错峰
  *   - 每个柱的数值标签紧贴各自柱顶上方（y 动态计算）
- *   - 底部名称 -45° 倾斜，避免长名称互相挤压
+ *   - 底部名称水平显示，超出省略号，悬停看全名
  *   - 柱宽随条目数量自适应
  * 通过 window.AppChart 暴露。
  */
@@ -78,15 +79,20 @@
       const name = util.escapeHtml(item.name);
       const valueText = util.formatValue(item.value, metric);
       const color = barColor(index, n);
+      // 逐柱错峰：柱体生长 delay，数值标签在生长完成后淡入
+      const growDelay = Math.min(index * 16, 560);
+      const growDelayMs = growDelay + "ms";
+      const valueDelayMs = (growDelay + 520) + "ms";
 
       return (
         '<div class="bar-column" style="width:' + width + ';height:' + columnHeight + 'px" ' +
         'data-name="' + name + '" data-value="' + valueText + '">' +
-        '<div class="bar-value" style="top:' + numberTop + 'px">' + valueText + "</div>" +
-        // 柱体
+        '<div class="bar-value" style="top:' + numberTop + 'px;animation-delay:' + valueDelayMs + '">' +
+        valueText + "</div>" +
+        // 柱体（自下而上生长动画）
         '<div class="bar-rect" style="bottom:' + bottom + 'px;height:' +
-        height + "px;background:" + color + '"></div>' +
-        // 名称标签：底部倾斜
+        height + "px;background:" + color + ";animation-delay:" + growDelayMs + '"></div>' +
+        // 名称标签：底部水平（超出省略号，悬停看全名）
         '<div class="bar-name" style="bottom:' + (CHART.labelHeight - 24) + 'px">' +
         name + "</div>" +
         "</div>"

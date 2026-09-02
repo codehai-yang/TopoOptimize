@@ -398,6 +398,7 @@ select:focus {
   line-height: 1;
   white-space: nowrap;
   pointer-events: none;
+  animation: value-fade .3s ease .55s both;
 }
 
 /* 柱体 */
@@ -407,6 +408,30 @@ select:focus {
   right: 15%;
   border-radius: 3px 3px 0 0;
   transition: filter .15s;
+  transform-origin: bottom center;
+  animation: bar-grow .7s cubic-bezier(.22, .61, .36, 1) both;
+}
+
+/* 柱体自下而上生长的动画 */
+@keyframes bar-grow {
+  from {
+    transform: scaleY(0);
+  }
+
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* 数值标签淡入 */
+@keyframes value-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .bar-column:hover .bar-rect {
