@@ -35,21 +35,23 @@
   }
 
   /**
-   * 按指标语义格式化数值：整数不带小数；百分比字段追加 "%"。
+   * 按指标语义格式化数值：百分比字段追加 "%"。
+   * 保留原始展示精度，不做四舍五入压缩小数位，以便与 Excel/JSON 中
+   * 的原始数据值保持一致。
+   *   - 字符串值（Excel raw:false 读出的单元格展示值，如 "2204.35" / "50.68%"）
+   *     原样返回，与 Excel 完全一致；
+   *   - 数值（JSON 原始数字）尽量保留全部小数位，仅加千分位分隔。
    * @param {*} value 数值或原始值
    * @param {string} key 指标字段名
    * @returns {string} 格式化后的展示文本
    */
   function formatValue(value, key) {
-    const num = toNumber(value);
-    if (Number.isNaN(num)) {
-      const fallback = value === null || value === undefined ? "" : value;
-      return String(fallback);
-    }
+    if (value === null || value === undefined) return "";
+    // 字符串：保留原始展示值（含 Excel 的百分比形态），不再 toNumber + 舍入
+    if (typeof value === "string") return String(value);
     const isPercent = String(key).includes("百分比");
-    const digits = Number.isInteger(num) ? 0 : (Math.abs(num) < 10 ? 2 : 1);
-    let text = num.toLocaleString("zh-CN", {
-      maximumFractionDigits: digits,
+    let text = value.toLocaleString("zh-CN", {
+      maximumFractionDigits: 8,
       minimumFractionDigits: 0
     });
     return isPercent ? text + "%" : text;

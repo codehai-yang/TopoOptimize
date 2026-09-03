@@ -120,7 +120,7 @@ public class HarnessBranchTopoOptimize {
     }
 
     public static void main(String[] args) throws Exception {
-        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\报错日志.txt");
+        File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\错误日志.txt");
         String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
         HarnessBranchTopoOptimize newHarnessBranchTopoOptimize = new HarnessBranchTopoOptimize();
         long startTime = System.currentTimeMillis();
@@ -688,6 +688,10 @@ public class HarnessBranchTopoOptimize {
         // 遗传算法第一代的父本=初代预测 Top 100 + 初始方案
         // 阶段一以 TopDetail[0](初代最优)为基准变异,不再使用 initialScheme
         TopDetail = findBest;
+        // 将初代(含base)评估方案写入仓库 ALL_GENETIC，与遗传各代累积同一处。
+        // 即使遗传首代裂变不出新方案(直接 break),仓库仍保留初代有效方案,避免误返回 base。
+        // 第182行已 clear,此处无重复累积问题。
+        ALL_GENETIC.addAll(findBest);
         int hybridizationNumber = 1;
         long hybridizationTime = System.currentTimeMillis();
         // 遗传算法

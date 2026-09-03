@@ -416,6 +416,35 @@
   }
 
   /**
+   * 以二进制方式读取文件（供 Excel 解析使用）。
+   * @param {File} file 文件对象
+   * @returns {Promise<ArrayBuffer>} 文件内容
+   */
+  function readAsArrayBuffer(file) {
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = function () { reject(new Error("文件读取失败")); };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  /**
+   * 校验并解析生产环境 Excel（转成与 output.json 相同结构）。
+   * @param {File} file 文件对象
+   * @returns {Promise<Object>} 解析后的数据对象
+   * @throws {Error} 缺解析库或结构不合法时抛出
+   */
+  async function parseExcel(file) {
+    if (!window.XLSX) {
+      throw new Error("缺少 XLSX 解析库，请确认已加载 lib/xlsx.full.min.js");
+    }
+    const buffer = await readAsArrayBuffer(file);
+    const workbook = window.XLSX.read(buffer, { type: "array" });
+    return window.AppExcel.buildHierarchy(workbook);
+  }
+
+  /**
    * 校验并解析 output.txt（优化后方案）。
    * @param {string} text 文件文本
    * @returns {Object} 解析后的数据对象
@@ -445,13 +474,17 @@
   }
 
   /**
-   * 加载并接入 output.txt。
+   * 加载并接入 output 方案数据。
+   * 支持两种来源：Excel（.xlsx/.xls，生产环境导出，解析为与 output.json 相同结构）
+   * 或 output.txt/.json（原优化后方案）。
    * @param {File} file 文件对象
    */
   async function loadOutput(file) {
     try {
-      const text = await readAsText(file);
-      state.outputData = parseOutput(text);
+      const isExcel = /\.(xlsx|xls)$/i.test(file.name || "");
+      state.outputData = isExcel
+        ? await parseExcel(file)
+        : parseOutput(await readAsText(file));
       updateDropZone("output", file, "已加载", "is-ok", "");
       populateMetricSelect(null);
       buildFilterList();
