@@ -634,10 +634,12 @@ public class HarnessBranchTopoOptimize {
                         : coppyedge.get("topologyStatusCode").toString());
             }
         }
-        jsonMap.put("edges", coppyedges);
+        //拷贝，防止上面修改到base
+        Map<String,Object> copyJsonMap = new HashMap<>(jsonMap);
+        copyJsonMap.put("edges", coppyedges);
         // 分支id-分支打断代价 获取每条分支的打断代价
         Map<String, Double> breakCostMap = new HashMap<>();
-        String detail = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(jsonMap));
+        String detail = projectCircuitInfoOutput.projectCircuitInfoOutput(objectMapper.writeValueAsString(copyJsonMap));
         Map<String, Object> objectMap = jsonToMap.TransJsonToMap(detail);
         // 提取经过各个分支的所有信息
         Map<String, Object> bundeleRelatedCircuitInfo = (Map<String, Object>) objectMap
@@ -897,11 +899,16 @@ public class HarnessBranchTopoOptimize {
             cost.put("总重量", ((Number) twObj).doubleValue());
             cost.put("总长度", ((Number) tlObj).doubleValue());
 
-            // 构造 topoOptimizeResult 和 serviceableStatue（原始 base 方案,分支状态不变）
-            List<Map<String, Object>> edges = (List<Map<String, Object>>) jsonMap.get("edges");
-            Map<String, Object> topoInfoMap = (Map<String, Object>) jsonMap.get("topoInfo");
-            Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
-            Map<String, Object> projectInfo = (Map<String, Object>) jsonMap.get("projectInfo");
+            // 构造 topoOptimizeResult 和 serviceableStatue (原始 base 方案,分支状态不变)。
+            // base 的所有输入来源字段(edges/topoInfo/projectInfo/caseInfo)必须全部取自
+            // 原始入参 jsonContent:jsonMap.get("edges") 在优化流程中被 coppyedges 就地替换
+            // (statusB 允许的边已统一置为 C),其他字段也可能被后续修改。
+            // 重新解析 jsonContent 再读取,保证 base 就是"前端输入的原样",而非修改后的方案。
+            Map<String, Object> originalInputMap = jsonToMap.TransJsonToMap(jsonContent);
+            List<Map<String, Object>> edges = (List<Map<String, Object>>) originalInputMap.get("edges");
+            Map<String, Object> topoInfoMap = (Map<String, Object>) originalInputMap.get("topoInfo");
+            Map<String, Object> caseInfo = (Map<String, Object>) originalInputMap.get("caseInfo");
+            Map<String, Object> projectInfo = (Map<String, Object>) originalInputMap.get("projectInfo");
             List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
             List<String> serviceableStatue = new ArrayList<>();
             for (Map<String, Object> edge : edges) {
@@ -1345,16 +1352,6 @@ public class HarnessBranchTopoOptimize {
         Map<String, Object> caseInfo = (Map<String, Object>) jsonMap.get("caseInfo");
         List<Map<String, String>> appPositions = (List<Map<String, String>>) jsonMap.get("appPositions");
         Boolean whetherOnLoop = caseInfo.get("loopcreate").toString().equals("true") ? true : false;
-        // ★追踪:记录 100→100 的入口索引和绕线前状态(精确后状态),
-        // 同时从输入 map 继承 _inputIndex / _inputServiceableStatue(500→100 入口)。
-        final List<String> windingInputStatueSnapshot = (map.get("serviceableStatue") instanceof List)
-                ? new ArrayList<>((List<String>) map.get("serviceableStatue"))
-                : new ArrayList<String>();
-        final Object inheritedInputIndex = map.get("_inputIndex");
-        @SuppressWarnings("unchecked")
-        final List<String> inheritedInputStatue = (map.get("_inputServiceableStatue") instanceof List)
-                ? new ArrayList<>((List<String>) map.get("_inputServiceableStatue"))
-                : null;
         List<String> originalStatue = (List<String>) map.get("serviceableStatue");
         if (originalStatue == null || originalStatue.size() != normList.size()) {
             return null;

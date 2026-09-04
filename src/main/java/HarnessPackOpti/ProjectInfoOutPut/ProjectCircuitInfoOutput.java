@@ -1473,10 +1473,17 @@ public class ProjectCircuitInfoOutput {
         }
         totalCost.put("回路数量-B类(根)", multiLoopInfosSet.size());
         totalCost.put("回路数量-A类(根)", count);
-        totalCost.put("回路重量均值(克/根)", Double.parseDouble(
-                df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / multiLoopInfosSet.size())));
-        totalCost.put("回路成本均值(元/根)", Double.parseDouble(
-                df.format(Double.parseDouble(totalCost.get("总成本").toString()) / multiLoopInfosSet.size())));
+        // 空回路集合时除零会产生 NaN,Java8 的 DecimalFormat 会把 NaN 格式化成 "?",
+        // 导致 Double.parseDouble("?") 抛 NumberFormatException,这里必须按 size>0 保护。
+        if (multiLoopInfosSet.size() > 0) {
+            totalCost.put("回路重量均值(克/根)", Double.parseDouble(
+                    df.format(Double.parseDouble(totalCost.get("回路总重量").toString()) / multiLoopInfosSet.size())));
+            totalCost.put("回路成本均值(元/根)", Double.parseDouble(
+                    df.format(Double.parseDouble(totalCost.get("总成本").toString()) / multiLoopInfosSet.size())));
+        } else {
+            totalCost.put("回路重量均值(克/根)", 0.00);
+            totalCost.put("回路成本均值(元/根)", 0.00);
+        }
         // 打断前回路均值
         double avgLength = 0.00;
         if (multiLoopInfosSet.size() > 0) {

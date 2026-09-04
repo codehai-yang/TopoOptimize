@@ -39,10 +39,10 @@ public class main {
 //           harnessBranchTopoOptiErrorOutPut.topoOptimizeOutput(jsonContent);
 
         //用电器位置布局优化
-                File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\用电器位置布局优化遗传算法样本.txt");
-                String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
-                ElecPositionVariantCalculation elecPositionVariantCalculation=new ElecPositionVariantCalculation();
-                elecPositionVariantCalculation.elecPositionVariantCalculation(jsonContent);
+//                File file = new File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\用电器位置布局优化遗传算法样本.txt");
+//                String jsonContent = new String(Files.readAllBytes(file.toPath()));// 将文件中内容转为字符串
+//                ElecPositionVariantCalculation elecPositionVariantCalculation=new ElecPositionVariantCalculation();
+//                elecPositionVariantCalculation.elecPositionVariantCalculation(jsonContent);
 
         // 配电驱动优化
 //                 File file = new
@@ -114,14 +114,14 @@ public class main {
         //
         //
         // 整车信息计算
-//                 File file1 = new
-//                 File("F:\office\idearProjects\project20251009\src\main\resources\BS4EM项目json优化设置.txt");
-//                 String jsonContent1 = new
-//                 String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
-//                 CircuitErrorOutput circuitErrorOutput=new CircuitErrorOutput();
-//                 circuitErrorOutput.circuitErrorOutput(jsonContent1);
+                 File file1 = new
+                 File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\空指针报错排查.txt");
+                 String jsonContent1 = new
+                 String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
+                 CircuitErrorOutput circuitErrorOutput=new CircuitErrorOutput();
+                 circuitErrorOutput.circuitErrorOutput(jsonContent1);
 //        File file1 = new
-//                File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\BS4EM项目json优化设置.txt");
+//                File("F:\\office\\idearProjects\\project20251009\\src\\main\\resources\\空指针报错排查.txt");
 //        String jsonContent1 = new
 //                String(Files.readAllBytes(file1.toPath()));//将文件中内容转为字符串
 //        PowerTopoOptimizeErrorOutput circuitErrorOutput=new PowerTopoOptimizeErrorOutput();

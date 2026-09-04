@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>线束拓扑方案对比</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", system-ui, sans-serif;
+    margin: 0; background: #f5f7fb; color: #333;
+  }
+  header {
+    background: linear-gradient(135deg,#2c3e50,#3a6ea5); color: #fff;
+    padding: 16px 24px;
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; opacity: .85; font-size: 13px; }
+  .container { max-width: 1100px; margin: 20px auto; padding: 0 16px; }
+  .card {
+    background:#fff; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,.08);
+    padding: 20px; margin-bottom: 18px;
+  }
+  .drop {
+    border:2px dashed #c3cbd8; border-radius:10px; padding:34px; text-align:center;
+    color:#7a8699; cursor:pointer; transition:.2s;
+  }
+  .drop:hover, .drop.drag { border-color:#3a6ea5; background:#f0f5fc; color:#3a6ea5; }
+  .drop input { display:none; }
+  .controls { display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end; margin-top:14px; }
+  .field { display:flex; flex-direction:column; gap:6px; }
+  .field label { font-size:13px; color:#5c6b7f; font-weight:600; }
+  select {
+    padding:8px 12px; border:1px solid #ccd4e0; border-radius:6px; font-size:14px;
+    background:#fff; min-width:220px;
+  }
+  .btn-swap {
+    padding:8px 14px; border:none; border-radius:6px; background:#e8eef7; color:#2c3e50;
+    font-size:14px; cursor:pointer;
+  }
+  .btn-swap:hover { background:#d6e2f2; }
+  .summary { display:flex; gap:14px; flex-wrap:wrap; margin-top:14px; }
+  .stat {
+    background:#f7f9fc; border:1px solid #e4eaf3; border-radius:8px; padding:10px 16px;
+  }
+  .stat b { font-size:20px; color:#2c3e50; display:block; }
+  .stat span { font-size:12px; color:#7a8699; }
+  .legend { display:flex; gap:16px; align-items:center; margin-top:10px; font-size:13px; color:#5c6b7f;}
+  .sw { display:inline-block; width:16px; height:16px; border-radius:3px; margin-right:5px; vertical-align:middle; border:1px solid #ccc;}
+  .wrap-table { overflow:auto; max-height:620px; border:1px solid #e4eaf3; border-radius:8px;}
+  table { border-collapse: collapse; width:100%; font-size:13px; }
+  thead th {
+    position:sticky; top:0; background:#eef2f9; z-index:2; padding:8px 10px;
+    border-bottom:2px solid #d4ddef; text-align:left; white-space:nowrap;
+  }
+  tbody td { padding:6px 10px; border-bottom:1px solid #f0f3f9; white-space:nowrap; }
+  tbody tr:hover { background:#f7fafd; }
+  .diff { background:#ffe9a0 !important; }
+  .st { font-weight:700; }
+  .st-B { color:#c0392b; }
+  .st-C { color:#27ae60; }
+  .st-S { color:#7f8c8d; }
+  .badge{ display:inline-block; padding:0 8px; border-radius:12px; font-size:12px; }
+  .bp{Margin:0}
+  .txt{ color:#8a97a8; font-size:13px; margin-top:8px;}
+  .status-total{margin-top:8px; font-size:13px; color:#5c6b7f;}
+</style>
+</head>
+<body>
+<header>
+  <h1>线束拓扑方案对比工具</h1>
+  <p>上传算法结果 JSON，任选两个方案对比，高亮与基准方案状态不同的分支</p>
+</header>
+
+<div class="container">
+
+  <div class="card">
+    <div class="drop" id="drop">
+      <div style="font-size:26px; margin-bottom:8px;">📂</div>
+      <div>点击选择 或 拖拽 JSON 文件到此处</div>
+      <div class="txt">支持根节点为 array（多个方案，每个含 serviceableStatue 与 serviceableEdges）</div>
+      <input type="file" id="fileInput" accept=".json,application/json">
+    </div>
+    <div class="txt" id="fileInfo" style="color:#3a6ea5;"></div>
+
+    <div class="controls">
+      <div class="field">
+        <label>基准方案（参照）</label>
+        <select id="baseSel" disabled></select>
+      </div>
+      <div class="field">
+        <label>对比方案</label>
+        <select id="cmpSel" disabled></select>
+      </div>
+      <button class="btn-swap" id="swapBtn" disabled>⇄ 交换</button>
+    </div>
+    <div class="status-total" id="meta"></div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none;">
+    <div class="legend">
+      <span><span class="sw" style="background:#ffe9a0"></span> 与基准不同</span>
+      <span>列头底色：<span class="sw" style="background:#dbe7fb"></span>基准方案 &nbsp;<span class="sw" style="background:#fadbd8"></span>对比方案</span>
+    </div>
+    <div class="summary" id="summary"></div>
+    <div class="wrap-table">
+      <table>
+        <thead id="thead"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let schemes = [];
+
+// ---------- 文件读取 ----------
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('drag');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try { parse(reader.result); }
+    catch (err) { alert('解析失败：' + err.message); }
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+function parse(text) {
+  const data = JSON.parse(text);
+  if (!Array.isArray(data) || data.length === 0) throw new Error('根节点必须是非空数组(多个方案)');
+  schemes = data;
+  document.getElementById('fileInfo').textContent = '已加载 ' + schemes.length + ' 个方案，每个 ' + schemeLen(schemes[0]) + ' 条分支';
+
+  const baseSel = document.getElementById('baseSel');
+  const cmpSel = document.getElementById('cmpSel');
+  const opts = schemes.map((s, i) => {
+    const base = s.initializationScheme ? ' (base)' : '';
+    const cost = (s['成本'] && s['成本']['总成本'] != null) ? '｜成本 ' + s['成本']['总成本'] : '';
+    return `<option value="${i}">方案${i + 1}${base}${cost}</option>`;
+  }).join('');
+  baseSel.innerHTML = opts;
+  cmpSel.innerHTML = opts;
+  baseSel.disabled = cmpSel.disabled = false;
+  document.getElementById('swapBtn').disabled = false;
+
+  let baseIdx = schemes.findIndex(s => s.initializationScheme === true);
+  if (baseIdx < 0) baseIdx = 0;
+  baseSel.value = baseIdx;
+  cmpSel.value = (baseIdx + 1 < schemes.length) ? baseIdx + 1 : 0;
+  render();
+}
+
+function schemeLen(s) {
+  const st = s.serviceableStatue, ed = s.serviceableEdges;
+  if (ed) return ed.length;
+  if (st) return st.length;
+  return '?';
+}
+
+// ---------- 对比渲染 ----------
+document.getElementById('baseSel').onchange = render;
+document.getElementById('cmpSel').onchange = render;
+document.getElementById('swapBtn').onclick = () => {
+  const b = document.getElementById('baseSel');
+  const c = document.getElementById('cmpSel');
+  const t = b.value; b.value = c.value; c.value = t;
+  render();
+};
+
+function statusCount(statuses) {
+  const c = { B: 0, C: 0, S: 0 };
+  for (const s of statuses) c[s] = (c[s] || 0) + 1;
+  return c;
+}
+
+function render() {
+  if (!schemes.length) return;
+  const bi = parseInt(document.getElementById('baseSel').value, 10);
+  const ci = parseInt(document.getElementById('cmpSel').value, 10);
+  const baseS = schemes[bi];
+  const cmpS = schemes[ci];
+
+  const baseStatue = baseS.serviceableStatue;
+  const cmpStatue = cmpS.serviceableStatue;
+  const edges = baseS.serviceableEdges || cmpS.serviceableEdges || [];
+
+  // 分支名顺序：优先用基准方案 edgeName，否则回退 id
+  const names = edges.map(e => e.edgeName || e.id || ('#' + (edgeIdx++)) );
+  const ids = edges.map(e => e.id || '');
+
+  const baseBundele = baseS.bundeleRelatedCircuitInfo || {};
+  const cmpBundele = cmpS.bundeleRelatedCircuitInfo || {};
+
+  // 一个分支对应的经过回路
+  function circuitList(bundele, branchId) {
+    const info = bundele[branchId];
+    return (info && Array.isArray(info.circuitList)) ? info.circuitList : null;
+  }
+
+  const n = Math.max(baseStatue ? baseStatue.length : 0, cmpStatue ? cmpStatue.length : 0);
+
+  let diffCount = 0, sameCount = 0;
+  let rows = '';
+  for (let i = 0; i < n; i++) {
+    const b = baseStatue && i < baseStatue.length ? String(baseStatue[i]) : '';
+    const c = cmpStatue && i < cmpStatue.length ? String(cmpStatue[i]) : '';
+    const diff = b !== c;
+    if (diff) diffCount++; else sameCount++;
+    const cls = diff ? 'diff' : '';
+    const bid = ids[i] || '';
+    const bcl = circuitList(baseBundele, bid);
+    const ccl = circuitList(cmpBundele, bid);
+    const bc = bcl ? bcl.length : '';
+    const cc = ccl ? ccl.length : '';
+    const btip = esc(bcl ? bcl.join('、') : '');
+    const ctip = esc(ccl ? ccl.join('、') : '');
+    rows += `<tr class="${cls}">
+      <td>${names[i] ?? ('分支' + (i + 1))}</td>
+      <td><span class="st st-${b}">${b}</span></td>
+      <td><span class="st st-${c}">${c}</span></td>
+      <td>${diff ? '⚠ 不同' : '—'}</td>
+      <td title="${btip}">${bc}</td>
+      <td title="${ctip}">${cc}</td>
+    </tr>`;
+  }
+
+  document.getElementById('thead').innerHTML = `
+    <tr>
+      <th style="min-width:240px;position:sticky;left:0;background:#eef2f9;z-index:3">分支名称</th>
+      <th style="background:#dbe7fb">基准 方案${bi + 1}</th>
+      <th style="background:#fadbd8">对比 方案${ci + 1}</th>
+      <th>是否不同</th>
+      <th style="background:#dbe7fb">回路数(基准)</th>
+      <th style="background:#fadbd8">回路数(对比)</th>
+    </tr>`;
+  document.getElementById('tbody').innerHTML = rows;
+
+  const baseCnt = statusCount(baseStatue || []);
+  const cmpCnt = statusCount(cmpStatue || []);
+  document.getElementById('summary').innerHTML = `
+    <div class="stat"><span>基准总成本</span><b>${fmtCost(baseS['成本'])}</b></div>
+    <div class="stat"><span>对比总成本</span><b>${fmtCost(cmpS['成本'])}</b></div>
+    <div class="stat"><span>不同分支</span><b style="color:#e67e22">${diffCount}</b></div>
+    <div class="stat"><span>相同分支</span><b>${sameCount}</b></div>
+    <div class="stat"><span>基准状态分布</span><b class="st-B">B${baseCnt.B}</b> <b class="st-C">C${baseCnt.C}</b> <b class="st-S">S${baseCnt.S}</b></div>
+    <div class="stat"><span>对比状态分布</span><b class="st-B">B${cmpCnt.B}</b> <b class="st-C">C${cmpCnt.C}</b> <b class="st-S">S${cmpCnt.S}</b></div>`;
+  document.getElementById('meta').innerHTML =
+    `对比：<b>方案${bi + 1}</b> ${baseS.initializationScheme ? '(base)' : ''} vs <b>方案${ci + 1}</b> ${cmpS.initializationScheme ? '(base)' : ''} ｜ 总分支 ${n}`;
+  document.getElementById('resultCard').style.display = 'block';
+}
+
+function fmtCost(s) {
+  if (s && s['成本'] && s['成本']['总成本'] != null) return s['成本']['总成本'];
+  return '—';
+}
+
+function esc(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+</script>
+</body>
+</html>
