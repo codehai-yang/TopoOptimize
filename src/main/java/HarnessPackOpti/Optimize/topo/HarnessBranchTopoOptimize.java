@@ -716,7 +716,7 @@ public class HarnessBranchTopoOptimize {
                     jsonMap, edgeChooseBS, elecPosition, branchLength,
                     connection, multiLoopInfos, pointMap, hybridizationNumber,
                     togetherBCIndex, chooseOneIndex, mutexConflictIndex,
-                    canChangeSSet);
+                    canChangeSSet, canChangeToCSet);
             if (findBest == null || findBest.size() == 0) {
                 break;
             }
@@ -809,6 +809,13 @@ public class HarnessBranchTopoOptimize {
                 jsonToMap, mutexMap, chooseOneList, togetherBCList, singleBSCList, eleclection, conformList);
         long windingDuration = System.currentTimeMillis() - time;
         System.out.println("绕线优化耗时：" + windingDuration);
+
+        // 最终后处理:某些 C/S 分支实际没有回路经过(冗余连通边),把它们改回 B 以降低成本。
+        // 逐个方案:找出 C/S 且 bundeleRelatedCircuitInfo 中 circuitList 为空的分支 → 改 B → 约束校验,
+        // 校验通过才替换,否则保留原方案。base 方案(initializationScheme=true)保持原样不动。
+        maps = removeUnusedBranchStatus(maps, edges, normList, canBreakToBSet, jsonMap, appPositions, eleclection,
+                mutexMap, chooseOneList, togetherBCList, mutexGroupList,
+                objectMapper, projectCircuitInfoOutput, jsonToMap);
 
         // ★追踪:写出方案状态变更追踪 Excel
         // 记录每个最终方案(绕线后)在三个阶段的状态:精确前 / 精确后 / 绕线后,
@@ -935,6 +942,156 @@ public class HarnessBranchTopoOptimize {
             System.err.println("[base] 构造 base 方案异常: " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 最终后处理:把"C/S 但实际没有回路经过"的冗余连通分支改回 B。
+     * 做法:对每个非 base 方案,读取其 bundeleRelatedCircuitInfo(该方案状态下每个分支经过的回路列表),
+     * 找出状态为 C/S 且 circuitList 为空的分支 → 统一改为 B → 用完整约束校验 checkFirstOption 检查,
+     * 校验通过则基于新状态重算成本/边并替换,否则保留原方案。
+     * base 方案(initializationScheme=true)保持前端的原始状态原样返回,不做改动。
+     */
+    private List<Map<String, Object>> removeUnusedBranchStatus(
+            List<Map<String, Object>> maps,
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            Set<String> canBreakToBSet,
+            Map<String, Object> jsonMap,
+            List<Map<String, String>> appPositions,
+            Map<String, String> eleclection,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList,
+            List<List<String>> mutexGroupList,
+            ObjectMapper mapper,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
+            JsonToMap jsonToMap) throws Exception {
+        if (maps == null || maps.isEmpty()) {
+            return maps;
+        }
+        // 多线程并行:每个方案独立判断并(必要时)重算,结果按原顺序回填,保持 scheme 顺序不变。
+        // threadPool 在 runWithAI 第 178 行已初始化,且 removeUnusedBranchStatus 在 windingOptimize 之后、
+        // finally(shutdownLocalThreadPool)之前调用,故此处线程池仍存活,可安全复用。
+        List<java.util.concurrent.Callable<Map<String, Object>>> tasks = new ArrayList<>(maps.size());
+        for (final Map<String, Object> map : maps) {
+            tasks.add(() -> processOneScheme(map, edges, normList, canBreakToBSet, jsonMap,
+                    appPositions, eleclection, mutexMap, chooseOneList, togetherBCList, mutexGroupList,
+                    mapper, projectCircuitInfoOutput, jsonToMap));
+        }
+        List<java.util.concurrent.Future<Map<String, Object>>> futures = new ArrayList<>(tasks.size());
+        for (java.util.concurrent.Callable<Map<String, Object>> task : tasks) {
+            futures.add(threadPool.submit(task));
+        }
+        List<Map<String, Object>> result = new ArrayList<>(maps.size());
+        for (int i = 0; i < futures.size(); i++) {
+            try {
+                Map<String, Object> one = futures.get(i).get(3000, java.util.concurrent.TimeUnit.SECONDS);
+                result.add(one != null ? one : maps.get(i));
+            } catch (Exception e) {
+                // 单方案处理异常时兜底使用原方案,避免丢方案导致顺序错乱
+                e.printStackTrace();
+                result.add(maps.get(i));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * removeUnusedBranchStatus 的单个方案处理逻辑(供多线程并行调用)。
+     * 返回处理后的方案 map;base 方案 / 无需处理 / 约束不通过时,原样返回传入的 map。
+     * 线程安全说明:createNewEdges 内部对 edges 做深拷贝,不会污染共享 edges;
+     * checkFirstOption 只读不写;projectCircuitInfoOutput 与 jsonToMap 已在 windingOptimize 中被并发调用过。
+     */
+    private Map<String, Object> processOneScheme(
+            Map<String, Object> map,
+            List<Map<String, Object>> edges,
+            List<String> normList,
+            Set<String> canBreakToBSet,
+            Map<String, Object> jsonMap,
+            List<Map<String, String>> appPositions,
+            Map<String, String> eleclection,
+            Map<String, Map<String, List<String>>> mutexMap,
+            List<Map<String, List<String>>> chooseOneList,
+            List<List<String>> togetherBCList,
+            List<List<String>> mutexGroupList,
+            ObjectMapper mapper,
+            ProjectCircuitInfoOutput projectCircuitInfoOutput,
+            JsonToMap jsonToMap) throws Exception {
+        // base 方案保持原样
+        if (Boolean.TRUE.equals(map.get("initializationScheme"))) {
+            return map;
+        }
+        List<String> statue = (List<String>) map.get("serviceableStatue");
+        if (statue == null || statue.size() != normList.size()) {
+            return map;
+        }
+        Map<String, Object> bundele = (Map<String, Object>) map.get("bundeleRelatedCircuitInfo");
+        if (bundele == null || bundele.isEmpty()) {
+            return map;
+        }
+        // 找出 C/S 且无回路经过的分支索引
+        List<Integer> unusedIdx = new ArrayList<>();
+        for (int i = 0; i < normList.size(); i++) {
+            String st = statue.get(i);
+            if (!"C".equals(st) && !"S".equals(st)) {
+                continue;
+            }
+            // 只允许改"可打断为 B"的分支:固定 C/固定 S、以及只能在 S↔C 切换(不可 B)的分支一律跳过
+            if (!canBreakToBSet.contains(normList.get(i))) {
+                continue;
+            }
+            Object branchObj = bundele.get(normList.get(i));
+            Object circuitList = null;
+            if (branchObj instanceof Map) {
+                circuitList = ((Map<String, Object>) branchObj).get("circuitList");
+            }
+            if (circuitList instanceof List && ((List<?>) circuitList).isEmpty()) {
+                unusedIdx.add(i);
+            }
+        }
+        if (unusedIdx.isEmpty()) {
+            return map;
+        }
+        // 构造新状态:无回路经过的 C/S 分支 → B
+        List<String> newStatue = new ArrayList<>(statue);
+        for (int idx : unusedIdx) {
+            newStatue.set(idx, "B");
+        }
+        // 完整约束校验
+        List<Map<String, Object>> testEdges = createNewEdges(newStatue, edges, normList);
+        Boolean ok = checkFirstOption(normList, newStatue, testEdges, appPositions, eleclection,
+                mutexMap, chooseOneList, togetherBCList, mutexGroupList);
+        if (ok == null || !ok) {
+            // 约束不通过,保留原方案
+            return map;
+        }
+        // 约束通过:基于新状态重算整车结果并替换
+        HashMap<String, Object> newJsonMap = new HashMap<>(jsonMap);
+        newJsonMap.put("edges", testEdges);
+        String circuitResult = projectCircuitInfoOutput
+                .projectCircuitInfoOutput(mapper.writeValueAsString(newJsonMap));
+        Map<String, Object> map2 = jsonToMap.TransJsonToMap(circuitResult);
+        Map<String, Object> circuitInfoMap = (Map<String, Object>) map2.get("projectCircuitInfo");
+        Map<String, Double> newCost = new HashMap<>();
+        newCost.put("总成本", Double.parseDouble(circuitInfoMap.get("总成本").toString()));
+        newCost.put("总长度", Double.parseDouble(circuitInfoMap.get("回路总长度").toString()));
+        newCost.put("总重量", Double.parseDouble(circuitInfoMap.get("回路总重量").toString()));
+        List<Map<String, String>> topoOptimizeResult = new ArrayList<>();
+        for (Map<String, Object> edge : testEdges) {
+            Map<String, String> r = new HashMap<>();
+            r.put("edgeId", edge.get("id").toString());
+            r.put("statue", edge.get("topologyStatusCode").toString());
+            topoOptimizeResult.add(r);
+        }
+        map2.put("成本", newCost);
+        map2.put("topoId", map.get("topoId"));
+        map2.put("caseId", map.get("caseId"));
+        map2.put("topoOptimizeResult", topoOptimizeResult);
+        map2.put("finishStatue", "normal");
+        map2.put("initializationScheme", false);
+        map2.put("serviceableStatue", newStatue);
+        map2.put("serviceableEdges", testEdges);
+        return map2;
     }
 
     /**
@@ -2649,7 +2806,8 @@ public class HarnessBranchTopoOptimize {
             Map<String, Set<String>> togetherBCIndex,
             Map<String, Set<String>> chooseOneIndex,
             Map<String, Set<String>> mutexConflictIndex,
-            Set<String> canChangeSSet) throws Exception {
+            Set<String> canChangeSSet,
+            Set<String> canChangeToCSet) throws Exception {
         long time = System.currentTimeMillis();
         // 0) 兜底:没有上一代父本,直接退出
         if (TopDetail == null || TopDetail.isEmpty()) {
@@ -2657,17 +2815,16 @@ public class HarnessBranchTopoOptimize {
         }
 
         // 1) 提取父本状态列表(从上一代 TopDetail 中取出 serviceableStatue)
-        // ★ S → C 还原（与旧遗传算法 HarnessBranchTopoOptimize L1690-1703 保持一致）：
-        // 每代迭代开始前，对父本状态做 S → C 还原（仅 canChangeSSet 中的分支）。
-        // 原因：S 是闭环消除的临时态（windingOptimize 阶段加的），遗传变异应基于
-        // C 状态做 B/C 翻转，否则 S 状态会污染父本邻域的 baseStatusMap。
+        // S → C 还原（与旧遗传算法 HarnessBranchTopoOptimize L1690-1703 保持一致）：
+        // 每代迭代开始前，对父本状态做 S → C 还原（仅 canChangeToCSet=可变为 C 的分支,
+        // 排除只能 B↔S 的 BS 分支,避免把 S 错误还原成非法的 C）。
         List<List<String>> parentStatues = new ArrayList<>();
         for (Map<String, Object> detail : TopDetail) {
             List<String> statue = (List<String>) detail.get("serviceableStatue");
             if (statue != null && initialScheme != null && statue.size() == initialScheme.size()) {
                 List<String> statueClean = new ArrayList<>(statue);
                 for (int i = 0; i < statueClean.size(); i++) {
-                    if ("S".equals(statueClean.get(i)) && canChangeSSet.contains(normList.get(i))) {
+                    if ("S".equals(statueClean.get(i)) && canChangeToCSet.contains(normList.get(i))) {
                         statueClean.set(i, "C");
                     }
                 }
@@ -2750,7 +2907,7 @@ public class HarnessBranchTopoOptimize {
 
         // 3) 阶段二:交叉变异(以阶段一 AI 预测的 top 为父本,两两配对)
         // ★ 不是上一代 TopDetail,而是刚刚阶段一 AI 预测排序拿到的 top
-        // 同样做 S → C 还原(避免 S 状态污染父本邻域的 baseStatusMap)
+        // 同样做 S → C 还原(仅 canChangeToCSet,避免 BS 分支被错误还原成非法的 C)
         time = System.currentTimeMillis();
         List<List<String>> phase2Parents = new ArrayList<>();
         for (Map<String, Object> detail : phase1Top) {
@@ -2758,7 +2915,7 @@ public class HarnessBranchTopoOptimize {
             if (statue != null && initialScheme != null && statue.size() == initialScheme.size()) {
                 List<String> statueClean = new ArrayList<>(statue);
                 for (int i = 0; i < statueClean.size(); i++) {
-                    if ("S".equals(statueClean.get(i)) && canChangeSSet.contains(normList.get(i))) {
+                    if ("S".equals(statueClean.get(i)) && canChangeToCSet.contains(normList.get(i))) {
                         statueClean.set(i, "C");
                     }
                 }
