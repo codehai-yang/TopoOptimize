@@ -81,7 +81,7 @@ public class GINEInferenceEngine {
             return dev.getAbsolutePath();
         try {
             Path tmp = Files.createTempDirectory("gine_predict_");
-            for (String name : new String[] { "predict.py", "best_model.pt", "normalization_params.json" }) {
+            for (String name : new String[] { "predict.py", "best_modelV2.pt", "normalization_params.json" }) {
                 try (InputStream in = GINEInferenceEngine.class.getClassLoader()
                         .getResourceAsStream("scripts/" + name)) {
                     if (in == null)
@@ -145,10 +145,10 @@ public class GINEInferenceEngine {
         }
         // 校验模型/参数文件（仅当脚本目录是 -Dpredict.script.dir 指定时需要校验；
         // 若是从 classpath 释放到 tmp 目录的，resolveScriptDir 已保证文件存在）
-        File modelFile = new File(SCRIPT_DIR, "best_model.pt");
+        File modelFile = new File(SCRIPT_DIR, "best_modelV2.pt");
         File normFile = new File(SCRIPT_DIR, "normalization_params.json");
         if (!modelFile.isFile()) {
-            throw new IOException("best_model.pt not found : " + modelFile.getAbsolutePath());
+            throw new IOException("best_modelV2.pt not found : " + modelFile.getAbsolutePath());
         }
         if (!normFile.isFile()) {
             throw new IOException("normalization_params.json not found : " + normFile.getAbsolutePath());

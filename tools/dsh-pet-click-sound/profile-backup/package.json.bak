@@ -1,0 +1,20 @@
+{
+  "name": "dsh-profile-desktop",
+  "private": true,
+  "dependencies": {
+    "@smalltailqwq/dsh-client-ui-skin-maid-atelier": "^0.1.9",
+    "dsh-boot-animation": "^0.3.0",
+    "dsh-pet": "^0.3.8"
+  },
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-base",
+        "@deepseek-ai/dsh-web-app",
+        "dsh-pet",
+        "@smalltailqwq/dsh-client-ui-skin-maid-atelier",
+        "dsh-boot-animation"
+      ]
+    }
+  }
+}

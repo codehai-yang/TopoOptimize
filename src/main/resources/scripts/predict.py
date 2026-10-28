@@ -113,28 +113,32 @@ HIDDEN_DIM = 64
 NUM_LAYERS = 3
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(SCRIPT_DIR, 'best_model.pt')
+MODEL_PATH = os.path.join(SCRIPT_DIR, 'best_modelV2.pt')
 NORM_PARAMS_PATH = os.path.join(SCRIPT_DIR, 'normalization_params.json')
 
 # ============================================================
 # 模型
+# 说明: HIDDEN_DIM / NUM_LAYERS 只是默认值，真实结构在 get_model() 里
+# 从 checkpoint 的权重形状推断。best_model.pt(V1) 是 hidden=64，
+# best_modelV2.pt 是 hidden=128，写死常量会 load_state_dict 形状不匹配。
 # ============================================================
 class CostModelV2(nn.Module):
-    def __init__(self):
+    def __init__(self, hidden_dim=HIDDEN_DIM, num_layers=NUM_LAYERS):
         super().__init__()
-        self.input_proj = nn.Linear(NODE_FEAT_DIM, HIDDEN_DIM)
+        self.input_proj = nn.Linear(NODE_FEAT_DIM, hidden_dim)
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()
-        for _ in range(NUM_LAYERS):
+        for _ in range(num_layers):
             mlp = nn.Sequential(
-                nn.Linear(HIDDEN_DIM, HIDDEN_DIM * 2), nn.ReLU(),
-                nn.Linear(HIDDEN_DIM * 2, HIDDEN_DIM),
+                nn.Linear(hidden_dim, hidden_dim * 2), nn.ReLU(),
+                nn.Linear(hidden_dim * 2, hidden_dim),
             )
             self.convs.append(GINEConv(mlp, edge_dim=EDGE_FEAT_DIM))
-            self.norms.append(nn.LayerNorm(HIDDEN_DIM))
+            self.norms.append(nn.LayerNorm(hidden_dim))
+        half = max(hidden_dim // 2, 1)
         self.regressor = nn.Sequential(
-            nn.Linear(HIDDEN_DIM, HIDDEN_DIM // 2), nn.ReLU(),
-            nn.Linear(HIDDEN_DIM // 2, 1),
+            nn.Linear(hidden_dim, half), nn.ReLU(),
+            nn.Linear(half, 1),
         )
 
     def forward(self, x, edge_index, edge_attr, batch=None):
@@ -223,13 +227,35 @@ def deserialize_binary(data: bytes) -> Tuple[str, np.ndarray, np.ndarray, np.nda
 _device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 _model: Optional[CostModelV2] = None
 
+
+def _infer_arch(state_dict):
+    """从 checkpoint 权重形状推断 (hidden_dim, num_layers)，避免写死常量。"""
+    hidden = int(state_dict['input_proj.weight'].shape[0])
+    layer_ids = set()
+    for k in state_dict:
+        if k.startswith('convs.'):
+            layer_ids.add(int(k.split('.')[1]))
+    num_layers = (max(layer_ids) + 1) if layer_ids else NUM_LAYERS
+    return hidden, num_layers
+
+
 def get_model():
     global _model
     if _model is None:
         torch.set_num_threads(1)
         torch.set_num_interop_threads(1)
-        _model = CostModelV2()
-        _model.load_state_dict(torch.load(MODEL_PATH, map_location=_device))
+        state = torch.load(MODEL_PATH, map_location=_device)
+        # 兼容 {'model_state_dict': {...}} / {'state_dict': {...}} 这类包装格式
+        if isinstance(state, dict) and 'input_proj.weight' not in state:
+            for key in ('model_state_dict', 'state_dict', 'model', 'net'):
+                if key in state and isinstance(state[key], dict):
+                    state = state[key]
+                    break
+        hidden_dim, num_layers = _infer_arch(state)
+        print(f"[predict] model={os.path.basename(MODEL_PATH)} "
+              f"arch: hidden={hidden_dim}, layers={num_layers}")
+        _model = CostModelV2(hidden_dim=hidden_dim, num_layers=num_layers)
+        _model.load_state_dict(state)
         _model.to(_device)
         _model.eval()
     return _model
@@ -345,4 +371,18 @@ def main():
         shutdown(None, None)
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception:
+        # Java 端把 stdout/stderr 重定向到了 NUL，启动异常必须落地到文件才看得见
+        _tb = traceback.format_exc()
+        try:
+            _err_path = os.path.join(_log_dir, 'startup_error.log')
+            with open(_err_path, 'a', encoding='utf-8') as _f:
+                _f.write('%s [predict] startup failed\n%s\n'
+                         % (datetime.datetime.now().strftime('[%Y-%m-%d %H:%M:%S]'), _tb))
+        except Exception:
+            pass
+        sys.__stderr__.write(_tb)
+        sys.__stderr__.flush()
+        sys.exit(1)
